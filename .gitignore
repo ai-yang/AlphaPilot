@@ -4,6 +4,7 @@
 Pipfile
 public
 release-notes.md
+backup_data/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

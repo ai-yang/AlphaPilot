@@ -25,7 +25,7 @@ def get_all_stocks_in_period(start_date, end_date):
     print(f"共获取到 {len(all_stocks)} 只股票")
     return all_stocks
 
-def download_stock_data(start_date, end_date, output_dir):
+def download_stock_data(start_date, end_date, output_dir, stock_csv_path=None):
     """下载或更新股票数据到最新日期"""
     output_path = Path(output_dir).expanduser()
     output_path.mkdir(parents=True, exist_ok=True)
@@ -36,7 +36,23 @@ def download_stock_data(start_date, end_date, output_dir):
         return
     
     try:
-        all_stocks = get_all_stocks_in_period(start_date, end_date)
+        if stock_csv_path:
+            stock_csv_path = Path(stock_csv_path).expanduser()
+            if stock_csv_path.exists():
+                print(f"从 {stock_csv_path} 读取股票列表...")
+                stock_df = pd.read_csv(stock_csv_path)
+                all_stocks = []
+                for ts_code in stock_df['ts_code'].dropna():
+                    if '.' in ts_code:
+                        code_part, exchange_part = ts_code.split('.')
+                        all_stocks.append(f"{exchange_part.lower()}.{code_part}")
+                print(f"共获取到 {len(all_stocks)} 只股票")
+            else:
+                print(f"未找到指定的股票 CSV 文件: {stock_csv_path}，将下载所有股票。")
+                all_stocks = get_all_stocks_in_period(start_date, end_date)
+        else:
+            all_stocks = get_all_stocks_in_period(start_date, end_date)
+            
         fields = "date,code,open,high,low,close,preclose,volume,amount,turn,tradestatus,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM,isST"
         
         from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -51,12 +67,11 @@ def download_stock_data(start_date, end_date, output_dir):
                 if not existing_df.empty:
                     existing_df['date'] = pd.to_datetime(existing_df['date'])
                     last_date = existing_df['date'].max()
-                    code_download_start_date = (last_date + timedelta(days=1)).strftime('%Y-%m-%d')
-                    # 如果无需更新则跳过
-                    # print(f"股票 {code} 已下载开始日期：{code_download_start_date}，结束日期：{last_date.strftime('%Y-%m-%d')}")
-                    if code_download_start_date == end_date:
-                        print(f"股票 {code} 无需更新")
+                    last_date_str = last_date.strftime('%Y-%m-%d')
+                    if last_date_str >= end_date:
+                        # print(f"股票 {code} 无需更新")
                         return
+                    code_download_start_date = (last_date + timedelta(days=1)).strftime('%Y-%m-%d')
                 else:
                     code_download_start_date = start_date
             else:
@@ -100,12 +115,12 @@ def download_stock_data(start_date, end_date, output_dir):
             
             if data_list:
                 new_df = pd.DataFrame(data_list, columns=rs.fields).set_index('date')
-                new_df = pd.concat([new_df, adj_df], axis=1).ffill().fillna(1)
+                new_df = pd.concat([new_df, adj_df], axis=1)
                 
                 new_df['code'] = new_df['code'].str.replace('.', '', regex=False)
-                # new_df['factor'] = np.ones(len(new_df))
-                numeric_cols = new_df.columns[2:]
-                new_df[numeric_cols] = new_df[numeric_cols].apply(pd.to_numeric, errors='coerce')
+                for col in new_df.columns:
+                    if col != 'code':
+                        new_df[col] = pd.to_numeric(new_df[col], errors='coerce')
 
                 new_df = new_df.reset_index()
                 new_df = new_df.rename(columns={'index': 'date'})
@@ -119,6 +134,8 @@ def download_stock_data(start_date, end_date, output_dir):
                 else:
                     combined_df = new_df
                 
+                # 在合并整体数据后，对整列 factor 统一进行前向填充和缺失值填充，确保增量部分继承历史 factor
+                combined_df['factor'] = combined_df['factor'].ffill().fillna(1)
                 
                 combined_df.to_csv(output_file, index=False, encoding='utf-8')
             
@@ -169,11 +186,15 @@ def download_oneday_stock_data_(date):
 
 if __name__ == '__main__':
     # 动态设置结束日期为当前日期
-    START_DATE = '2014-12-31'
-    END_DATE = (datetime.now()).strftime('%Y-%m-%d') # '2025-01-01'  - timedelta(days=7)
+    START_DATE = '2016-12-31'
+    # END_DATE = (datetime.now()).strftime('%Y-%m-%d') # '2025-01-01'  - timedelta(days=7)
+    END_DATE = '2026-5-22'
     DATA_DIR = '~/.qlib/qlib_data/cn_data/raw_data_back_adjust'
     
+    # 指定特定股票列表的 CSV 文件路径
+    STOCK_CSV = Path(__file__).parent / 'backup_data/kechuang_stock.csv'
+    
     print("开始下载股票数据...日期范围：", START_DATE, "至", END_DATE)
-    download_stock_data(START_DATE, END_DATE, DATA_DIR)
+    download_stock_data(START_DATE, END_DATE, DATA_DIR, stock_csv_path=STOCK_CSV)
     # download_oneday_stock_data_((datetime.now()-timedelta(days=1)).strftime('%Y-%m-%d'))
     print("下载完成!")

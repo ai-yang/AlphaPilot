@@ -26,6 +26,35 @@ from alphaagent.oai.llm_conf import LLM_SETTINGS
 DEFAULT_QLIB_DOT_PATH = Path("./")
 
 
+def _strip_code_fence(text: str) -> str:
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*```$", "", text)
+    return text.strip()
+
+
+def _remove_trailing_commas(json_str: str) -> str:
+    prev = None
+    while prev != json_str:
+        prev = json_str
+        json_str = re.sub(r",(\s*[}\]])", r"\1", json_str)
+    return json_str
+
+
+def extract_and_validate_llm_json(resp: str) -> str:
+    """Extract JSON from LLM response and validate with tolerant parsing."""
+    resp = _strip_code_fence(resp.strip())
+    json_start = resp.find("{")
+    json_end = resp.rfind("}") + 1
+    if json_start == -1 or json_end <= json_start:
+        raise json.JSONDecodeError("No JSON object found in LLM response", resp, 0)
+    json_str = resp[json_start:json_end]
+    json_str = _remove_trailing_commas(json_str)
+    json.loads(json_str)
+    return json_str
+
+
 def md5_hash(input_string: str) -> str:
     hash_md5 = hashlib.md5(usedforsecurity=False)
     input_bytes = input_string.encode("utf-8")
@@ -784,11 +813,7 @@ class APIBackend:
                         tag="llm_messages",
                     )
             if json_mode or reasoning_flag:
-                # 提取JSON部分
-                json_start = resp.find('{')
-                json_end = resp.rfind('}') + 1
-                resp = resp[json_start:json_end]
-                json.loads(resp)
+                resp = extract_and_validate_llm_json(resp)
         if self.dump_chat_cache:
             self.cache.chat_set(input_content_json, resp)
         return resp, finish_reason

@@ -63,8 +63,8 @@ This repository follows the implementation of [RD-Agent](https://github.com/micr
 
   # Convert csv to Qlib format. Check correct paths before runing. 
   python scripts/dump_bin.py dump_all ... \
-  --include_fields open,high,low,close,preclose,volume,amount,turn,factor \
-  --csv_path  ~/.qlib/qlib_data/cn_data/raw_data_now \
+  --include_fields open,high,low,close,preclose,volume,amount,turn,factor,peTTM,pbMRQ,psTTM,pcfNcfTTM \
+  --data_path  ~/.qlib/qlib_data/cn_data/raw_data_now \
   --qlib_dir ~/.qlib/qlib_data/cn_data \
   --date_field_name date \
   --symbol_field_name code

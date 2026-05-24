@@ -37,12 +37,26 @@ def ui(port=19899, log_dir="./log", debug=False):
         subprocess.run(cmds)
 
 
+def backtest_ui(port=19900, workspace_root=None):
+    """
+    Visualize daily trades, holdings, and return curves from backtest workspaces.
+    """
+    with rpath("alphaagent.app.backtest_viewer", "app.py") as app_path:
+        cmds = ["streamlit", "run", str(app_path), f"--server.port={port}"]
+        if workspace_root:
+            import os
+
+            os.environ["ALPHAAGENT_BACKTEST_ROOT"] = workspace_root
+        subprocess.run(cmds)
+
+
 def app():
     fire.Fire(
         {
             "mine": mine,
             "backtest": backtest,
             "ui": ui,
+            "backtest_ui": backtest_ui,
             "health_check": health_check,
             "collect_info": collect_info,
         }
