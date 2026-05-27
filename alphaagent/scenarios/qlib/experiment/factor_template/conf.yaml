@@ -9,7 +9,7 @@ qlib_init:
     provider_uri: "~/.qlib/qlib_data/cn_data" # 二进制数据存储的根路径
     region: cn                                # 市场区域（cn 代表中国 A 股）
 
-market: &market all   # 股票池
+market: &market main_stock_2026_4_27   # 股票池
 benchmark: &benchmark SH000905 # 回测基准指数（SH000905 为中证500指数）
 
 data_handler_config: &data_handler_config
