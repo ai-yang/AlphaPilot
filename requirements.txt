@@ -28,6 +28,10 @@ azure-ai-formrecognizer
 # factor implementations
 tables
 
+# market data & backtest
+pyqlib
+baostock
+
 # CI Fix Tool
 tree-sitter-python
 tree-sitter

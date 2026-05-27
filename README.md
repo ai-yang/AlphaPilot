@@ -1,4 +1,4 @@
-# money_is_all_you_need
+# Money is All Your Need
 
 基于 [AlphaAgent](https://github.com/RndmVariableQ/AlphaAgent)（KDD 2025）的本地化 fork，面向 A 股因子挖掘与 Qlib 回测。本仓库在保留原项目核心流程（假设生成 → 因子构造 → 回测评估）的基础上，增加了 API 兼容、回测可视化等改动，便于在本地环境稳定运行。
 
@@ -34,25 +34,21 @@ AlphaAgent 通过三个 Agent 协作完成因子挖掘：
 
 CLI 入口：`alphaagent backtest_ui`（见下方使用流程）。原版日志界面仍使用 `alphaagent ui`。
 
-### 3. 数据下载脚本（`prepare_cn_data.py`）
+### 3. 数据准备命令（`alphaagent prepare_data`）
 
-- 通过 baostock 下载 A 股日线数据
-- 支持从 CSV 指定股票列表（默认读取 `backup_data/kechuang_stock.csv`）
-- 数据输出目录：`~/.qlib/qlib_data/cn_data/raw_data_back_adjust`
+- 内置原 qlib `dump_bin.py`、`future_calendar_collector.py`（无需 clone qlib 仓库）
+- 通过 baostock 下载行情：支持**直接下载前/后复权**（`--adjust_mode forward|backward`），或下载除权日线 + 复权因子后用 `apply_adjust` 本地合成，再 `convert` 为 Qlib 与 `daily_pv.h5`
+- 默认股票列表：`backup_data/main_stock_2026_4_27.csv`
 
 ### 4. 回测与因子数据配置
 
 - `alphaagent/scenarios/qlib/experiment/factor_template/conf.yaml`：基线回测（仅内置价量特征）
 - `alphaagent/scenarios/qlib/experiment/factor_template/conf_cn_combined_kdd_ver.yaml`：合并 LLM 新因子后的回测
-- `alphaagent/scenarios/qlib/experiment/factor_data_template/generate.py`：从 Qlib 导出 `daily_pv.h5` 供因子代码使用
+- `alphaagent prepare_data h5`：从 Qlib 导出 `daily_pv.h5` 供因子代码使用
 
 可按需修改股票池（`market` / `instruments`）、训练/验证/测试区间、持仓数量等。
 
-### 5. 辅助数据目录（`backup_data/`）
-
-存放个人股票列表 CSV、架构图等，**不参与**程序自动加载，仅作备份与参考。
-
-### 6. 运行注意事项
+### 5. 运行注意事项
 
 - 请在 **`AlphaAgent` 项目根目录** 下执行命令，确保 `.env` 能被正确加载
 - `.env` 已加入 `.gitignore`，勿将 API Key 提交到仓库
@@ -75,53 +71,164 @@ cd AlphaAgent
 pip install -e .
 ```
 
-### 3. 安装 Qlib
-
-Qlib 以 **Python 包** 形式安装即可，日常运行不依赖 qlib 源码目录：
+建议按 `requirements.txt` 安装依赖，避免 numpy / pandas 版本被意外升级：
 
 ```bash
-git clone https://github.com/microsoft/qlib.git
-cd qlib
-pip install .
-cd ..
+pip install -r requirements.txt
 ```
+
+### 3. macOS 额外依赖（LightGBM 回测）
+
+在 **macOS** 上跑 `alphaagent mine` 时，Qlib 回测默认使用 **LightGBM**（`LGBModel`）。除 conda 环境内的 Python 包外，还需要本机通过 **Homebrew** 安装 OpenMP 运行时；`brew` 装的是**系统级**库（如 `/opt/homebrew/opt/libomp`），**不会**装进 `alphaagent` 虚拟环境，运行时由 LightGBM 动态加载。
+
+**1）安装 libomp（仅需执行一次）**
+
+```bash
+brew install libomp
+```
+
+**2）确认 Python 依赖版本**
+
+本仓库锁定 `numpy==1.23.5`、`pandas==1.5.3`。若曾执行过 `pip install --upgrade lightgbm` 等命令，可能把 numpy 升到 2.x，导致：
+
+```text
+ValueError: numpy.dtype size changed, may indicate binary incompatibility
+```
+
+请重新对齐版本（在 `conda activate alphaagent` 后）：
+
+```bash
+pip install "numpy==1.23.5" "pandas==1.5.3" --force-reinstall
+```
+
+重装 LightGBM 时尽量不要连带升级 numpy，可：
+
+```bash
+pip install lightgbm --no-deps
+pip install "numpy==1.23.5" "pandas==1.5.3"
+```
+
+**3）验证是否可用**
+
+```bash
+conda activate alphaagent
+python -c "import lightgbm as lgb; print('lightgbm', lgb.__version__)"
+```
+
+若仍报 `dlopen` / 找不到 `libomp`，可确认 Homebrew 路径后重装 lightgbm：
+
+```bash
+brew --prefix libomp
+pip install lightgbm --force-reinstall --no-deps
+pip install "numpy==1.23.5" "pandas==1.5.3"
+```
+
+Apple Silicon 上 `brew --prefix libomp` 一般为 `/opt/homebrew/opt/libomp`；Intel Mac 多为 `/usr/local/opt/libomp`。
 
 ### 4. 准备行情数据
 
-**步骤 A：下载 CSV（baostock）**
+在 **AlphaAgent 根目录** 下准备数据有两种常用方式（二选一即可）。
+
+#### 方式 A：直接下载已复权数据（更简单）
+
+`download` 的 `--adjust_mode` 设为 `forward`（前复权）或 `backward`（后复权）时，由 **baostock 直接返回复权后的 OHLC**，写入对应目录，**无需** `apply_adjust`，也**不会**下载复权因子。
 
 ```bash
 cd AlphaAgent
-python prepare_cn_data.py
+
+# 前复权（写入 ~/.qlib/qlib_data/cn_data/raw_data_forward_adjust）
+alphaagent prepare_data download \
+  --stock_csv backup_data/main_stock_2026_4_27.csv \
+  --adjust_mode forward
+
+# 或后复权（写入 raw_data_back_adjust）
+# alphaagent prepare_data download \
+#   --stock_csv backup_data/main_stock_2026_4_27.csv \
+#   --adjust_mode backward
+
+# 转 Qlib + 日历 + h5（adjust_mode 与下载时一致）
+alphaagent prepare_data convert \
+  --stock_csv backup_data/main_stock_2026_4_27.csv \
+  --adjust_mode forward \
+  --market main_stock_2026_4_27
 ```
 
-可在 `prepare_cn_data.py` 末尾修改 `STOCK_CSV`、`START_DATE`、`END_DATE`、`DATA_DIR`。
+同样支持增量：再次执行 `download` 只会补最新交易日。中文别名：`前复权`、`后复权`。
 
-**步骤 B：转换为 Qlib 二进制格式**
+#### 方式 B：除权 + 本地复权（默认，便于核对因子）
+
+先下除权价与复权因子，再在本地合成前/后复权 CSV，适合需要自行核对除权因子、或希望与本地 `apply_adjust` 逻辑一致时使用。
 
 ```bash
-cd qlib
-python scripts/dump_bin.py dump_all \
-  --include_fields open,high,low,close,preclose,volume,amount,turn,factor \
-  --data_path ~/.qlib/qlib_data/cn_data/raw_data_back_adjust \
-  --qlib_dir ~/.qlib/qlib_data/cn_data \
-  --date_field_name date \
-  --symbol_field_name code
+cd AlphaAgent
 
-python scripts/data_collector/future_calendar_collector.py \
-  --qlib_dir ~/.qlib/qlib_data/cn_data/ --region cn
+# 1) 仅下载：除权行情（增量）+ 复权因子（每次更新行情后全量覆盖）
+alphaagent prepare_data download --stock_csv backup_data/main_stock_2026_4_27.csv --adjust_mode none
+
+# 2) 合成为前复权或后复权 CSV（供训练 / convert）
+alphaagent prepare_data apply_adjust --adjust_mode backward
+# alphaagent prepare_data apply_adjust --adjust_mode forward
+
+# 若早期复权价仍等于除权价，先刷新全历史复权因子（自 1990 年起）
+alphaagent prepare_data refresh_factors --stock_csv backup_data/main_stock_2026_4_27.csv
+
+# 3) 转 Qlib + 日历 + h5（data_path / adjust_mode 与上一步复权类型一致）
+alphaagent prepare_data convert \
+  --stock_csv backup_data/main_stock_2026_4_27.csv \
+  --adjust_mode backward \
+  --market main_stock_2026_4_27
 ```
 
-如需指数成分股文件，可额外运行 `cn_index/collector.py`；若使用自定义股票池，在 `~/.qlib/qlib_data/cn_data/instruments/` 下维护对应的 `.txt` 文件，并在 `conf.yaml` 中设置 `market`。
-
-**步骤 C：生成因子用 h5（首次运行 mine 时也可能自动生成）**
+一键全流程（方式 B：下载除权 → 本地复权 → convert）：
 
 ```bash
-cd alphaagent/scenarios/qlib/experiment/factor_data_template
-python generate.py
+alphaagent prepare_data pipeline \
+  --stock_csv backup_data/main_stock_2026_4_27.csv \
+  --target_mode forward
 ```
 
-修改股票池或字段后，需删除 `daily_pv_all.h5`、`daily_pv_debug.h5`，并清理 `git_ignore_folder/`、`pickle_cache/` 缓存后重新生成。
+**指定股票列表**
+
+```bash
+alphaagent prepare_data download --stock_csv my_stocks.csv --code_column ts_code
+alphaagent prepare_data download --stock_csv watchlist.txt --market watchlist
+alphaagent prepare_data download --all_market True
+```
+
+`--adjust_mode` / `--target_mode` 支持：`none`（除权/不复权）、`forward`（前复权）、`backward`（后复权），以及中文 `除权`、`前复权`、`后复权`。
+
+支持的代码格式：`300001.SZ`、`sz.300001`、`SH600000`、纯 6 位数字。
+
+下载后会写入 `instruments/{market}.txt`，**请在** `conf.yaml` **里把** `market` **改成同名**。
+
+常用子命令：
+
+```bash
+# 直接前复权（跳过 apply_adjust）
+alphaagent prepare_data download --stock_csv my_stocks.csv --adjust_mode forward
+alphaagent prepare_data convert --stock_csv my_stocks.csv --adjust_mode forward
+
+# 除权 + 本地复权
+alphaagent prepare_data download --stock_csv my_stocks.csv --adjust_mode none
+alphaagent prepare_data apply_adjust --adjust_mode forward
+alphaagent prepare_data convert --stock_csv my_stocks.csv --adjust_mode forward
+```
+
+默认路径：
+
+| 参数 | 默认值 |
+|------|--------|
+| `--stock_csv` | `backup_data/main_stock_2026_4_27.csv` |
+| `--market` | 与 `stock_csv` 文件名相同 |
+| `download` 默认 `--adjust_mode` | `none`（除权）；设为 `forward` / `backward` 则直接下载已复权 CSV |
+| CSV 除权 | `~/.qlib/qlib_data/cn_data/raw_data_no_adjust` |
+| CSV 前复权 / 后复权 | `raw_data_forward_adjust` / `raw_data_back_adjust`（可直接 `download` 写入，或由 `apply_adjust` 生成） |
+| 复权因子 | `~/.qlib/qlib_data/cn_data/adjust_factors`（仅 `adjust_mode=none` 时下载） |
+| Qlib 数据 | `~/.qlib/qlib_data/cn_data` |
+
+如需指数成分股文件，仍可在 qlib 源码中运行 `cn_index/collector.py`（可选）；若使用自定义股票池，在 `~/.qlib/qlib_data/cn_data/instruments/` 下维护 `.txt`，并在 `conf.yaml` 中设置 `market`。
+
+修改股票池或字段后，请按下方 [清理缓存](#5-清理缓存) 删除旧 h5 并重新运行 `alphaagent prepare_data h5`。
 
 ---
 
@@ -216,22 +323,78 @@ alphaagent ui --port 19899 --log_dir log/ --debug
 alphaagent backtest_ui --port 19900
 ```
 
-浏览器打开 `http://localhost:19900`，在界面中选择 `git_ignore_folder/RD-Agent_workspace` 下含 `ret.pkl` 的工作区目录。
+浏览器打开 `http://localhost:19900`，在界面中选择 `git_ignore_folder/RD-Agent_workspace` 下含 `ret.pkl` 的工作区目录。下拉列表会尽量显示 **`log/` 里对应的会话文件夹名**（如 `run02_best`）：默认按 **workspace 与 log 目录的创建时间一一对应**（`run01` → `run02_best` → `run03_…` → `run04_…`）；同一 log 下多次回测会显示为 `run04_mainboard_bad (05-25 16:24)` 等。若仍不对，可在 `log/backtest_workspace_labels.json` 里手动指定（见下）。
 
-指定工作区根目录：
+手动指定 workspace 与 log 标题（可选）：
 
-```bash
-alphaagent backtest_ui --workspace_root /path/to/git_ignore_folder/RD-Agent_workspace
+```json
+{
+  "ecd2cf928a9243ee98d7649c97bb14d5": "run02_best",
+  "f1c4e8f317f6431d8d7317f1a81decab": "run04_mainboard_bad"
+}
 ```
 
-### 4. 修改回测参数后清缓存
+说明：只有仍含 `ret.pkl` 的 workspace 会出现在列表中；`run01`/`run02` 若已清理旧 workspace，需重新跑完回测或用手动映射文件关联。
+
+指定工作区根目录与 log 目录：
 
 ```bash
+alphaagent backtest_ui --workspace_root /path/to/git_ignore_folder/RD-Agent_workspace --log_dir log/
+```
+
+### 5. 清理缓存
+
+在 **AlphaAgent 项目根目录** 下执行。修改股票池、`conf.yaml` 回测区间、`generate.py` 字段，或希望因子/回测从头跑时，建议先清缓存。
+
+#### 缓存目录说明
+
+| 路径 | 内容 | 何时需要清理 |
+|------|------|----------------|
+| `pickle_cache/` | 因子计算、Qlib 回测等步骤的 pickle 缓存 | 修改回测参数、因子逻辑，或结果异常需重跑 |
+| `git_ignore_folder/` | 工作区、回测产物、`daily_pv.h5` 副本等 | 更换股票池、重跑 `mine` / `backtest` |
+| `alphaagent/scenarios/qlib/experiment/factor_data_template/daily_pv_*.h5` | 从 Qlib 导出的价量 h5 源文件 | 修改 `market`、股票池或 `generate.py` |
+| `prompt_cache.db`（可选） | LLM 对话/Embedding 本地缓存（`.env` 开启缓存时） | 更换模型或希望 LLM 输出不复用旧缓存 |
+
+#### 常用命令
+
+**仅清运行缓存**（改 `conf.yaml` 持仓数、训练区间等，股票池未变）：
+
+```bash
+cd /path/to/AlphaAgent
+
 rm -rf ./pickle_cache/*
 rm -rf ./git_ignore_folder/*
 ```
 
-若更改股票池或 `generate.py`，还需删除 `factor_data_template/daily_pv_*.h5` 后重新运行 `generate.py`。
+**清运行缓存 + 价量 h5**（改股票池、`market` 或 `generate.py` 后必做）：
+
+```bash
+cd /path/to/AlphaAgent
+
+rm -rf ./pickle_cache/*
+rm -rf ./git_ignore_folder/*
+rm -f alphaagent/scenarios/qlib/experiment/factor_data_template/daily_pv_all.h5
+rm -f alphaagent/scenarios/qlib/experiment/factor_data_template/daily_pv_debug.h5
+
+# 重新生成 h5（或在下次 alphaagent mine 时自动生成）
+alphaagent prepare_data h5
+```
+
+**一键全量清理**（运行缓存 + h5 + 可选 LLM 缓存）：
+
+```bash
+cd /path/to/AlphaAgent
+
+rm -rf ./pickle_cache/*
+rm -rf ./git_ignore_folder/*
+rm -f alphaagent/scenarios/qlib/experiment/factor_data_template/daily_pv_all.h5
+rm -f alphaagent/scenarios/qlib/experiment/factor_data_template/daily_pv_debug.h5
+rm -f ./prompt_cache.db   # 未启用 LLM 缓存时可省略
+
+alphaagent prepare_data h5
+```
+
+清理完成后重新执行 `alphaagent mine` 或 `alphaagent backtest`。
 
 ---
 
@@ -242,8 +405,6 @@ AlphaAgent/
 ├── alphaagent/              # 主程序（Agent、回测、因子代码生成）
 │   ├── log/ui/              # 运行日志可视化（原版 alphaagent ui）
 │   └── app/backtest_viewer/ # 回测结果可视化（本仓库新增 backtest_ui）
-├── backup_data/             # 股票列表等辅助文件
-├── prepare_cn_data.py       # baostock 数据下载
 ├── .env.example             # 环境变量模板
 └── git_ignore_folder/       # 运行产物（已 gitignore）
 

@@ -1,0 +1,205 @@
+@startuml AlphaAgent_Architecture
+skinparam backgroundColor #FAFAFA
+skinparam defaultFontName "Microsoft YaHei"
+skinparam packageBorderColor #4A90D9
+skinparam packageBackgroundColor #F0F5FF
+skinparam rectangleBorderColor #2D6EB5
+skinparam rectangleBackgroundColor #E8F0FE
+skinparam noteBorderColor #888888
+skinparam noteBackgroundColor #FFFDE7
+skinparam arrowColor #333333
+
+title AlphaAgent \nLLM 驱动的 Alpha 因子挖掘框架 整体架构图
+
+' ==================== 用户入口层 ====================
+package "用户入口层 CLI" #E3F2FD {
+    rectangle "alphaagent CLI\n(app/cli.py)" as CLI #E3F2FD
+    rectangle "mine 命令\n因子挖掘" as MINE #BBDEFB
+    rectangle "backtest 命令\n因子回测" as BACKTEST #BBDEFB
+    rectangle "ui 命令\n日志可视化 Streamlit" as UI #BBDEFB
+
+    CLI --> MINE
+    CLI --> BACKTEST
+    CLI --> UI
+}
+
+' ==================== 工作流引擎层 ====================
+package "工作流引擎层 Workflow" #E8F5E9 {
+    rectangle "LoopBase\n(utils/workflow.py)\n循环控制 会话持久化" as LOOPBASE #C8E6C9
+    rectangle "AlphaAgentLoop\n(components/workflow/\nalphaagent_loop.py)\n主挖掘循环" as MAINLOOP #A5D6A7
+    rectangle "BacktestLoop\n回测专用循环" as BTLOOP #A5D6A7
+
+    LOOPBASE <|-- MAINLOOP
+    LOOPBASE <|-- BTLOOP
+}
+
+MINE --> MAINLOOP : 启动挖掘
+BACKTEST --> BTLOOP : 启动回测
+
+' ==================== 核心流水线 ====================
+package "核心流水线 迭代循环" #FFF3E0 {
+
+    rectangle "Step 1: factor_propose\n假设提出" as S1 #FFE0B2
+    rectangle "Step 2: factor_construct\n因子设计" as S2 #FFCC80
+    rectangle "Step 3: factor_calculate\n因子计算 Coder" as S3 #FFB74D
+    rectangle "Step 4: factor_backtest\n因子回测 Runner" as S4 #FFA726
+    rectangle "Step 5: feedback\n反馈总结" as S5 #FF9800
+
+    S1 -right-> S2 : Hypothesis
+    S2 -right-> S3 : FactorExperiment
+    S3 -right-> S4 : coded Experiment
+    S4 -right-> S5 : backtest results
+    S5 -down-> S1 : Trace 下一轮迭代
+}
+
+MAINLOOP --> S1 : run()
+
+' ==================== 核心抽象层 ====================
+package "核心抽象层 core" #F3E5F5 {
+
+    rectangle "Hypothesis 假设对象\n...\nhypothesis: str\nconcise_observation\nconcise_justification\nconcise_knowledge" as Hypothesis #E1BEE7
+
+    rectangle "HypothesisGen ABC\n假设生成器\n...\ngen(trace) : Hypothesis" as HypothesisGen #CE93D8
+
+    rectangle "Hypothesis2Experiment ABC\n假设到实验转换器\n...\nconvert(hypo, trace) : Experiment" as H2E #CE93D8
+
+    rectangle "Developer ABC\n开发者 Coder Runner\n...\ndevelop(exp) : Experiment" as Developer #CE93D8
+
+    rectangle "HypothesisExperiment2Feedback ABC\n反馈生成器\n...\ngenerate_feedback(exp, hypo, trace)\n: HypothesisFeedback" as HE2F #CE93D8
+
+    rectangle "Experiment 实验对象\n...\nsub_tasks: List[Task]\nsub_workspace_list\nbased_experiments\nresult" as Experiment #E1BEE7
+
+    rectangle "Trace 历史记录\n...\nscen: Scenario\nhist: List[Hypo Exp Feedback]" as Trace #E1BEE7
+
+    rectangle "Scenario ABC 场景描述\n...\nbackground\nsource_data\ninterface" as Scenario #E1BEE7
+}
+
+' ==================== Qlib 场景实现层 ====================
+package "Qlib 场景实现层" #E0F7FA {
+
+    package "假设生成 proposal" #B2EBF2 {
+        rectangle "AlphaAgentHypothesisGen\nLLM 生成交易假设" as AAHG #80DEEA
+        rectangle "EmptyHypothesisGen\n回测空假设" as EHG #80DEEA
+    }
+
+    package "因子设计 proposal" #B2EBF2 {
+        rectangle "AlphaAgentHypothesis\n2FactorExpression\nLLM 设计因子表达式\n FactorRegulator 去重" as AAH2E #80DEEA
+    }
+
+    package "因子计算 developer" #B2EBF2 {
+        rectangle "QlibFactorParser\nFactorParser\n表达式解析到因子值" as PARSER #80DEEA
+        rectangle "QlibFactorCoSTEER\nCoSTEER 代码进化" as COSTEER #80DEEA
+    }
+
+    package "回测运行 developer" #B2EBF2 {
+        rectangle "QlibFactorRunner\n合并因子后执行 Qlib 回测\n获取策略指标" as RUNNER #80DEEA
+    }
+
+    package "反馈评估 developer" #B2EBF2 {
+        rectangle "AlphaAgent Feedback\nLLM 评估回测结果\n决策是否保留" as FEEDBACK #80DEEA
+    }
+
+    package "实验模板 experiment" #B2EBF2 {
+        rectangle "QlibFactorExperiment\nQlibFBWorkspace" as QEXP #80DEEA
+        rectangle "conf.yaml\n基线配置" as CONFBASE #80DEEA
+        rectangle "conf_cn_combined_kdd_ver.yaml\n组合因子配置" as CONFCOMB #80DEEA
+    }
+}
+
+' ==================== 关键连接线 ====================
+S1 ..> AAHG : 调用
+S2 ..> AAH2E : 调用
+S3 ..> PARSER : 调用
+S4 ..> RUNNER : 调用
+S5 ..> FEEDBACK : 调用
+
+AAHG --|> HypothesisGen : implements
+AAH2E --|> H2E : implements
+PARSER --|> Developer : implements
+RUNNER --|> Developer : implements
+FEEDBACK --|> HE2F : implements
+
+RUNNER --> CONFBASE : 第1轮 无新因子
+RUNNER --> CONFCOMB : 第2轮以后 有新因子
+RUNNER --> QEXP : 管理实验工作区
+
+' ==================== 因子质量控制 ====================
+package "因子质量控制 regulator" #FCE4EC {
+    rectangle "FactorRegulator\n表达式解析验证\nAST 子树去重\n因子池管理" as REGULATOR #F8BBD0
+    rectangle "factor_ast.py\nAST 匹配 子树检测" as AST #F8BBD0
+    rectangle "expr_parser.py\n表达式解析器" as EXPRPARSER #F8BBD0
+
+    REGULATOR --> AST
+    REGULATOR --> EXPRPARSER
+}
+
+AAH2E --> REGULATOR : 验证因子表达式
+
+' ==================== LLM 服务层 ====================
+package "LLM 服务层 oai" #EFEBE9 {
+    rectangle "APIBackend\n(llm_utils.py)\nOpenAI Azure API 调用\n速率限制 重试" as LLM_API #D7CCC8
+    rectangle "LLM_SETTINGS\n(llm_conf.py)\n模型配置 Timeout" as LLM_CONF #D7CCC8
+
+    LLM_API --> LLM_CONF
+}
+
+AAHG --> LLM_API : LLM 生成假设
+AAH2E --> LLM_API : LLM 生成因子
+FEEDBACK --> LLM_API : LLM 评估结果
+
+' ==================== 数据层 ====================
+package "数据层" #ECEFF1 {
+    database "Qlib 二进制数据\ncn_data\nOHLCV 日频数据" as QLIB_DATA
+
+    rectangle "combined_factors_df.pkl\n新挖掘因子缓存\n运行时自动生成" as PKL #CFD8DC
+
+    rectangle "Prompts YAML\nprompts_alphaagent.yaml\nLLM Prompt 模板" as PROMPTS #CFD8DC
+}
+
+RUNNER ..> QLIB_DATA : 读取行情数据
+RUNNER ..> PKL : 写入读取因子数据
+AAHG ..> PROMPTS : 加载 Prompt
+AAH2E ..> PROMPTS : 加载 Prompt
+
+' ==================== Trace 反馈环 ====================
+Trace --> AAHG : 提供历史假设与反馈
+Trace --> AAH2E : 提供历史因子避免重复
+
+note right of MAINLOOP
+  迭代循环逻辑
+  每轮执行 5 个步骤:
+  propose, construct,
+  calculate, backtest, feedback
+  然后将结果存入 Trace 进入下一轮
+end note
+
+note bottom of REGULATOR
+  质量控制机制
+  1. 检查表达式可解析性
+  2. AST 子树匹配去重
+  3. 自由参数变量比例检查
+  4. 通过后加入因子池
+end note
+
+note right of RUNNER
+  回测流程
+  1. 收集各因子计算结果
+  2. 合并为 combined_factors_df.pkl
+  3. 根据轮次选择配置文件
+  4. 执行 qrun 回测
+  5. 返回 IC 年化收益 最大回撤
+end note
+
+legend right
+  |= 颜色 |= 层级 |
+  | <#E3F2FD> | 用户入口层 |
+  | <#E8F5E9> | 工作流引擎 |
+  | <#FFF3E0> | 核心流水线 |
+  | <#F3E5F5> | 核心抽象层 |
+  | <#E0F7FA> | Qlib 场景实现 |
+  | <#FCE4EC> | 因子质量控制 |
+  | <#EFEBE9> | LLM 服务 |
+  | <#ECEFF1> | 数据层 |
+endlegend
+
+@enduml

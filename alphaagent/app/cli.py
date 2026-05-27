@@ -16,6 +16,7 @@ import subprocess
 from importlib.resources import path as rpath
 
 import fire
+from alphaagent.app.data.prepare_data import PrepareDataCLI
 from alphaagent.app.qlib_rd_loop.factor_mining import main as mine
 from alphaagent.app.qlib_rd_loop.factor_backtest import main as backtest
 from alphaagent.app.utils.health_check import health_check
@@ -37,17 +38,31 @@ def ui(port=19899, log_dir="./log", debug=False):
         subprocess.run(cmds)
 
 
-def backtest_ui(port=19900, workspace_root=None):
+def backtest_ui(port=19900, workspace_root=None, log_dir="./log"):
     """
     Visualize daily trades, holdings, and return curves from backtest workspaces.
     """
     with rpath("alphaagent.app.backtest_viewer", "app.py") as app_path:
         cmds = ["streamlit", "run", str(app_path), f"--server.port={port}"]
-        if workspace_root:
-            import os
+        import os
 
+        if workspace_root:
             os.environ["ALPHAAGENT_BACKTEST_ROOT"] = workspace_root
+        if log_dir:
+            os.environ["ALPHAAGENT_LOG_DIR"] = log_dir
         subprocess.run(cmds)
+
+
+def prepare_data():
+    """Prepare A-share data: download CSV, convert to Qlib, calendar, and h5."""
+    import sys
+
+    argv = sys.argv[1:]
+    if argv[:1] == ["prepare_data"]:
+        argv = argv[1:]
+    fire.Fire(PrepareDataCLI, command=argv)
+    # Inner Fire handled all subcommand args; stop outer Fire from re-parsing them.
+    raise SystemExit(0)
 
 
 def app():
@@ -55,6 +70,7 @@ def app():
         {
             "mine": mine,
             "backtest": backtest,
+            "prepare_data": prepare_data,
             "ui": ui,
             "backtest_ui": backtest_ui,
             "health_check": health_check,

@@ -2,7 +2,7 @@ qlib_init:
     provider_uri: "~/.qlib/qlib_data/cn_data" # 二进制数据存储的根路径
     region: cn                                # 市场区域（cn 代表中国 A 股）
 
-market: &market csi500       # 股票池（用 &market 定义锚点，csi500 为中证500）
+market: &market all   # 股票池
 benchmark: &benchmark SH000905 # 回测基准指数（SH000905 为中证500指数）
 
 data_handler_config: &data_handler_config
@@ -55,7 +55,7 @@ port_analysis_config: &port_analysis_config
         kwargs:
             signal: <PRED> # 使用模型预测评分作为选股信号
             topk: 15       # 每日持仓股票数量
-            n_drop: 2      # 如果持仓股排名落后超过则卖出调仓
+            n_drop: 5      # 如果持仓股排名落后超过则卖出调仓
             hold_thresh: 1 # 最小持仓天数
             risk_degree: 0.90 #最多用90%的资金
     backtest:

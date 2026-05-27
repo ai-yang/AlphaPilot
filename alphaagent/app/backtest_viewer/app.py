@@ -10,9 +10,12 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 from alphaagent.app.backtest_viewer.loader import (
+    DEFAULT_LOG_ROOT,
     DEFAULT_WORKSPACE_ROOT,
     BacktestArtifacts,
     build_summary,
+    build_workspace_log_titles,
+    format_workspace_label,
     list_workspaces,
     load_backtest,
 )
@@ -153,30 +156,43 @@ def _format_holding_table(df: pd.DataFrame) -> pd.DataFrame:
     return out.rename(columns=rename)
 
 
-def _workspace_label(path: Path) -> str:
-    mtime = pd.Timestamp(path.stat().st_mtime, unit="s").strftime("%Y-%m-%d %H:%M")
-    return f"{path.name[:12]}…  ({mtime})"
+@st.cache_data(show_spinner="正在匹配 log 会话标题…")
+def _cached_log_titles_v3(log_root: str, workspace_root: str) -> dict[str, str]:
+    return build_workspace_log_titles(Path(log_root), Path(workspace_root))
 
 
 def main() -> None:
-    st.title("📊 AlphaAgent 回测详情")
-    st.caption("读取 workspace 中的 ret.pkl / positions / indicators，展示每日交易、持仓与收益对比。")
-
     root = Path(st.sidebar.text_input("Workspace 根目录", value=str(DEFAULT_WORKSPACE_ROOT)))
+    log_root = Path(st.sidebar.text_input("Log 目录（用于显示会话标题）", value=str(DEFAULT_LOG_ROOT)))
+    log_titles = _cached_log_titles_v3(str(log_root.resolve()), str(root.resolve()))
+
     workspaces = list_workspaces(root)
 
     if not workspaces:
         st.warning(f"在 `{root}` 下未找到含 ret.pkl 的回测 workspace。请先成功运行 `alphaagent mine` 或 `alphaagent backtest`。")
         st.stop()
 
-    labels = [_workspace_label(w) for w in workspaces]
+    labels = [format_workspace_label(w, log_titles, workspaces) for w in workspaces]
     idx = st.sidebar.selectbox("主回测 workspace", range(len(workspaces)), format_func=lambda i: labels[i])
     workspace = workspaces[idx]
+    main_log_title = log_titles.get(workspace.name)
 
     compare_idx = st.sidebar.selectbox(
         "对比 workspace（可选 baseline）",
         options=[None, *range(len(workspaces))],
         format_func=lambda i: "不对比" if i is None else labels[i],
+    )
+
+    if main_log_title:
+        st.sidebar.markdown(f"**对应 log 会话：** `{main_log_title}`")
+    else:
+        st.sidebar.caption("未在 log 目录中匹配到会话标题，显示为 workspace 目录名。")
+
+    title_suffix = f" — {main_log_title}" if main_log_title else ""
+    st.title(f"📊 AlphaAgent 回测详情{title_suffix}")
+    st.caption(
+        f"读取 workspace `{workspace.name}` 中的 ret.pkl / positions / indicators，"
+        "展示每日交易、持仓与收益对比。"
     )
 
     try:
