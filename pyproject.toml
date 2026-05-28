@@ -7,7 +7,7 @@ requires = [
 
 [project]
 authors = [
-  {email = "tangzy27@mail2.sysu.edu.cn", name = "Ziyi Tang"},
+  {email = "wangrlink@qq.com", name = "Rui Wang"},
 ]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -35,8 +35,8 @@ requires-python = ">=3.10"
 alphaagent = "alphaagent.app.cli:app"
 
 [project.urls]
-homepage = "https://github.com/microsoft/RD-Agent/"
-issue = "https://github.com/microsoft/RD-Agent/issues"
+homepage = "https://github.com/ai-yang/money_is_all_you_need"
+issue = "https://github.com/ai-yang/money_is_all_you_need/issues"
 
 [tool.setuptools]
 packages = ["alphaagent"]
