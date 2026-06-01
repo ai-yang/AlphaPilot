@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from alphapilot.systems.backtest.base import BaseBacktestSystem
     from alphapilot.systems.data.base import BaseDataSystem
     from alphapilot.systems.factor.base import BaseFactorSystem
-    from alphapilot.systems.model.base import BaseModelSystem
+    from alphapilot.systems.strategy.base import BaseStrategySystem
 
 
 class Context:
@@ -34,8 +34,8 @@ class Context:
     def factor(self) -> "BaseFactorSystem":
         return self.engine.get_system("factor")
 
-    def model(self) -> "BaseModelSystem":
-        return self.engine.get_system("model")
+    def strategy(self) -> "BaseStrategySystem":
+        return self.engine.get_system("strategy")
 
     def backtest(self) -> "BaseBacktestSystem":
         return self.engine.get_system("backtest")

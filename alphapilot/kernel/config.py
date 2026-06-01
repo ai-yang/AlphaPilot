@@ -26,6 +26,15 @@ def _env_str(name: str, default: str) -> str:
     return os.getenv(name, default)
 
 
+def _env_str_legacy(name: str, legacy_name: str, default: str) -> str:
+    return os.getenv(name) or os.getenv(legacy_name, default)
+
+
+def _env_path_legacy(name: str, legacy_name: str, default: Path) -> Path:
+    value = os.getenv(name) or os.getenv(legacy_name)
+    return Path(value).expanduser() if value else default
+
+
 @dataclass
 class DataConfig:
     """Locations for raw / converted / derived market data."""
@@ -83,16 +92,21 @@ class FactorConfig:
 
 
 @dataclass
-class ModelConfig:
-    """Model param database location + selection."""
+class StrategyConfig:
+    """Strategy param database location + selection."""
 
     database_backend: str = field(
-        default_factory=lambda: _env_str("ALPHAPILOT_MODEL_DB_BACKEND", "file")
+        default_factory=lambda: _env_str_legacy(
+            "ALPHAPILOT_STRATEGY_DB_BACKEND",
+            "ALPHAPILOT_MODEL_DB_BACKEND",
+            "file",
+        )
     )
     param_dir: Path = field(
-        default_factory=lambda: _env_path(
+        default_factory=lambda: _env_path_legacy(
+            "ALPHAPILOT_STRATEGY_PARAM_DIR",
             "ALPHAPILOT_MODEL_PARAM_DIR",
-            Path.cwd() / "git_ignore_folder" / "model_zoo",
+            Path.cwd() / "git_ignore_folder" / "strategy_zoo",
         )
     )
 
@@ -110,7 +124,7 @@ class AppConfig:
 
     data: DataConfig = field(default_factory=DataConfig)
     factor: FactorConfig = field(default_factory=FactorConfig)
-    model: ModelConfig = field(default_factory=ModelConfig)
+    strategy: StrategyConfig = field(default_factory=StrategyConfig)
     backtest: BacktestConfig = field(default_factory=BacktestConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     log_dir: Path = field(
@@ -129,7 +143,7 @@ class AppConfig:
             f"  data.qlib_data_dir={self.data.qlib_data_dir}\n"
             f"  data.raw_data_dir={self.data.raw_data_dir}\n"
             f"  factor.zoo_dir={self.factor.zoo_dir}\n"
-            f"  model.param_dir={self.model.param_dir}\n"
+            f"  strategy.param_dir={self.strategy.param_dir}\n"
             f"  backtest.engine={self.backtest.engine} use_local={self.backtest.use_local}\n"
             f"  backtest.workspace_root={self.backtest.workspace_root}\n"
             f"  llm.provider={self.llm.provider}\n"

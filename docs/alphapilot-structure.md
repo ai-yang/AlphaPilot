@@ -44,7 +44,7 @@
 | **内核 kernel** | `alphapilot/kernel/` | `MainEngine` 持有配置与系统/模块；`Context` 是模块访问系统的唯一入口；`AppConfig` 集中路径配置；`registry` 负责内置注册 + 入口点发现 |
 | **数据管理系统** | `alphapilot/systems/data/` | 股票数据下载、复权、Qlib 转换、h5 生成与存储（`prepare_data` 实现；`app/data` 已移除） |
 | **因子管理系统** | `alphapilot/systems/factor/` | 导入因子、因子库（`FactorDatabase` 包装 `FactorRegulator`）、表达式 DSL |
-| **模型管理系统** | `alphapilot/systems/model/` | 导入模型、模型参数库（`ModelParamDatabase`）、训练（委托回测系统） |
+| **策略管理系统** | `alphapilot/systems/strategy/` | 导入策略、策略参数库（`StrategyParamDatabase`）、训练（委托回测系统） |
 | **交易回测系统** | `alphapilot/systems/backtest/` | 因子/模型回测（统一由 system 内部 qlib workspace 执行）、结果存取（`BacktestResultStore`） |
 | **模块 modules** | `alphapilot/modules/` | 可插拔特性；内置 `alpha_mining`（即原 `AlphaPilotLoop`）通过 `Context` 编排四大系统 |
 
@@ -72,7 +72,7 @@ engine.get_module("alpha_mining")        # 因子挖掘模块
 可将 `alphapilot` 理解为：
 
 - **内核层**：`kernel`（引擎、上下文、配置、注册/发现）
-- **系统层**：`systems/{data,factor,model,backtest}`（四大能力系统）
+- **系统层**：`systems/{data,factor,strategy,backtest}`（四大能力系统）
 - **模块层**：`modules`（可插拔特性，如 `alpha_mining`）
 - **框架层**：`core` + `components`
 - **业务场景**：`modules/alpha_mining/qlib`

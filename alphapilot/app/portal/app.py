@@ -209,50 +209,50 @@ def _render_factor_tab(engine: Any) -> None:
             st.error(t("export_failed", error=exc))
 
 
-def _render_model_tab(engine: Any) -> None:
-    st.subheader(t("model_subheader"))
-    model_system = engine.get_system("model")
-    db = model_system.param_database
+def _render_strategy_tab(engine: Any) -> None:
+    st.subheader(t("strategy_subheader"))
+    strategy_system = engine.get_system("strategy")
+    db = strategy_system.param_database
 
-    models = db.list_models()
-    st.write(t("stored_model_sets", count=len(models)))
-    if models:
-        selected = st.selectbox(t("select_model"), models)
+    strategies = db.list_strategies()
+    st.write(t("stored_strategy_sets", count=len(strategies)))
+    if strategies:
+        selected = st.selectbox(t("select_strategy"), strategies)
         params = db.load(selected)
         st.json(params or {})
     else:
         st.info(t("no_stored_params"))
 
     st.markdown(f"#### {t('save_export_heading')}")
-    model_name = st.text_input(t("model_name"), value="")
+    strategy_name = st.text_input(t("strategy_name"), value="")
     params_raw = st.text_area(t("params_json"), value="{}", height=140)
     c1, c2 = st.columns(2)
     if c1.button(t("save_params")):
         try:
-            db.save(model_name.strip(), json.loads(params_raw))
+            db.save(strategy_name.strip(), json.loads(params_raw))
             st.success(t("params_saved"))
         except Exception as exc:  # noqa: BLE001
             st.error(t("save_failed", error=exc))
-    export_model_name = st.text_input(t("export_model_name"), value=model_name)
-    export_model_path = st.text_input(t("export_file_path"), value="")
+    export_strategy_name = st.text_input(t("export_strategy_name"), value=strategy_name)
+    export_strategy_path = st.text_input(t("export_file_path"), value="")
     if c2.button(t("export_params")):
         try:
-            payload = db.load(export_model_name.strip())
+            payload = db.load(export_strategy_name.strip())
             if payload is None:
-                raise ValueError(t("model_params_not_found"))
-            out = Path(export_model_path.strip())
+                raise ValueError(t("strategy_params_not_found"))
+            out = Path(export_strategy_path.strip())
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-            st.success(t("params_exported", name=export_model_name, path=out))
+            st.success(t("params_exported", name=export_strategy_name, path=out))
         except Exception as exc:  # noqa: BLE001
             st.error(t("export_failed", error=exc))
 
     st.markdown(f"#### {t('import_pdf_heading')}")
     pdf_path = st.text_input(t("pdf_path"))
-    if st.button(t("import_model_pdf")):
+    if st.button(t("import_strategy_pdf")):
         try:
-            result = model_system.import_model(pdf_path.strip(), kind="pdf")
-            st.success(t("model_imported"))
+            result = strategy_system.import_strategy(pdf_path.strip(), kind="pdf")
+            st.success(t("strategy_imported"))
             st.write(result)
         except Exception as exc:  # noqa: BLE001
             st.error(t("import_failed", error=exc))
@@ -331,13 +331,13 @@ def main() -> None:
     _show_header(engine)
     _show_sidebar(engine)
 
-    tab_overview, tab_data, tab_data_viz, tab_factor, tab_model, tab_backtest, tab_module = st.tabs(
+    tab_overview, tab_data, tab_data_viz, tab_factor, tab_strategy, tab_backtest, tab_module = st.tabs(
         [
             t("tab_overview"),
             t("tab_data"),
             t("tab_data_viz"),
             t("tab_factor"),
-            t("tab_model"),
+            t("tab_strategy"),
             t("tab_backtest"),
             t("tab_modules"),
         ]
@@ -350,8 +350,8 @@ def main() -> None:
         _render_data_viz_tab()
     with tab_factor:
         _render_factor_tab(engine)
-    with tab_model:
-        _render_model_tab(engine)
+    with tab_strategy:
+        _render_strategy_tab(engine)
     with tab_backtest:
         _render_backtest_tab(engine)
     with tab_module:

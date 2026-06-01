@@ -393,7 +393,7 @@ alphapilot portal --port 19901
 ```
 
 浏览器打开 `http://localhost:19901`，可在一个页面中访问：
-- Data/Factor/Model/Backtest 四大系统能力
+- Data/Factor/Strategy/Backtest 四大系统能力
 - **股票 K 线** 标签页（内嵌 `data_viz`，无需单独开 `data_viz` 服务）
 - 模块动态列表（自动显示新插件/新包）
 - 模块命令调度（JSON 参数）
@@ -504,7 +504,7 @@ alphapilot prepare_data h5
 AlphaPilot/
 ├── alphapilot/                 # 主程序
 │   ├── kernel/                 # MainEngine / Context / 配置 / 插件发现
-│   ├── systems/                # 四大系统（data/factor/model/backtest）
+│   ├── systems/                # 四大系统（data/factor/strategy/backtest）
 │   │   └── data/               # 数据下载、复权、Qlib 转换、h5（prepare_data 实现）
 │   ├── adapters/               # LLM/数据源等外部接口适配层
 │   ├── modules/                # 功能模块（alpha_mining/platform + 第三方插件）

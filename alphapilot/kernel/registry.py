@@ -87,7 +87,7 @@ def _register_builtin_defaults() -> None:
     """
     register_system("data", "alphapilot.systems.data.service.QlibDataSystem")
     register_system("factor", "alphapilot.systems.factor.service.FactorSystem")
-    register_system("model", "alphapilot.systems.model.service.ModelSystem")
+    register_system("strategy", "alphapilot.systems.strategy.service.StrategySystem")
     register_system("backtest", "alphapilot.systems.backtest.service.QlibBacktestSystem")
     register_module(
         "alpha_mining",

@@ -4,7 +4,7 @@ Inspired by vnpy's ``MainEngine`` but service-oriented (not event-driven)
 since AlphaPilot is a batch research pipeline. The engine:
 
 * owns a single :class:`~alphapilot.kernel.config.AppConfig` + ``Context``;
-* registers the four systems (data / factor / model / backtest);
+* registers the four systems (data / factor / strategy / backtest);
 * loads built-in modules and discovers third-party ones via entry points;
 * lets modules reach systems exclusively through the ``Context``.
 """

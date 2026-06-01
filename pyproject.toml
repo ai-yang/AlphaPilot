@@ -40,7 +40,7 @@ alphapilot = "alphapilot.app.cli:app"
 [project.entry-points."alphapilot.systems"]
 data = "alphapilot.systems.data.service:QlibDataSystem"
 factor = "alphapilot.systems.factor.service:FactorSystem"
-model = "alphapilot.systems.model.service:ModelSystem"
+strategy = "alphapilot.systems.strategy.service:StrategySystem"
 backtest = "alphapilot.systems.backtest.service:QlibBacktestSystem"
 
 [project.entry-points."alphapilot.modules"]

@@ -1,30 +1,30 @@
-"""Default model management system.
+"""Default strategy management system.
 
 Wraps the existing model task loader and the qlib model runner, and adds
-a centralized model parameter database. Training is delegated to the
-backtest system so model and factor share one execution backend.
+a centralized strategy parameter database. Training is delegated to the
+backtest system so strategy and factor share one execution backend.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from alphapilot.systems.model.base import BaseModelSystem
-from alphapilot.systems.model.database import build_model_param_database
+from alphapilot.systems.strategy.base import BaseStrategySystem
+from alphapilot.systems.strategy.database import build_strategy_param_database
 
 if TYPE_CHECKING:
     from alphapilot.kernel.context import Context
 
 
-class ModelSystem(BaseModelSystem):
-    """Model import + param database + training."""
+class StrategySystem(BaseStrategySystem):
+    """Strategy import + param database + training."""
 
     def setup(self, context: "Context") -> None:
         self.context = context
-        cfg = context.config.model
-        self._param_db = build_model_param_database(cfg.database_backend, cfg.param_dir)
+        cfg = context.config.strategy
+        self._param_db = build_strategy_param_database(cfg.database_backend, cfg.param_dir)
 
-    def import_model(self, source: Any, *, kind: str = "pdf") -> Any:
+    def import_strategy(self, source: Any, *, kind: str = "pdf") -> Any:
         if kind == "pdf":
             from alphapilot.components.coder.model_coder.task_loader import (
                 ModelExperimentLoaderFromPDFfiles,
@@ -37,7 +37,7 @@ class ModelSystem(BaseModelSystem):
             )
 
             return ModelExperimentLoaderFromDict().load(source)
-        raise ValueError(f"Unsupported model import kind: {kind!r}")
+        raise ValueError(f"Unsupported strategy import kind: {kind!r}")
 
     def train(self, experiment: Any, *, use_local: bool | None = None) -> Any:
         from alphapilot.systems.backtest.types import ModelExperimentBacktestRequest
