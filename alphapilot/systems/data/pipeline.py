@@ -1,0 +1,127 @@
+"""Data-system owned orchestration helpers.
+
+This module centralizes data preparation entrypoints under
+``alphapilot.systems.data`` so ``QlibDataSystem`` stays thin.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Callable
+
+
+def convert_data(**options: Any) -> Any:
+    """Convert raw CSV to qlib binary via system-level PrepareDataCLI."""
+    from alphapilot.systems.data.prepare_data import PrepareDataCLI
+
+    return PrepareDataCLI().convert(**options)
+
+
+def build_h5_data(**options: Any) -> Any:
+    """Build ``daily_pv.h5`` via system-level generator implementation."""
+    from alphapilot.systems.data.generate_h5 import generate_daily_pv_h5
+
+    return generate_daily_pv_h5(**options)
+
+
+def run_pipeline(**options: Any) -> Any:
+    """Run download -> adjust -> convert data pipeline."""
+    from alphapilot.systems.data.prepare_data import PrepareDataCLI
+
+    return PrepareDataCLI().pipeline(**options)
+
+
+def load_universe(*, stock_csv: str | None = None, code_column: str | None = None) -> Any:
+    """Load stock universe from CSV."""
+    from alphapilot.systems.data.stock_list import load_stocks_from_file
+    from alphapilot.systems.data.prepare_cn import DEFAULT_STOCK_CSV
+
+    source = stock_csv or str(DEFAULT_STOCK_CSV)
+    return load_stocks_from_file(source, code_column=code_column)
+
+
+def dispatch_prepare_action(
+    *,
+    action: str,
+    download_handler: Callable[..., Any],
+    convert_handler: Callable[..., Any],
+    build_h5_handler: Callable[..., Any],
+    pipeline_handler: Callable[..., Any],
+    **options: Any,
+) -> Any:
+    """Legacy-compatible prepare_data action dispatcher owned by data system."""
+    action = action.strip()
+
+    start_date = options.pop("start_date", "2005-01-01")
+    end_date = options.pop("end_date", None)
+    stock_csv = options.pop("stock_csv", None)
+    adjust_mode = options.pop("adjust_mode", "backward")
+    market = options.pop("market", None)
+    qlib_dir = options.pop("qlib_dir", None)
+    output_dir = options.pop("output_dir", None)
+
+    if action == "pipeline":
+        kwargs: dict[str, Any] = {
+            "start_date": start_date,
+            "end_date": end_date,
+            "adjust_mode": adjust_mode,
+        }
+        kwargs.update(options)
+        if stock_csv:
+            kwargs["stock_csv"] = stock_csv
+        return pipeline_handler(**kwargs)
+
+    if action == "download":
+        kwargs = {
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+        kwargs.update(options)
+        if output_dir:
+            kwargs["output_dir"] = output_dir
+        return download_handler(**kwargs)
+
+    if action == "convert":
+        kwargs = {"adjust_mode": adjust_mode}
+        kwargs.update(options)
+        if stock_csv:
+            kwargs["stock_csv"] = stock_csv
+        if qlib_dir:
+            kwargs["qlib_dir"] = qlib_dir
+        return convert_handler(**kwargs)
+
+    if action == "build_h5":
+        kwargs: dict[str, Any] = {}
+        kwargs.update(options)
+        if qlib_dir:
+            kwargs["qlib_dir"] = qlib_dir
+        if output_dir:
+            kwargs["output_dir"] = output_dir
+        if market:
+            kwargs["market"] = market
+        return build_h5_handler(**kwargs)
+
+    if action in {"refresh_factors", "apply_adjust", "dump", "calendar", "h5"}:
+        from alphapilot.systems.data.prepare_data import PrepareDataCLI
+
+        cli = PrepareDataCLI()
+        if not hasattr(cli, action):
+            raise ValueError(f"Unsupported prepare_data action: {action!r}")
+
+        kwargs = dict(options)
+        if stock_csv:
+            kwargs["stock_csv"] = stock_csv
+        if market:
+            kwargs["market"] = market
+        if qlib_dir:
+            kwargs["qlib_dir"] = qlib_dir
+        if output_dir:
+            kwargs["output_dir"] = output_dir
+        if action in {"apply_adjust", "download", "convert", "pipeline"}:
+            kwargs["adjust_mode"] = adjust_mode
+        if action in {"download", "pipeline"}:
+            kwargs["start_date"] = start_date
+            if end_date:
+                kwargs["end_date"] = end_date
+        return getattr(cli, action)(**kwargs)
+
+    raise ValueError(f"Unsupported prepare_data action: {action!r}")

@@ -66,7 +66,7 @@ coverage.xml
 # Django stuff:
 # *.log
 /log/
-alphaagent/scenarios/qlib/experiment/factor_data_template/log
+alphapilot/modules/alpha_mining/qlib/experiment/factor_data_template/log
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
@@ -177,16 +177,8 @@ mlruns/
 
 *_debug*
 *.ipynb
-注意事项.md
-# alphaagent/scenarios/qlib/experiment/factor_template/
-# alphaagent/scenarios/qlib/experiment/factor_data_template/
-alphaagent/app/qlib_rd_loop/factor_rdagent.py
-
-alphaagent/scenarios/qlib/experiment/factor_template/*
-alphaagent/app/data_mining/
-alphaagent/app/general_model/
-alphaagent/app/kaggle/
-alphaagent/scenarios/data_mining/
-alphaagent/scenarios/general_model/
-alphaagent/scenarios/kaggle/
+alphapilot/modules/alpha_mining/qlib/experiment/factor_template/*
+alphapilot/app/data_mining/
+alphapilot/app/general_model/
+alphapilot/app/kaggle/
 backend/

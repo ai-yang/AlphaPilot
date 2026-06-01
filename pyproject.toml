@@ -16,7 +16,7 @@ classifiers = [
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
 ]
-description = "Alpha Factor Mining Agent"
+description = "AlphaPilot: LLM-driven alpha factor mining agent"
 dynamic = [
   "dependencies",
   "optional-dependencies",
@@ -27,19 +27,33 @@ keywords = [
   "Large Language Models",
   "Research and Development",
 ]
-name = "alphaagent"
+name = "alphapilot"
 readme = "README.md"
 requires-python = ">=3.10"
 
 [project.scripts]
-alphaagent = "alphaagent.app.cli:app"
+alphapilot = "alphapilot.app.cli:app"
+
+# Built-in systems/modules. Third-party packages can register additional
+# entries under these groups to be auto-discovered by the kernel's
+# MainEngine.discover_plugins() (vnpy-style plug-and-play extensions).
+[project.entry-points."alphapilot.systems"]
+data = "alphapilot.systems.data.service:QlibDataSystem"
+factor = "alphapilot.systems.factor.service:FactorSystem"
+model = "alphapilot.systems.model.service:ModelSystem"
+backtest = "alphapilot.systems.backtest.service:QlibBacktestSystem"
+
+[project.entry-points."alphapilot.modules"]
+alpha_mining = "alphapilot.modules.alpha_mining.module:AlphaMiningModule"
+platform = "alphapilot.modules.platform.module:PlatformModule"
+data_viz = "alphapilot.modules.data_viz.module:DataVizModule"
 
 [project.urls]
 homepage = "https://github.com/ai-yang/money_is_all_you_need"
 issue = "https://github.com/ai-yang/money_is_all_you_need/issues"
 
 [tool.setuptools]
-packages = ["alphaagent"]
+packages = ["alphapilot"]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}

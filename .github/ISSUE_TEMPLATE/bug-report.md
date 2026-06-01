@@ -28,8 +28,6 @@ Steps to reproduce the behavior:
 
 ## Environment
 
-**Note**: Users can run `rdagent collect_info` to get system information and paste it directly here.
-
  - Name of current operating system:
  - Processor architecture:
  - System, version, and hardware information:
