@@ -142,6 +142,8 @@ class AlphaPilotLoop(LoopBase, metaclass=LoopMeta):
         """
         with logger.tag("ef"):  # evaluate and feedback
             logger.info(f"Start factor backtest (Local: {self.use_local})")
+            experiment = prev_out["factor_calculate"]
+            experiment.mining_round = self.loop_idx + 1
             if self.context is not None:
                 from alphapilot.systems.backtest.types import (
                     FactorExperimentBacktestRequest,
@@ -149,12 +151,12 @@ class AlphaPilotLoop(LoopBase, metaclass=LoopMeta):
 
                 exp = self.context.backtest().run_factor_experiment(
                     FactorExperimentBacktestRequest(
-                        experiment=prev_out["factor_calculate"],
+                        experiment=experiment,
                         use_local=self.use_local,
                     )
                 )
             else:
-                exp = self.runner.develop(prev_out["factor_calculate"], use_local=self.use_local)
+                exp = self.runner.develop(experiment, use_local=self.use_local)
             if exp is None:
                 logger.error(f"Factor extraction failed.")
                 raise FactorEmptyError("Factor extraction failed.")
@@ -239,6 +241,8 @@ class BacktestLoop(LoopBase, metaclass=LoopMeta):
         Conduct Backtesting
         """
         with logger.tag("ef"):  # evaluate and feedback
+            experiment = prev_out["factor_calculate"]
+            experiment.mining_round = self.loop_idx + 1
             if self.context is not None:
                 from alphapilot.systems.backtest.types import (
                     FactorExperimentBacktestRequest,
@@ -246,12 +250,12 @@ class BacktestLoop(LoopBase, metaclass=LoopMeta):
 
                 exp = self.context.backtest().run_factor_experiment(
                     FactorExperimentBacktestRequest(
-                        experiment=prev_out["factor_calculate"],
+                        experiment=experiment,
                         use_local=self.use_local,
                     )
                 )
             else:
-                exp = self.runner.develop(prev_out["factor_calculate"])
+                exp = self.runner.develop(experiment, use_local=self.use_local)
             if exp is None:
                 logger.error(f"Factor extraction failed.")
                 raise FactorEmptyError("Factor extraction failed.")

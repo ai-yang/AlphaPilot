@@ -47,11 +47,12 @@ def _workspace_id_from_runner_pkl(pkl_path: Path) -> str | None:
 
 def _log_dir_reference_mtime(log_dir: Path) -> float:
     """Use latest session snapshot time when present, else log folder mtime."""
-    session_root = log_dir / "__session__"
-    if session_root.is_dir():
-        mtimes = [p.stat().st_mtime for p in session_root.rglob("*") if p.is_file()]
-        if mtimes:
-            return max(mtimes)
+    for session_name in ("session_snapshots", "__session__"):
+        session_root = log_dir / session_name
+        if session_root.is_dir():
+            mtimes = [p.stat().st_mtime for p in session_root.rglob("*") if p.is_file()]
+            if mtimes:
+                return max(mtimes)
     return log_dir.stat().st_mtime
 
 
@@ -67,7 +68,12 @@ def _list_ret_workspaces(workspace_root: Path) -> list[Path]:
 def _list_log_session_dirs(log_root: Path) -> list[Path]:
     if not log_root.exists():
         return []
-    dirs = [p for p in log_root.iterdir() if p.is_dir() and (p / "__session__").is_dir()]
+    dirs = [
+        p
+        for p in log_root.iterdir()
+        if p.is_dir()
+        and ((p / "session_snapshots").is_dir() or (p / "__session__").is_dir())
+    ]
     return sorted(dirs, key=_log_dir_reference_mtime)
 
 
@@ -104,6 +110,8 @@ def _workspace_id_from_session_dump(dump_path: Path) -> str | None:
 
 
 def _is_factor_backtest_dump(path: Path) -> bool:
+    if path.is_file() and path.name == "workflow.snapshot.pkl":
+        return "04_backtest" in path.as_posix() or "factor_backtest" in path.as_posix()
     return path.is_file() and path.name.endswith("factor_backtest")
 
 

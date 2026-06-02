@@ -19,6 +19,7 @@ from tqdm.auto import tqdm
 
 from alphapilot.core.exception import CoderError
 from alphapilot.log import logger
+from alphapilot.log.mine_paths import mining_round_tag, session_snapshot_path
 import threading
 
 class LoopMeta(type):
@@ -93,7 +94,7 @@ class LoopBase:
         self.step_idx = 0  # the index of next step to be run
         self.loop_prev_out = {}  # the step results of current loop
         self.loop_trace = defaultdict(list[LoopTrace])  # the key is the number of loop
-        self.session_folder = logger.log_trace_path / "__session__"
+        self.session_folder = logger.log_trace_path / "session_snapshots"
 
     def _is_factor_mining_workflow(self) -> bool:
         return "factor_propose" in getattr(self, "steps", [])
@@ -148,8 +149,13 @@ class LoopBase:
                     self._log_factor_mining_step_start(li, si, name)
                 func = getattr(self, name)
                 try:
-                    self.loop_prev_out[name] = func(self.loop_prev_out)
-                    
+                    if self._is_factor_mining_workflow():
+                        round_no = li + 1
+                        with logger.tag(mining_round_tag(round_no, name)):
+                            self.loop_prev_out[name] = func(self.loop_prev_out)
+                    else:
+                        self.loop_prev_out[name] = func(self.loop_prev_out)
+
                     # TODO: Fix the error logger.exception(f"Skip loop {li} due to {e}")
                 except self.skip_loop_error as e:
                     logger.warning(f"Skip loop {li} due to {e}")
@@ -178,7 +184,10 @@ class LoopBase:
                     self.loop_idx += 1
                     self.loop_prev_out = {}
                     pbar.reset()  # reset the progress bar for the next loop
-                self.dump(self.session_folder / f"{li}" / f"{si}_{name}")  # save a snapshot after the session
+                snapshot_path = session_snapshot_path(
+                    logger.log_trace_path, li, si, name
+                )
+                self.dump(snapshot_path)
                 
                 if stop_event is not None and stop_event.is_set():
                     # break

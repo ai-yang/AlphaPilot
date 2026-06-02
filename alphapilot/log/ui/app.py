@@ -23,6 +23,7 @@ from alphapilot.core.proposal import Hypothesis, HypothesisFeedback
 from alphapilot.core.scenario import Scenario
 from alphapilot.log.base import Message
 from alphapilot.log.storage import FileStorage
+from alphapilot.log.tag_utils import canonical_ui_msg_tag, resolve_scenario_from_log, ui_round_from_tag
 from alphapilot.log.ui.qlib_report_figure import report_figure
 # from alphapilot.scenarios.data_mining.experiment.model_experiment import DMModelScenario
 # from alphapilot.scenarios.general_model.scenario import GeneralModelScenario
@@ -261,13 +262,19 @@ SIMILAR_SCENARIOS = (QlibAlphaPilotScenario, QlibModelScenario, QlibModelScenari
 def filter_log_folders(main_log_path):
     """
     The webpage only displays valid folders.
-    If the __session__ folder exists in a subfolder of the log folder, it is considered a valid folder,
-    otherwise it is considered an invalid folder.
+    If ``session_snapshots`` or legacy ``__session__`` exists under a log subfolder, it is valid.
     """
+    def _has_session_dir(folder: Path) -> bool:
+        for name in ("session_snapshots", "__session__"):
+            session_dir = folder / name
+            if session_dir.is_dir():
+                return True
+        return False
+
     folders = [
         folder.relative_to(main_log_path)
         for folder in main_log_path.iterdir()
-        if folder.is_dir() and folder.joinpath("__session__").exists() and folder.joinpath("__session__").is_dir()
+        if folder.is_dir() and _has_session_dir(folder)
     ]
     # folders = sorted(folders, key=lambda x: x.name)
     folders.sort(key=lambda f: os.path.getmtime(os.path.join(main_log_path, f)), reverse=True)
@@ -347,10 +354,16 @@ def get_msgs_until(end_func: Callable[[Message], bool] = lambda _: True):
                 msg = next(state.fs)
                 if should_display(msg):
                     tags = msg.tag.split(".")
-                    if "r" not in state.current_tags and "r" in tags:
-                        state.lround += 1
+                    ui_round = ui_round_from_tag(msg.tag)
+                    if ui_round is None:
+                        if "r" not in state.current_tags and "r" in tags:
+                            state.lround += 1
+                        ui_round = state.lround
+                    else:
+                        state.lround = max(state.lround, ui_round)
+
                     if "evolving code" not in state.current_tags and "evolving code" in tags:
-                        state.erounds[state.lround] += 1
+                        state.erounds[ui_round] += 1
 
                     state.current_tags = tags
                     state.last_msg = msg
@@ -364,7 +377,7 @@ def get_msgs_until(end_func: Callable[[Message], bool] = lambda _: True):
                             state.alpha158_metrics = sms
 
                         if (
-                            state.lround == 1
+                            ui_round == 1
                             and len(msg.content.based_experiments) > 0
                             and msg.content.based_experiments[-1].result is not None
                         ):
@@ -384,12 +397,12 @@ def get_msgs_until(end_func: Callable[[Message], bool] = lambda _: True):
                             ):
                                 sms = sms.loc[QLIB_SELECTED_METRICS]
 
-                            sms.name = f"Round {state.lround}"
+                            sms.name = f"Round {ui_round}"
                             state.metric_series.append(sms)
                     elif "hypothesis generation" in tags:
-                        state.hypotheses[state.lround] = msg.content
+                        state.hypotheses[ui_round] = msg.content
                     elif "ef" in tags and "feedback" in tags:
-                        state.h_decisions[state.lround] = msg.content.decision
+                        state.h_decisions[ui_round] = msg.content.decision
                     elif "d" in tags:
                         if "evolving code" in tags:
                             msg.content = [i for i in msg.content if i]
@@ -397,30 +410,35 @@ def get_msgs_until(end_func: Callable[[Message], bool] = lambda _: True):
                             total_len = len(msg.content)
                             msg.content = [i for i in msg.content if i]
                             none_num = total_len - len(msg.content)
-                            if len(msg.content) != len(state.msgs[state.lround]["d.evolving code"][-1].content):
+                            code_msgs = state.msgs[ui_round].get("d.evolving code", [])
+                            if (
+                                code_msgs
+                                and code_msgs[-1].content is not None
+                                and len(msg.content) != len(code_msgs[-1].content)
+                            ):
                                 st.toast(":red[**Evolving Feedback Length Error!**]", icon="‼️")
                             right_num = 0
                             for wsf in msg.content:
                                 if wsf.final_decision:
                                     right_num += 1
                             wrong_num = len(msg.content) - right_num
-                            state.e_decisions[state.lround][state.erounds[state.lround]] = (
+                            state.e_decisions[ui_round][state.erounds[ui_round]] = (
                                 right_num,
                                 wrong_num,
                                 none_num,
                             )
 
-                    state.msgs[state.lround][msg.tag].append(msg)
+                    state.msgs[ui_round][canonical_ui_msg_tag(msg.tag)].append(msg)
 
                     # Update Times
                     if "init" in tags:
-                        state.times[state.lround]["init"].append(msg.timestamp)
+                        state.times[ui_round]["init"].append(msg.timestamp)
                     if "r" in tags:
-                        state.times[state.lround]["r"].append(msg.timestamp)
+                        state.times[ui_round]["r"].append(msg.timestamp)
                     if "d" in tags:
-                        state.times[state.lround]["d"].append(msg.timestamp)
+                        state.times[ui_round]["d"].append(msg.timestamp)
                     if "ef" in tags:
-                        state.times[state.lround]["ef"].append(msg.timestamp)
+                        state.times[ui_round]["ef"].append(msg.timestamp)
 
                     # Stop Getting Logs
                     if end_func(msg):
@@ -430,24 +448,28 @@ def get_msgs_until(end_func: Callable[[Message], bool] = lambda _: True):
                 break
 
 
-def refresh(same_trace: bool = False):
+def _log_root_path() -> Path | None:
+    if state.log_path is None:
+        return None
+    if main_log_path:
+        return main_log_path / state.log_path
+    return Path(state.log_path)
+
+
+def refresh(same_trace: bool = False, *, load_all_msgs: bool = True):
     if state.log_path is None:
         st.toast(":red[**Please Set Log Path!**]", icon="⚠️")
         return
 
-    if main_log_path:
-        state.fs = FileStorage(main_log_path / state.log_path).iter_msg()
-    else:
-        state.fs = FileStorage(state.log_path).iter_msg()
+    log_root = _log_root_path()
+    if log_root is None:
+        return
 
-    # detect scenario
     if not same_trace:
-        get_msgs_until(lambda m: not isinstance(m.content, str))
-        if state.last_msg is None or not isinstance(state.last_msg.content, Scenario):
-            st.toast(":red[**No Scenario Info detected**]", icon="❗")
-            state.scenario = None
+        state.scenario = resolve_scenario_from_log(log_root)
+        if state.scenario is None:
+            st.toast(":red[**No Scenario Info detected**] (check init/scenario or session_snapshots)", icon="❗")
         else:
-            state.scenario = state.last_msg.content
             st.toast(f":green[**Scenario Info detected**] *{type(state.scenario).__name__}*", icon="✅")
 
     state.msgs = defaultdict(lambda: defaultdict(list))
@@ -461,10 +483,11 @@ def refresh(same_trace: bool = False):
     state.current_tags = []
     state.alpha158_metrics = None
     state.times = defaultdict(lambda: defaultdict(list))
-    
-    if state.log_path is None:
-        st.toast(":red[**Please Set Log Path!**]", icon="⚠️")
-        return
+
+    state.fs = FileStorage(log_root).iter_msg()
+    if load_all_msgs:
+        get_msgs_until(lambda m: False)
+        state.fs = None
 
 
 def evolving_feedback_window(wsf: FactorSingleFeedback | ModelSingleFeedback):
@@ -1105,20 +1128,18 @@ with st.sidebar:
     c1, c2 = st.columns([1, 1], vertical_alignment="center")
     with c1:
         if st.button(":green[**All Loops**]", use_container_width=True):
-            if not state.fs:
-                refresh()
-            get_msgs_until(lambda m: False)
+            refresh(same_trace=True)
         if st.button("**Reset**", use_container_width=True):
             refresh(same_trace=True)
     with c2:
         if st.button(":green[Next Loop]", use_container_width=True):
-            if not state.fs:
-                refresh()
+            if state.fs is None:
+                refresh(same_trace=True, load_all_msgs=False)
             get_msgs_until(lambda m: "ef.feedback" in m.tag)
 
         if st.button("Next Step", use_container_width=True):
-            if not state.fs:
-                refresh()
+            if state.fs is None:
+                refresh(same_trace=True, load_all_msgs=False)
             get_msgs_until(lambda m: "d.evolving feedback" in m.tag)
 
     with st.popover(":orange[**Config⚙️**]", use_container_width=True):
@@ -1185,7 +1206,6 @@ with st.sidebar:
         # 手动刷新按钮 - 使用英文
         if st.button("🔄 Refresh Now", use_container_width=True):
             refresh(same_trace=True)
-            get_msgs_until(lambda m: False)
             st.rerun()
 
 

@@ -89,6 +89,18 @@ class QlibFactorRunner(CachedRunner[Any]):
         )
         logger.info(f"Backtesting results: \n{result.iloc[2:] if result is not None else 'None'}")
         exp.result = result
+
+        round_no = getattr(exp, "mining_round", None)
+        if round_no is not None:
+            from alphapilot.systems.backtest.scoring_model_export import persist_scoring_model_to_log
+
+            persist_scoring_model_to_log(
+                logger.log_trace_path,
+                int(round_no),
+                exp.experiment_workspace.workspace_path,
+                config_name,
+            )
+
         return exp
 
     def process_factor_data(self, exp_or_list: Any) -> pd.DataFrame:

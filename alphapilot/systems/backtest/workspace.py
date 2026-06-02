@@ -56,4 +56,11 @@ class QlibFBWorkspace(FBWorkspace):
             logger.error(f"File {csv_path} does not exist.")
             return None
 
+        try:
+            from alphapilot.systems.backtest.scoring_model_export import export_scoring_model_artifacts
+
+            export_scoring_model_artifacts(self.workspace_path, qlib_config_name)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Scoring model artifact export failed (backtest result kept): {exc}")
+
         return pd.read_csv(csv_path, index_col=0).iloc[:, 0]

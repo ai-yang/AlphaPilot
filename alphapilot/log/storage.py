@@ -64,6 +64,21 @@ class FileStorage(Storage):
         r"(?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL) *\| "
         r"(?P<caller>.+:.+:\d+) - "
     )
+    # Object pickles created by ``logger.log_object`` use timestamped filenames only.
+    pkl_timestamp_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}-\d+$")
+
+    # Pickle trees that are not ``logger.log_object`` timestamped artifacts.
+    _SKIP_PKL_ROOTS = frozenset({"session_snapshots", "__session__", "rounds"})
+
+    @classmethod
+    def _is_ui_object_pickle(cls, path: Path, log_root: Path) -> bool:
+        """Whether *path* is a timestamped log-object pickle for the UI stream."""
+        rel = path.relative_to(log_root)
+        if rel.parts and rel.parts[0] in cls._SKIP_PKL_ROOTS:
+            return False
+        if "session_snapshots" in rel.parts:
+            return False
+        return bool(cls.pkl_timestamp_pattern.match(path.stem))
 
     def iter_msg(self, watch: bool = False) -> Generator[Message, None, None]:
         msg_l = []
@@ -100,6 +115,9 @@ class FileStorage(Storage):
                 msg_l.append(m)
 
         for file in self.path.glob("**/*.pkl"):
+            if not self._is_ui_object_pickle(file, self.path):
+                continue
+
             tag = ".".join(file.relative_to(self.path).as_posix().replace("/", ".").split(".")[:-3])
             pid = file.parent.name
 
