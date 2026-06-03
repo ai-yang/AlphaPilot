@@ -64,13 +64,20 @@ class AlphaPilotLoop(LoopBase, metaclass=LoopMeta):
         stop_event: threading.Event,
         use_local: bool = True,
         context: Any | None = None,
+        qlib_config_name: str | None = None,
+        qlib_template_dir: str | None = None,
     ):
         with logger.tag("init"):
             self.context = context
             self.use_local = use_local
             self.potential_direction = potential_direction
+            self.qlib_config_name = qlib_config_name or getattr(PROP_SETTING, "qlib_config_name", None)
+            self.qlib_template_dir = qlib_template_dir or getattr(PROP_SETTING, "qlib_template_dir", None)
             logger.info(f"初始化AlphaPilotLoop，使用{'本地环境' if use_local else 'Docker容器'}回测")
-            scen: Scenario = import_class(PROP_SETTING.scen)(use_local=use_local)
+            scen_kwargs: dict[str, Any] = {"use_local": use_local}
+            if self.qlib_template_dir:
+                scen_kwargs["qlib_template_dir"] = self.qlib_template_dir
+            scen: Scenario = import_class(PROP_SETTING.scen)(**scen_kwargs)
             logger.log_object(scen, tag="scenario")
 
             ### 换成基于初始hypo的，生成完整的hypo
@@ -148,6 +155,8 @@ class AlphaPilotLoop(LoopBase, metaclass=LoopMeta):
             logger.info(f"Start factor backtest (Local: {self.use_local})")
             experiment = prev_out["factor_calculate"]
             experiment.mining_round = self.loop_idx + 1
+            if self.qlib_config_name:
+                experiment.qlib_config_name = self.qlib_config_name
             if self.context is not None:
                 from alphapilot.systems.backtest.types import (
                     FactorExperimentBacktestRequest,
@@ -156,6 +165,7 @@ class AlphaPilotLoop(LoopBase, metaclass=LoopMeta):
                 exp = self.context.backtest().run_factor_experiment(
                     FactorExperimentBacktestRequest(
                         experiment=experiment,
+                        qlib_config_name=self.qlib_config_name,
                         use_local=self.use_local,
                     )
                 )
@@ -240,6 +250,8 @@ class AlphaPilotLoop(LoopBase, metaclass=LoopMeta):
                     "source": "mine",
                     "round_no": round_no,
                     "hypothesis": getattr(prev_out.get("factor_propose"), "hypothesis", None),
+                    "qlib_config_name": getattr(result, "qlib_config_name", None) or self.qlib_config_name,
+                    "qlib_template_dir": getattr(result, "qlib_template_dir", None) or self.qlib_template_dir,
                 },
             )
             self.context.strategy().register_strategy(record)
@@ -283,14 +295,27 @@ def build_mine_strategy_name(round_no: int, keyword: str | None) -> str:
 class BacktestLoop(LoopBase, metaclass=LoopMeta):
     skip_loop_error = (FactorEmptyError,)
     @measure_time
-    def __init__(self, PROP_SETTING: BaseFacSetting, factor_path=None, context: Any | None = None, use_local: bool = True):
+    def __init__(
+        self,
+        PROP_SETTING: BaseFacSetting,
+        factor_path=None,
+        context: Any | None = None,
+        use_local: bool = True,
+        qlib_config_name: str | None = None,
+        qlib_template_dir: str | None = None,
+    ):
         with logger.tag("init"):
 
             self.factor_path = factor_path
             self.context = context
             self.use_local = use_local
+            self.qlib_config_name = qlib_config_name or getattr(PROP_SETTING, "qlib_config_name", None)
+            self.qlib_template_dir = qlib_template_dir or getattr(PROP_SETTING, "qlib_template_dir", None)
 
-            scen: Scenario = import_class(PROP_SETTING.scen)()
+            scen_kwargs: dict[str, Any] = {}
+            if self.qlib_template_dir:
+                scen_kwargs["qlib_template_dir"] = self.qlib_template_dir
+            scen: Scenario = import_class(PROP_SETTING.scen)(**scen_kwargs)
             logger.log_object(scen, tag="scenario")
 
             self.hypothesis_generator: HypothesisGen = import_class(PROP_SETTING.hypothesis_gen)(scen)
@@ -349,6 +374,8 @@ class BacktestLoop(LoopBase, metaclass=LoopMeta):
         with logger.tag("ef"):  # evaluate and feedback
             experiment = prev_out["factor_calculate"]
             experiment.mining_round = self.loop_idx + 1
+            if self.qlib_config_name:
+                experiment.qlib_config_name = self.qlib_config_name
             if self.context is not None:
                 from alphapilot.systems.backtest.types import (
                     FactorExperimentBacktestRequest,
@@ -357,6 +384,7 @@ class BacktestLoop(LoopBase, metaclass=LoopMeta):
                 exp = self.context.backtest().run_factor_experiment(
                     FactorExperimentBacktestRequest(
                         experiment=experiment,
+                        qlib_config_name=self.qlib_config_name,
                         use_local=self.use_local,
                     )
                 )

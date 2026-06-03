@@ -2,6 +2,8 @@
 
 from alphapilot.systems.strategy.base import (
     BaseStrategySystem,
+    StrategyBacktestOutcome,
+    StrategyBacktestRequest,
     StrategyMetrics,
     StrategyModelSpec,
     StrategyRecord,
@@ -17,6 +19,8 @@ __all__ = [
     "BaseStrategyParamDatabase",
     "BaseStrategySystem",
     "FileStrategyParamDatabase",
+    "StrategyBacktestOutcome",
+    "StrategyBacktestRequest",
     "StrategyMetrics",
     "StrategyModelSpec",
     "StrategyRecord",

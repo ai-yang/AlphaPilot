@@ -17,6 +17,7 @@ from alphapilot.systems.backtest.types import (
     FactorExperimentBacktestRequest,
     FactorBacktestResult,
     ModelExperimentBacktestRequest,
+    SavedModelBacktestRequest,
     WorkspaceBacktestRequest,
 )
 
@@ -53,6 +54,10 @@ class BaseBacktestSystem(BaseSystem):
     @abstractmethod
     def results(self) -> Any:
         """Return the :class:`BacktestResultStore` for saved artifacts."""
+
+    @abstractmethod
+    def run_saved_model_backtest(self, request: SavedModelBacktestRequest) -> Any:
+        """Run backtest using a previously fitted model artifact."""
 
     # ---- Typed request wrappers (preferred in new code) ----
 

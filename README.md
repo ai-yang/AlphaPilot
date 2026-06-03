@@ -57,9 +57,24 @@ alphapilot prepare_data --action download --stock_csv backup_data/main_stock_202
 
 ### 4. 回测与因子数据配置
 
-- `alphapilot/modules/alpha_mining/qlib/experiment/factor_template/conf.yaml`：基线回测（仅内置价量特征）
-- `alphapilot/modules/alpha_mining/qlib/experiment/factor_template/conf_cn_combined_kdd_ver.yaml`：合并 LLM 新因子后的回测
-- `alphapilot prepare_data h5`：从 Qlib 导出 `daily_pv.h5` 供因子代码使用
+**内置模板**（`alphapilot/modules/alpha_mining/qlib/experiment/factor_template/`）：
+
+| 文件 | 用途 |
+|------|------|
+| `conf.yaml` | 基线回测（仅内置价量特征） |
+| `conf_cn_combined_kdd_ver.yaml` | 合并 LLM 新因子后的回测（`mine` 多轮常用） |
+| `read_exp_res.py` | `qrun` 后导出 IC、收益等到 `qlib_res.csv` / `ret.pkl` |
+
+**自定义模板目录（推荐二开）**：可将上述文件复制到 `git_ignore_folder/factor_qlib_templates/` 后只改副本，避免动仓库内置配置。说明见该目录下 [README.md](git_ignore_folder/factor_qlib_templates/README.md)。
+
+**可选环境变量**（前缀 `QLIB_FACTOR_`，在 `.env` 中配置；CLI 参数优先）：
+
+| 变量 | 含义 |
+|------|------|
+| `QLIB_FACTOR_QLIB_TEMPLATE_DIR` | 拷入 workspace 的模板目录（相对项目根，如 `git_ignore_folder/factor_qlib_templates`） |
+| `QLIB_FACTOR_QLIB_CONFIG_NAME` | 上述目录中的 yaml 文件名（如 `conf_cn_combined_kdd_ver.yaml`） |
+
+`alphapilot prepare_data h5` 会从 Qlib 导出 `daily_pv.h5` 到 `git_ignore_folder/factor_implementation_source_data*`，供因子 Python 代码使用。
 
 可按需修改股票池（`market` / `instruments`）、训练/验证/测试区间、持仓数量等。
 
@@ -80,7 +95,7 @@ alphapilot prepare_data --action download --stock_csv backup_data/main_stock_202
 - 历史入口 `alphapilot/app/qlib_rd_loop/*` 已移除，不再保留兼容 shim
 - 数据准备逻辑已迁入 `alphapilot/systems/data/`（含 `prepare_cn.py`、`adjust_prices.py`、`qlib_convert.py`、`generate_h5.py`、`qlib_dump/` 等）；`alphapilot/app/data/` 兼容层已删除
 - `prepare_data` 统一由 `platform -> context.data() -> systems.data` 链路执行（单一调度入口）
-- `mine/backtest/prepare_data/ui/backtest_ui/portal` 统一由模块贡献命令（modules-only）
+- `mine/backtest/strategy_backtest/prepare_data/ui/backtest_ui/portal` 统一由模块贡献命令（modules-only）
 
 **数据系统代码位置（供二开参考）**
 
@@ -285,6 +300,13 @@ CHAT_MODEL=<对话模型，用于调试与反馈>
 MAX_RETRY=5
 FACTOR_MINING_TIMEOUT=36000  # 因子挖掘最长运行时间（秒），不设 step_n 时生效
 EMBEDDING_MAX_STR_NUM=10     # DashScope 等 embedding 接口的单次 batch 上限（按需）
+
+# 可选：Qlib 回测模板与 yaml（mine / backtest / strategy_backtest 共用 QLIB_FACTOR_ 前缀）
+# QLIB_FACTOR_QLIB_TEMPLATE_DIR=git_ignore_folder/factor_qlib_templates
+# QLIB_FACTOR_QLIB_CONFIG_NAME=conf_cn_combined_kdd_ver.yaml
+
+# 可选：因子 factor.py 子进程 Python（默认当前解释器 sys.executable）
+# FACTOR_CoSTEER_PYTHON_BIN=/path/to/python
 ```
 
 ---
@@ -328,13 +350,21 @@ alphapilot mine --direction "行为金融学假说" --step_n 10
 
 不传 `--step_n` 时会持续循环，直到手动中断或 `.env` 中 `FACTOR_MINING_TIMEOUT` 超时。
 
+可选：指定自定义 Qlib 模板目录或 yaml（亦可在 `.env` 中配置 `QLIB_FACTOR_*`）：
+
+```bash
+alphapilot mine --direction "行为金融学假说" \
+  --qlib_template_dir=git_ignore_folder/factor_qlib_templates \
+  --qlib_config_name=conf_cn_combined_kdd_ver.yaml
+```
+
 流程概要：
 
 1. Idea Agent 生成/迭代市场假说  
 2. Factor Agent 生成因子表达式与 Python 代码  
 3. 在 `daily_pv.h5` 上计算因子值  
 4. Qlib + LightGBM 回测，输出 IC、收益等指标  
-5. 根据反馈进入下一轮  
+5. 根据反馈进入下一轮；每轮成功结束后可将因子/模型/指标写入 `git_ignore_folder/strategy_zoo/`（策略资产）
 
 回测工作区与日志默认在 `git_ignore_folder/` 下。
 
@@ -358,7 +388,38 @@ MACD_Factor,"MACD($close)"
 RSI_Factor,"RSI($close)"
 ```
 
-### 3. 可视化工具
+同样支持 `--qlib_template_dir`、`--qlib_config_name`（或 `.env` 中的 `QLIB_FACTOR_*`）。
+
+### 3. 策略资产复测（`strategy_backtest`）
+
+`mine` 每轮结束后会在 `git_ignore_folder/strategy_zoo/<策略名>/` 落盘策略资产（因子公式、`fitted_model.pkl`、IC 等指标、`metadata.json`）。可用独立命令对**已保存资产**重新回测，无需重跑完整挖掘流程。
+
+**列出已保存策略：**
+
+```bash
+alphapilot strategy_backtest_list
+```
+
+**从资产复测（推荐在 alphapilot conda 环境下执行）：**
+
+```bash
+alphapilot strategy_backtest \
+  --strategy_name='mine_round_01_20260602_164008_行为金融学假说' \
+  --mode=retrain
+```
+
+| 参数 | 说明 |
+|------|------|
+| `--mode` | `retrain`：按资产内公式重算因子并重新训练回测；`reuse_model`：尝试复用已保存模型；`both`：两种都跑 |
+| `--qlib_data_dir` | 可选，切换 Qlib 数据目录（不设则用默认 `~/.qlib/...`） |
+| `--qlib_template_dir` / `--qlib_config_name` | 可选，覆盖模板目录与 yaml；未传时优先读策略 `metadata`，否则用 `.env` 的 `QLIB_FACTOR_*` |
+| `--use_local` | 与 `USE_LOCAL` 一致，是否本地执行 `qrun` |
+
+复测结果摘要打印在终端，明细写入该策略目录下 `retests/<时间戳>_<mode>.json`。
+
+> **注意**：请在已安装本包且能 `import alphapilot` 的 Python 环境中运行（如 `conda activate alphapilot`）。因子代码默认使用**当前解释器**执行；失败的历史 pickle 缓存不会阻止重试（仅成功结果会被缓存）。
+
+### 4. 可视化工具
 
 项目提供四个 Streamlit 界面，用途不同：
 
@@ -369,9 +430,9 @@ RSI_Factor,"RSI($close)"
 | `alphapilot ui` | 原版自带 | 查看因子挖掘**运行日志**（假说、因子代码、反馈、Qlib 报告图等） |
 | `alphapilot backtest_ui` | 本仓库新增 | 查看单次回测**交易与收益**（持仓、成交、收益曲线等） |
 
-> 说明：CLI 入口已改为 **modules-only** 分发，`mine/backtest/prepare_data/ui/backtest_ui/portal` 均由内置模块提供；新增第三方模块后会自动出现在 `alphapilot modules` 与 `alphapilot portal` 页面中。
+> 说明：CLI 入口已改为 **modules-only** 分发，`mine/backtest/strategy_backtest/prepare_data/ui/backtest_ui/portal` 均由内置模块提供；新增第三方模块后会自动出现在 `alphapilot modules` 与 `alphapilot portal` 页面中。
 
-#### 3.0 股票数据 K 线可视化（`data_viz`）
+#### 4.0 股票数据 K 线可视化（`data_viz`）
 
 查看 `prepare_data` 下载到本地的 CSV 行情（默认在 `~/.qlib/qlib_data/cn_data/raw_data_*`）：
 
@@ -386,7 +447,7 @@ alphapilot data_viz --port 19902
 - 查看 **K 线 + 成交量** 图；鼠标悬停显示开高低收、涨跌幅、成交额等
 - 导出当前区间 CSV
 
-#### 3.1 统一 Web 门户（推荐）
+#### 4.1 统一 Web 门户（推荐）
 
 ```bash
 alphapilot portal --port 19901
@@ -399,7 +460,7 @@ alphapilot portal --port 19901
 - 模块命令调度（JSON 参数）
 - 因子库与模型参数导入导出
 
-#### 3.2 运行日志可视化（原版 `alphapilot ui`）
+#### 4.2 运行日志可视化（原版 `alphapilot ui`）
 
 用于监控 `alphapilot mine` 的完整迭代过程，包括每轮假说、因子表达式、代码反馈、回测指标图表等。
 
@@ -415,7 +476,7 @@ alphapilot ui --port 19899 --log_dir log/
 alphapilot ui --port 19899 --log_dir log/ --debug
 ```
 
-#### 3.3 回测结果可视化（本仓库 `backtest_ui`）
+#### 4.3 回测结果可视化（本仓库 `backtest_ui`）
 
 用于查看某次 Qlib 回测工作区的明细结果，适合分析具体某轮回测的持仓与收益。
 
@@ -450,7 +511,9 @@ alphapilot backtest_ui --workspace_root /path/to/git_ignore_folder/RD-Agent_work
 
 | 路径 | 内容 | 何时需要清理 |
 |------|------|----------------|
-| `pickle_cache/` | 因子计算、Qlib 回测等步骤的 pickle 缓存 | 修改回测参数、因子逻辑，或结果异常需重跑 |
+| `pickle_cache/` | 因子计算、Qlib 回测等步骤的 pickle 缓存 | 修改回测参数、因子逻辑，或结果异常需重跑；**因子 `execute` 仅缓存成功结果**，旧失败条目会在下次执行时自动丢弃 |
+| `git_ignore_folder/strategy_zoo/` | `mine` 保存的策略资产与 `retests/` 复测记录 | 一般无需删；换策略或只想重导资产时再清理 |
+| `git_ignore_folder/factor_qlib_templates/` | 用户自定义 Qlib 模板（yaml + `read_exp_res.py`） | 修改回测区间、组合策略参数时编辑此目录 |
 | `git_ignore_folder/` | 工作区、回测产物、`daily_pv.h5` 副本等 | 更换股票池、重跑 `mine` / `backtest` |
 | `alphapilot/modules/alpha_mining/qlib/experiment/factor_data_template/daily_pv_*.h5` | 从 Qlib 导出的价量 h5 源文件 | 修改 `market`、股票池或 `generate.py` |
 | `prompt_cache.db`（可选） | LLM 对话/Embedding 本地缓存（`.env` 开启缓存时） | 更换模型或希望 LLM 输出不复用旧缓存 |
@@ -507,13 +570,18 @@ AlphaPilot/
 │   ├── systems/                # 四大系统（data/factor/strategy/backtest）
 │   │   └── data/               # 数据下载、复权、Qlib 转换、h5（prepare_data 实现）
 │   ├── adapters/               # LLM/数据源等外部接口适配层
-│   ├── modules/                # 功能模块（alpha_mining/platform + 第三方插件）
-│   │   └── alpha_mining/       # 因子挖掘模块（qlib 场景 + loops + conf + registry）
+│   ├── modules/                # 功能模块（alpha_mining/platform/strategy_backtest + 插件）
+│   │   ├── alpha_mining/       # 因子挖掘（qlib 场景 + loops + conf + registry）
+│   │   └── strategy_backtest/  # 策略资产列表与复测 CLI
+│   ├── systems/strategy/       # 策略资产存储（strategy_zoo）与复测编排
 │   ├── app/portal/             # 统一 Web 门户（alphapilot portal）
 │   ├── app/backtest_viewer/    # 回测结果可视化（alphapilot backtest_ui）
 │   └── log/ui/                 # 运行日志可视化（alphapilot ui）
 ├── .env.example             # 环境变量模板
 └── git_ignore_folder/       # 运行产物（已 gitignore）
+    ├── factor_qlib_templates/  # 可选：自定义 Qlib 回测模板
+    ├── strategy_zoo/           # mine 保存的策略资产
+    └── RD-Agent_workspace/     # 每轮回测工作区
 
 ~/.qlib/qlib_data/cn_data/   # Qlib 行情数据（不在仓库内）
 ```

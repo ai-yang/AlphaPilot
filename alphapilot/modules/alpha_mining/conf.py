@@ -80,6 +80,12 @@ class AlphaPilotFactorBasePropSetting(BasePropSetting):
     evolving_n: int = 5
     """Number of evolutions"""
 
+    qlib_config_name: str | None = None
+    """Optional qlib yaml filename under the qlib template dir (e.g. conf_cn_combined_kdd_ver.yaml)."""
+
+    qlib_template_dir: str | None = None
+    """Optional folder copied into workspace; default is built-in factor_template."""
+
 class FactorBackTestBasePropSetting(BasePropSetting):
     model_config = ExtendedSettingsConfigDict(env_prefix="QLIB_FACTOR_", protected_namespaces=())
 
@@ -104,6 +110,12 @@ class FactorBackTestBasePropSetting(BasePropSetting):
 
     evolving_n: int = 1
     """Number of evolutions"""
+
+    qlib_config_name: str | None = None
+    """Optional qlib yaml filename for factor backtest."""
+
+    qlib_template_dir: str | None = None
+    """Template folder for factor backtest; mine uses built-in factor_template when unset."""
 
 
 class FactorFromReportPropSetting(FactorBasePropSetting):

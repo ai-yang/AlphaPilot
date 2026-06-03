@@ -1,5 +1,28 @@
+import sys
+from pathlib import Path
+
+from pydantic import Field
+
 from alphapilot.components.coder.CoSTEER.config import CoSTEERSettings
 from alphapilot.core.conf import ExtendedSettingsConfigDict
+
+
+def default_factor_python_bin() -> str:
+    return sys.executable
+
+
+def resolve_factor_python_bin() -> str:
+    """Resolve Python for subprocess factor execution (env > explicit path > current interpreter)."""
+    configured = FACTOR_COSTEER_SETTINGS.python_bin
+    if configured in ("python", "python3", ""):
+        return sys.executable
+    path = Path(configured).expanduser()
+    if path.is_file():
+        return str(path.resolve())
+    import shutil
+
+    found = shutil.which(configured)
+    return found if found else sys.executable
 
 
 class FactorCoSTEERSettings(CoSTEERSettings):
@@ -20,8 +43,8 @@ class FactorCoSTEERSettings(CoSTEERSettings):
     select_method: str = "random"
     """Method for the selection of factors implementation"""
 
-    python_bin: str = "python"
-    """Path to the Python binary"""
+    python_bin: str = Field(default_factory=default_factor_python_bin)
+    """Python binary for factor.py subprocess; defaults to the current interpreter."""
 
 
 FACTOR_COSTEER_SETTINGS = FactorCoSTEERSettings()

@@ -11,6 +11,15 @@ from alphapilot.core.proposal import Hypothesis, Scenario, Trace
 from alphapilot.core.experiment import Experiment
 from alphapilot.modules.alpha_mining.qlib.experiment.factor_experiment import QlibFactorExperiment
 from alphapilot.adapters import get_llm
+
+
+def _qlib_template_dir_from_trace(trace: Trace) -> str | Path | None:
+    scen = getattr(trace, "scen", None)
+    if scen is None:
+        return None
+    return getattr(scen, "qlib_template_dir", None)
+
+
 import os
 import pandas as pd
 from alphapilot.log import logger
@@ -137,8 +146,11 @@ class QlibFactorHypothesis2Experiment(FactorHypothesis2Experiment):
                 )
             )
 
-        exp = QlibFactorExperiment(tasks)
-        exp.based_experiments = [QlibFactorExperiment(sub_tasks=[])] + [t[1] for t in trace.hist if t[2]]
+        tpl = _qlib_template_dir_from_trace(trace)
+        exp = QlibFactorExperiment(tasks, template_folder_path=tpl)
+        exp.based_experiments = [QlibFactorExperiment(sub_tasks=[], template_folder_path=tpl)] + [
+            t[1] for t in trace.hist if t[2]
+        ]
 
         unique_tasks = []
 
@@ -456,8 +468,11 @@ class AlphaPilotHypothesis2FactorExpression(FactorHypothesis2Experiment):
                 )
             )
             
-        exp = QlibFactorExperiment(tasks)
-        exp.based_experiments = [QlibFactorExperiment(sub_tasks=[])] + [t[1] for t in trace.hist if t[2]]
+        tpl = _qlib_template_dir_from_trace(trace)
+        exp = QlibFactorExperiment(tasks, template_folder_path=tpl)
+        exp.based_experiments = [QlibFactorExperiment(sub_tasks=[], template_folder_path=tpl)] + [
+            t[1] for t in trace.hist if t[2]
+        ]
 
         unique_tasks = []
 
@@ -504,8 +519,11 @@ class BacktestHypothesis2FactorExpression(FactorHypothesis2Experiment):
                     )
                 )
             
-            exp = QlibFactorExperiment(tasks)
-            exp.based_experiments = [QlibFactorExperiment(sub_tasks=[])] + [t[1] for t in trace.hist if t[2]]
+            tpl = _qlib_template_dir_from_trace(trace)
+            exp = QlibFactorExperiment(tasks, template_folder_path=tpl)
+            exp.based_experiments = [QlibFactorExperiment(sub_tasks=[], template_folder_path=tpl)] + [
+                t[1] for t in trace.hist if t[2]
+            ]
 
             unique_tasks = []
 

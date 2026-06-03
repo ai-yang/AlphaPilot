@@ -1,5 +1,6 @@
 from copy import deepcopy
 from pathlib import Path
+from typing import Any
 
 from alphapilot.components.coder.factor_coder.factor import (
     FactorExperiment,
@@ -9,6 +10,10 @@ from alphapilot.components.coder.factor_coder.factor import (
 from alphapilot.core.experiment import Task
 from alphapilot.core.prompts import Prompts
 from alphapilot.core.scenario import Scenario
+from alphapilot.modules.alpha_mining.qlib.experiment.template_paths import (
+    DEFAULT_QLIB_FACTOR_TEMPLATE_DIR,
+    resolve_qlib_template_dir,
+)
 from alphapilot.modules.alpha_mining.qlib.experiment.utils import get_data_folder_intro
 from alphapilot.modules.alpha_mining.qlib.experiment.workspace import QlibFBWorkspace
 
@@ -16,14 +21,22 @@ rdagent_prompt_dict = Prompts(file_path=Path(__file__).parent / "prompts_rdagent
 
 
 class QlibFactorExperiment(FactorExperiment[FactorTask, QlibFBWorkspace, FactorFBWorkspace]):
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(
+        self,
+        *args: Any,
+        template_folder_path: str | Path | None = None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(*args, **kwargs)
-        self.experiment_workspace = QlibFBWorkspace(template_folder_path=Path(__file__).parent / "factor_template")
+        tpl = resolve_qlib_template_dir(template_folder_path)
+        self.qlib_template_dir = str(tpl)
+        self.experiment_workspace = QlibFBWorkspace(template_folder_path=tpl)
 
 
 class QlibFactorScenario(Scenario):
-    def __init__(self) -> None:
+    def __init__(self, qlib_template_dir: str | Path | None = None) -> None:
         super().__init__()
+        self.qlib_template_dir = resolve_qlib_template_dir(qlib_template_dir)
         self._background = deepcopy(rdagent_prompt_dict["qlib_factor_background"])
         self._source_data = deepcopy(get_data_folder_intro())
         self._output_format = deepcopy(rdagent_prompt_dict["qlib_factor_output_format"])
@@ -83,8 +96,9 @@ The simulator user can use to test your factor:
 
 alphapilot_prompt_dict = Prompts(file_path=Path(__file__).parent / "prompts_alphapilot.yaml")
 class QlibAlphaPilotScenario(Scenario):
-    def __init__(self, use_local: bool = True) -> None:
+    def __init__(self, use_local: bool = True, qlib_template_dir: str | Path | None = None) -> None:
         super().__init__()
+        self.qlib_template_dir = resolve_qlib_template_dir(qlib_template_dir)
         self._background = deepcopy(alphapilot_prompt_dict["qlib_factor_background"])
         self._source_data = deepcopy(get_data_folder_intro(use_local=use_local))
         self._output_format = deepcopy(alphapilot_prompt_dict["qlib_factor_output_format"])

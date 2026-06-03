@@ -36,6 +36,12 @@ class BaseStrategyParamDatabase(ABC):
     @abstractmethod
     def list_strategies(self) -> list[str]: ...
 
+    @abstractmethod
+    def strategy_dir(self, strategy_name: str) -> Path | None: ...
+
+    @abstractmethod
+    def append_retest(self, strategy_name: str, payload: dict[str, Any]) -> Path | None: ...
+
 
 class FileStrategyParamDatabase(BaseStrategyParamDatabase):
     """File-backed strategy store under ``param_dir`` (one folder per strategy)."""
@@ -140,6 +146,29 @@ class FileStrategyParamDatabase(BaseStrategyParamDatabase):
         folder_names = [p.name for p in self.param_dir.iterdir() if p.is_dir() and (p / "strategy_record.json").exists()]
         legacy_names = [p.stem for p in self.param_dir.glob("*.json")]
         return sorted(set(folder_names + legacy_names))
+
+    def strategy_dir(self, strategy_name: str) -> Path | None:
+        sdir = self._strategy_dir(strategy_name)
+        if (sdir / "strategy_record.json").exists():
+            return sdir
+        return None
+
+    def append_retest(self, strategy_name: str, payload: dict[str, Any]) -> Path | None:
+        sdir = self.strategy_dir(strategy_name)
+        if sdir is None:
+            return None
+        retests_dir = sdir / "retests"
+        retests_dir.mkdir(parents=True, exist_ok=True)
+        ts = payload.get("timestamp")
+        if not isinstance(ts, str) or not ts:
+            from datetime import datetime
+
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            payload["timestamp"] = ts
+        out = retests_dir / f"{ts}_{payload.get('mode', 'unknown')}.json"
+        with out.open("w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        return out
 
 
 def build_strategy_param_database(backend: str, param_dir: Path) -> BaseStrategyParamDatabase:

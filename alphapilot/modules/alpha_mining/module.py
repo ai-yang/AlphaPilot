@@ -34,6 +34,8 @@ class AlphaMiningModule(BaseModule):
         direction: str | None = None,
         stop_event: Any = None,
         scenario: str = "alpha_factor_mining",
+        qlib_config_name: str | None = None,
+        qlib_template_dir: str | None = None,
     ) -> None:
         """Run the autonomous factor-mining loop."""
         from alphapilot.core.utils import import_class
@@ -45,8 +47,12 @@ class AlphaMiningModule(BaseModule):
         loop_cls = import_class(spec.loop_class_path)
         prop_setting = import_class(spec.prop_setting_path)
 
+        resolved_qlib_config = qlib_config_name or getattr(prop_setting, "qlib_config_name", None)
+        resolved_template_dir = qlib_template_dir or getattr(prop_setting, "qlib_template_dir", None)
         logger.info(
-            f"[alpha_mining] scenario={scenario} use_local={use_local}"
+            f"[alpha_mining] scenario={scenario} use_local={use_local} "
+            f"qlib_config_name={resolved_qlib_config or 'default'} "
+            f"qlib_template_dir={resolved_template_dir or 'factor_template (default)'}"
         )
         if path is None:
             loop = loop_cls(
@@ -55,10 +61,16 @@ class AlphaMiningModule(BaseModule):
                 stop_event=stop_event,
                 use_local=use_local,
                 context=self.context,
+                qlib_config_name=resolved_qlib_config,
+                qlib_template_dir=resolved_template_dir,
             )
         else:
             loop = loop_cls.load(path, use_local=use_local)
             setattr(loop, "context", self.context)
+            if resolved_qlib_config:
+                loop.qlib_config_name = resolved_qlib_config
+            if resolved_template_dir:
+                loop.qlib_template_dir = resolved_template_dir
         loop.run(step_n=step_n, stop_event=stop_event)
 
     def run_backtest(
@@ -67,6 +79,8 @@ class AlphaMiningModule(BaseModule):
         step_n: int | None = None,
         factor_path: str | None = None,
         scenario: str = "factor_backtest",
+        qlib_config_name: str | None = None,
+        qlib_template_dir: str | None = None,
     ) -> None:
         """Run a single-shot factor backtest from a factor CSV/session."""
         from alphapilot.systems.backtest.types import FactorBacktestRequest
@@ -76,6 +90,8 @@ class AlphaMiningModule(BaseModule):
                 FactorBacktestRequest(
                     factor_path=factor_path,
                     scenario=scenario,
+                    qlib_config_name=qlib_config_name,
+                    qlib_template_dir=qlib_template_dir,
                     use_local=self.context.config.backtest.use_local,
                 )
             )
@@ -88,12 +104,16 @@ class AlphaMiningModule(BaseModule):
         loop_cls = import_class(spec.loop_class_path)
         prop_setting = import_class(spec.prop_setting_path)
 
+        resolved_qlib_config = qlib_config_name or getattr(prop_setting, "qlib_config_name", None)
+        resolved_template_dir = qlib_template_dir or getattr(prop_setting, "qlib_template_dir", None)
         if path is None:
             loop = loop_cls(
                 prop_setting,
                 factor_path=factor_path,
                 context=self.context,
                 use_local=self.context.config.backtest.use_local,
+                qlib_config_name=resolved_qlib_config,
+                qlib_template_dir=resolved_template_dir,
             )
         else:
             loop = loop_cls.load(path)

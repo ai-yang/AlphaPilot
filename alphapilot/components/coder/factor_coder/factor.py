@@ -9,7 +9,7 @@ import pandas as pd
 from filelock import FileLock
 
 from alphapilot.components.coder.CoSTEER.task import CoSTEERTask
-from alphapilot.components.coder.factor_coder.config import FACTOR_COSTEER_SETTINGS
+from alphapilot.components.coder.factor_coder.config import FACTOR_COSTEER_SETTINGS, resolve_factor_python_bin
 from alphapilot.core.exception import CodeFormatError, CustomRuntimeError, NoOutputError
 from alphapilot.core.experiment import Experiment, FBWorkspace
 from alphapilot.core.utils import cache_with_pickle
@@ -94,13 +94,23 @@ class FactorFBWorkspace(FBWorkspace):
         self.raise_exception = raise_exception
 
     def hash_func(self, data_type: str = "Debug") -> str:
-        return (
-            md5_hash(data_type + self.code_dict["factor.py"])
-            if ("factor.py" in self.code_dict and not self.raise_exception)
-            else None
+        if "factor.py" not in self.code_dict or self.raise_exception:
+            return None
+        return md5_hash(
+            data_type
+            + self.code_dict["factor.py"]
+            + resolve_factor_python_bin()
+            + FACTOR_COSTEER_SETTINGS.data_folder
+            + FACTOR_COSTEER_SETTINGS.data_folder_debug
         )
 
-    @cache_with_pickle(hash_func)
+    @staticmethod
+    def _execute_cacheable(result: tuple[str, pd.DataFrame | None] | Any) -> bool:
+        if not isinstance(result, tuple) or len(result) < 2:
+            return False
+        return result[1] is not None
+
+    @cache_with_pickle(hash_func, cache_if=_execute_cacheable)
     def execute(self, data_type: str = "Debug") -> Tuple[str, pd.DataFrame]:
         """
         execute the implementation and get the factor value by the following steps:
@@ -153,9 +163,10 @@ class FactorFBWorkspace(FBWorkspace):
                 execution_code_path = self.workspace_path / f"{uuid.uuid4()}.py"
                 execution_code_path.write_text((Path(__file__).parent / "factor_execution_template.txt").read_text())
 
+            python_bin = resolve_factor_python_bin()
             try:
                 subprocess.check_output(
-                    f"{FACTOR_COSTEER_SETTINGS.python_bin} {execution_code_path}",
+                    f'"{python_bin}" {execution_code_path}',
                     shell=True,
                     cwd=self.workspace_path,
                     stderr=subprocess.STDOUT,

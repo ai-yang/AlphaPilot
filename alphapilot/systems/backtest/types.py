@@ -22,6 +22,8 @@ class FactorBacktestRequest:
     factor_path: str | Path | None = None
     factors: list[FactorDefinition] = field(default_factory=list)
     scenario: str = "factor_backtest"
+    qlib_config_name: str | None = None
+    qlib_template_dir: str | None = None
     use_local: bool | None = None
 
 
@@ -38,6 +40,7 @@ class FactorExperimentBacktestRequest:
     """Run backtest for an in-memory factor experiment object."""
 
     experiment: Any
+    qlib_config_name: str | None = None
     use_local: bool | None = None
 
 
@@ -69,3 +72,17 @@ class WorkspaceBacktestResult:
     workspace_path: Path
     log: str | None = None
     raw: Any = None
+
+
+@dataclass
+class SavedModelBacktestRequest:
+    """Run backtest with saved model artifact + factors on target data."""
+
+    model_pickle_path: str | Path
+    factors: list[FactorDefinition] = field(default_factory=list)
+    scenario: str = "factor_backtest"
+    qlib_config_name: str | None = None
+    qlib_template_dir: str | None = None
+    qlib_data_dir: str | None = None
+    use_local: bool | None = None
+    options: dict[str, Any] = field(default_factory=dict)

@@ -50,6 +50,32 @@ class StrategyRecord:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class StrategyBacktestRequest:
+    """Execute backtest from a saved strategy asset."""
+
+    strategy_name: str
+    mode: str = "retrain"  # retrain | reuse_model | both
+    qlib_config_name: str | None = None
+    qlib_template_dir: str | None = None
+    qlib_data_dir: str | None = None
+    scenario: str = "factor_backtest"
+    use_local: bool | None = None
+    run_tag: str | None = None
+    options: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class StrategyBacktestOutcome:
+    """Per-mode backtest outcome from a strategy asset."""
+
+    strategy_name: str
+    mode: str
+    metrics: dict[str, Any] = field(default_factory=dict)
+    workspace_path: str | None = None
+    details: dict[str, Any] = field(default_factory=dict)
+
+
 class BaseStrategySystem(BaseSystem):
     """Import / store params / run strategy backtests."""
 
@@ -74,6 +100,10 @@ class BaseStrategySystem(BaseSystem):
     @abstractmethod
     def list_strategy_records(self) -> list[StrategyRecord]:
         """List all persisted strategy asset records."""
+
+    @abstractmethod
+    def backtest_from_asset(self, request: StrategyBacktestRequest) -> list[StrategyBacktestOutcome]:
+        """Run backtest(s) from a saved strategy asset."""
 
     @property
     @abstractmethod

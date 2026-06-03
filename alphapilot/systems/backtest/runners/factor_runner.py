@@ -13,6 +13,7 @@ from alphapilot.core.conf import RD_AGENT_SETTINGS
 from alphapilot.core.exception import FactorEmptyError
 from alphapilot.core.utils import cache_with_pickle, multiprocessing_wrapper
 from alphapilot.log import logger
+from alphapilot.systems.backtest.qlib_config import resolve_qlib_config_name
 
 pandarallel.initialize(verbose=1)
 
@@ -81,7 +82,8 @@ class QlibFactorRunner(CachedRunner[Any]):
             with open(exp.experiment_workspace.workspace_path / "combined_factors_df.pkl", "wb") as f:
                 pickle.dump(combined_factors, f)
 
-        config_name = "conf.yaml" if len(exp.based_experiments) == 0 else "conf_cn_combined_kdd_ver.yaml"
+        config_name = resolve_qlib_config_name(exp)
+        exp.qlib_config_name = config_name
         logger.info(f"Execute factor backtest (Use {'Local' if use_local else 'Docker container'}): {config_name}")
         result = exp.experiment_workspace.execute(
             qlib_config_name=config_name,

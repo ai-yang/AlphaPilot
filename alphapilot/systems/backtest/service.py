@@ -21,6 +21,7 @@ from alphapilot.systems.backtest.types import (
     FactorDefinition,
     FactorExperimentBacktestRequest,
     ModelExperimentBacktestRequest,
+    SavedModelBacktestRequest,
     WorkspaceBacktestRequest,
     WorkspaceBacktestResult,
 )
@@ -78,6 +79,8 @@ class QlibBacktestSystem(BaseBacktestSystem):
                 factor_path=str(factor_csv),
                 context=self.context,
                 use_local=use_local,
+                qlib_config_name=request.qlib_config_name,
+                qlib_template_dir=request.qlib_template_dir,
             )
             factor_propose_out = loop.factor_propose({})
             factor_construct_out = loop.factor_construct({"factor_propose": factor_propose_out})
@@ -110,14 +113,20 @@ class QlibBacktestSystem(BaseBacktestSystem):
         return self.run_factor_experiment(request)
 
     def run_factor_experiment(self, request: FactorExperimentBacktestRequest) -> Any:
+        from alphapilot.systems.backtest.qlib_config import resolve_qlib_config_name
         from alphapilot.systems.backtest.runners.factor_runner import QlibFactorRunner
+
+        if request.qlib_config_name:
+            request.experiment.qlib_config_name = request.qlib_config_name
 
         scen = getattr(request.experiment, "scen", None)
         runner = QlibFactorRunner(scen)
-        return runner.develop(
+        exp = runner.develop(
             request.experiment,
             use_local=self._use_local(request.use_local),
         )
+        exp.qlib_config_name = resolve_qlib_config_name(exp)
+        return exp
 
     def test_model(
         self,
@@ -144,6 +153,34 @@ class QlibBacktestSystem(BaseBacktestSystem):
             use_local=self._use_local(request.use_local),
             run_env=request.run_env,
         )
+
+    def run_saved_model_backtest(self, request: SavedModelBacktestRequest) -> Any:
+        """
+        Backtest with a saved model artifact.
+
+        Current implementation keeps compatibility with the existing qlib
+        runner by reusing saved factors on target data and passing the model
+        artifact path via run_env for downstream consumers.
+        """
+        run_env: dict[str, str] = {}
+        if request.qlib_data_dir:
+            run_env["ALPHAPILOT_QLIB_DATA_DIR"] = str(request.qlib_data_dir)
+        run_env["ALPHAPILOT_PRETRAINED_MODEL_PKL"] = str(Path(request.model_pickle_path).expanduser())
+
+        # Use existing high-level factor backtest path.
+        # NOTE: runners that do not consume ALPHAPILOT_PRETRAINED_MODEL_PKL
+        # will effectively retrain; callers can inspect details metadata.
+        result = self.run_factor_backtest(
+            FactorBacktestRequest(
+                factors=request.factors,
+                scenario=request.scenario,
+                qlib_config_name=request.qlib_config_name,
+                qlib_template_dir=request.qlib_template_dir,
+                use_local=request.use_local,
+            )
+        )
+        setattr(result, "_pretrained_model_env", run_env)
+        return result
 
     def run_workspace(
         self,

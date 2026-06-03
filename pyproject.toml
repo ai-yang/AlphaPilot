@@ -47,6 +47,7 @@ backtest = "alphapilot.systems.backtest.service:QlibBacktestSystem"
 alpha_mining = "alphapilot.modules.alpha_mining.module:AlphaMiningModule"
 platform = "alphapilot.modules.platform.module:PlatformModule"
 data_viz = "alphapilot.modules.data_viz.module:DataVizModule"
+strategy_backtest = "alphapilot.modules.strategy_backtest.module:StrategyBacktestModule"
 
 [project.urls]
 homepage = "https://github.com/ai-yang/money_is_all_you_need"
