@@ -1,23 +1,12 @@
 from copy import deepcopy
 from pathlib import Path
 
-from alphapilot.components.coder.model_coder.model import (
-    ModelExperiment,
-    ModelFBWorkspace,
-    ModelTask,
-)
 from alphapilot.core.experiment import Task
 from alphapilot.core.prompts import Prompts
 from alphapilot.core.scenario import Scenario
-from alphapilot.modules.alpha_mining.qlib.experiment.workspace import QlibFBWorkspace
-
 rdagent_prompt_dict = Prompts(file_path=Path(__file__).parent / "prompts_rdagent.yaml")
 
-
-class QlibModelExperiment(ModelExperiment[ModelTask, QlibFBWorkspace, ModelFBWorkspace]):
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.experiment_workspace = QlibFBWorkspace(template_folder_path=Path(__file__).parent / "model_template")
+__all__ = ["QlibModelScenario"]
 
 
 class QlibModelScenario(Scenario):

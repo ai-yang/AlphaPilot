@@ -12,7 +12,7 @@ from alphapilot.components.loader.task_loader import ModelTaskLoader
 from alphapilot.core.prompts import Prompts
 from alphapilot.log import logger
 from alphapilot.adapters import get_llm
-from alphapilot.modules.alpha_mining.qlib.experiment.model_experiment import QlibModelExperiment
+from alphapilot.systems.backtest.qlib.experiment import QlibModelExperiment
 
 document_process_prompts = Prompts(file_path=Path(__file__).parent / "prompts.yaml")
 

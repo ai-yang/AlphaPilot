@@ -15,11 +15,8 @@ from alphapilot.components.coder.model_coder.evaluators import ModelSingleFeedba
 from alphapilot.components.coder.model_coder.model import ModelFBWorkspace, ModelTask
 from alphapilot.core.proposal import Hypothesis, HypothesisFeedback, Trace
 from alphapilot.log.base import Message, Storage, View
-from alphapilot.modules.alpha_mining.qlib.experiment.factor_experiment import QlibFactorExperiment
-from alphapilot.modules.alpha_mining.qlib.experiment.model_experiment import (
-    QlibModelExperiment,
-    QlibModelScenario,
-)
+from alphapilot.modules.alpha_mining.qlib.experiment.model_experiment import QlibModelScenario
+from alphapilot.systems.backtest.qlib.experiment import QlibFactorExperiment, QlibModelExperiment
 
 st.set_page_config(layout="wide")
 

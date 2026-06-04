@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import hashlib
 import importlib
 import json
 import multiprocessing as mp
@@ -209,3 +210,8 @@ def cache_with_pickle(
         return cache_wrapper
 
     return cache_decorator
+
+
+def md5_hash(input_string: str) -> str:
+    """Stable MD5 hex digest for cache keys (not for security)."""
+    return hashlib.md5(input_string.encode("utf-8")).hexdigest()

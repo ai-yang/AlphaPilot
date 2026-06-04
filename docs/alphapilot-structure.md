@@ -96,7 +96,7 @@ flowchart TB
     Propose --> OAI["oai/llm_utils"]
     Construct --> OAI
     Calc --> Coder["modules/alpha_mining/qlib/developer/factor_coder"]
-    BT --> Runner["modules/alpha_mining/qlib/developer/factor_runner"]
+    BT --> Runner["systems/backtest/runners/factor_runner"]
     Runner --> Qlib["modules/alpha_mining/qlib/experiment/*"]
 ```
 
@@ -174,9 +174,10 @@ flowchart TB
 |--------|------|
 | `proposal/` | Idea Agent：生成假说、将假说转为因子表达式 |
 | `developer/factor_coder.py` | 解析表达式、生成/执行因子 Python 代码 |
-| `developer/factor_runner.py` | 调用 Qlib 回测，读取 IC、收益等 |
+| `systems/backtest/runners/factor_runner.py` | 调用 Qlib 回测，读取 IC、收益等（由 backtest 系统拥有） |
 | `developer/feedback.py` | 将回测结果总结为下一轮 prompt |
-| `developer/model_coder.py` / `model_runner.py` | 模型训练场景（次要） |
+| `developer/model_coder.py` | 模型训练场景 coder（次要） |
+| `systems/backtest/runners/model_runner.py` | 模型 qlib 回测 runner |
 | `experiment/factor_experiment.py` | `QlibAlphaPilotScenario`：给 LLM 的场景说明 |
 | `experiment/factor_template/` | 内置 Qlib 模板：`conf.yaml`、`conf_cn_combined_kdd_ver.yaml`、`read_exp_res.py` |
 | `experiment/template_paths.py` | 解析 `QLIB_FACTOR_QLIB_TEMPLATE_DIR`；默认或自定义目录拷入 workspace |

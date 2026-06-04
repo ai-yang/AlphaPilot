@@ -78,15 +78,6 @@ def _register_builtins() -> None:
             commands=("mine",),
         )
     )
-    register_scenario(
-        ScenarioSpec(
-            name="factor_backtest",
-            description="Single-round factor backtest loop.",
-            loop_class_path="alphapilot.modules.alpha_mining.loops.alphapilot_loop.BacktestLoop",
-            prop_setting_path="alphapilot.modules.alpha_mining.conf.FACTOR_BACK_TEST_PROP_SETTING",
-            commands=("backtest",),
-        )
-    )
 
 
 _register_builtins()

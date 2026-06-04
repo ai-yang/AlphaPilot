@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from alphapilot.systems.backtest.types import FactorBacktestRequest, FactorDefinition, SavedModelBacktestRequest
+from alphapilot.systems.backtest.types import FactorDefinition
 from alphapilot.systems.strategy.base import (
     BaseStrategySystem,
     StrategyBacktestOutcome,
@@ -211,80 +211,52 @@ class StrategySystem(BaseStrategySystem):
         old_qlib_data_dir = os.environ.get("ALPHAPILOT_QLIB_DATA_DIR")
         if request.qlib_data_dir:
             os.environ["ALPHAPILOT_QLIB_DATA_DIR"] = str(request.qlib_data_dir)
+        mining = self.context.module("alpha_mining")
         for m in modes:
             try:
-                if m == "retrain":
-                    from alphapilot.modules.alpha_mining.qlib.experiment.utils import get_data_folder_intro
-
-                    logger.info(
-                        f"[strategy_backtest] retrain strategy={record.strategy_name} "
-                        f"factors={len(factors)} python={resolve_factor_python_bin()} "
-                        f"qlib_config={qlib_config_name} qlib_template_dir={qlib_template_dir}"
-                    )
-                    get_data_folder_intro(use_local=use_local)
-                    result = self.context.backtest().run_factor_backtest(
-                        FactorBacktestRequest(
-                            factors=factors,
-                            scenario=request.scenario,
-                            qlib_config_name=qlib_config_name,
-                            qlib_template_dir=qlib_template_dir,
-                            use_local=use_local,
-                        )
-                    )
-                    metrics = self._extract_metrics(result.experiment if hasattr(result, "experiment") else result)
-                    workspace_path = None
-                    if hasattr(result, "experiment"):
-                        ws = getattr(result.experiment, "experiment_workspace", None)
-                        workspace_path = str(getattr(ws, "workspace_path", "")) or None
-                    out = StrategyBacktestOutcome(
-                        strategy_name=record.strategy_name,
-                        mode="retrain",
-                        metrics=self._metrics_to_dict(metrics),
-                        workspace_path=workspace_path,
-                        details={
-                            "qlib_config_name": qlib_config_name,
-                            "qlib_template_dir": qlib_template_dir,
-                            "factor_python": resolve_factor_python_bin(),
-                            "qlib_data_dir": request.qlib_data_dir,
-                            "run_tag": request.run_tag,
-                        },
-                    )
-                else:
+                logger.info(
+                    f"[strategy_backtest] {m} strategy={record.strategy_name} "
+                    f"factors={len(factors)} python={resolve_factor_python_bin()} "
+                    f"qlib_config={qlib_config_name} qlib_template_dir={qlib_template_dir}"
+                )
+                model_uri = None
+                if m == "reuse_model":
                     model_uri = record.model.trained_artifact_uri if record.model else None
                     if not model_uri:
-                        raise ValueError(f"Strategy {record.strategy_name} has no trained_artifact_uri for reuse_model mode.")
-                    result = self.context.backtest().run_saved_model_backtest(
-                        SavedModelBacktestRequest(
-                            model_pickle_path=model_uri,
-                            factors=factors,
-                            scenario=request.scenario,
-                            qlib_config_name=qlib_config_name,
-                            qlib_template_dir=qlib_template_dir,
-                            qlib_data_dir=request.qlib_data_dir,
-                            use_local=use_local,
-                            options=request.options,
+                        raise ValueError(
+                            f"Strategy {record.strategy_name} has no trained_artifact_uri for reuse_model mode."
                         )
+                run = mining.run_strategy_asset_backtest(
+                    mode=m,
+                    factors=factors,
+                    scenario=request.scenario,
+                    qlib_config_name=qlib_config_name,
+                    qlib_template_dir=qlib_template_dir,
+                    qlib_data_dir=request.qlib_data_dir,
+                    use_local=use_local,
+                    model_pickle_path=model_uri,
+                )
+                metrics = self._extract_metrics(run.result.experiment)
+                details: dict[str, Any] = {
+                    "qlib_config_name": qlib_config_name,
+                    "qlib_template_dir": qlib_template_dir,
+                    "factor_python": resolve_factor_python_bin(),
+                    "qlib_data_dir": request.qlib_data_dir,
+                    "run_tag": request.run_tag,
+                }
+                if m == "reuse_model" and model_uri:
+                    details["model_pickle_path"] = model_uri
+                    details["note"] = (
+                        "Current backend reuses saved model path via run_env hint; "
+                        "downstream runner support may vary."
                     )
-                    metrics = self._extract_metrics(result.experiment if hasattr(result, "experiment") else result)
-                    workspace_path = None
-                    if hasattr(result, "experiment"):
-                        ws = getattr(result.experiment, "experiment_workspace", None)
-                        workspace_path = str(getattr(ws, "workspace_path", "")) or None
-                    out = StrategyBacktestOutcome(
-                        strategy_name=record.strategy_name,
-                        mode="reuse_model",
-                        metrics=self._metrics_to_dict(metrics),
-                        workspace_path=workspace_path,
-                        details={
-                            "qlib_config_name": qlib_config_name,
-                            "qlib_template_dir": qlib_template_dir,
-                            "factor_python": resolve_factor_python_bin(),
-                            "qlib_data_dir": request.qlib_data_dir,
-                            "model_pickle_path": model_uri,
-                            "run_tag": request.run_tag,
-                            "note": "Current backend reuses saved model path via run_env hint; downstream runner support may vary.",
-                        },
-                    )
+                out = StrategyBacktestOutcome(
+                    strategy_name=record.strategy_name,
+                    mode=m,
+                    metrics=self._metrics_to_dict(metrics),
+                    workspace_path=run.workspace_path,
+                    details=details,
+                )
             except Exception as e:
                 out = StrategyBacktestOutcome(
                     strategy_name=record.strategy_name,

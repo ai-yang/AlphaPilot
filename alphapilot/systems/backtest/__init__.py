@@ -12,6 +12,8 @@ from alphapilot.systems.backtest.types import (
     WorkspaceBacktestRequest,
     WorkspaceBacktestResult,
 )
+from alphapilot.systems.backtest.pipelines import run_factor_evaluation
+from alphapilot.systems.backtest.qlib.experiment import QlibFactorExperiment, QlibModelExperiment
 from alphapilot.systems.backtest.workspace import QlibFBWorkspace
 
 __all__ = [
@@ -23,7 +25,10 @@ __all__ = [
     "FactorExperimentBacktestRequest",
     "ModelExperimentBacktestRequest",
     "QlibBacktestSystem",
+    "QlibFactorExperiment",
     "QlibFBWorkspace",
+    "QlibModelExperiment",
+    "run_factor_evaluation",
     "WorkspaceBacktestRequest",
     "WorkspaceBacktestResult",
 ]

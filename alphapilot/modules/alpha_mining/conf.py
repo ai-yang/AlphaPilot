@@ -18,8 +18,8 @@ class ModelBasePropSetting(BasePropSetting):
     coder: str = "alphapilot.modules.alpha_mining.qlib.developer.model_coder.QlibModelCoSTEER"
     """Coder class"""
 
-    runner: str = "alphapilot.modules.alpha_mining.qlib.developer.model_runner.QlibModelRunner"
-    """Runner class"""
+    runner: str = "alphapilot.systems.backtest.runners.model_runner.QlibModelRunner"
+    """Runner class (generic RD loops; factor AlphaPilot loops use ``context.backtest()``)."""
 
     summarizer: str = "alphapilot.modules.alpha_mining.qlib.developer.feedback.QlibModelHypothesisExperiment2Feedback"
     """Summarizer class"""
@@ -44,9 +44,6 @@ class FactorBasePropSetting(BasePropSetting):
     coder: str = "alphapilot.modules.alpha_mining.qlib.developer.factor_coder.QlibFactorCoSTEER"
     """Coder class"""
 
-    runner: str = "alphapilot.modules.alpha_mining.qlib.developer.factor_runner.QlibFactorRunner"
-    """Runner class"""
-
     summarizer: str = "alphapilot.modules.alpha_mining.qlib.developer.feedback.QlibFactorHypothesisExperiment2Feedback"
     """Summarizer class"""
 
@@ -70,9 +67,6 @@ class AlphaPilotFactorBasePropSetting(BasePropSetting):
     # coder: str = "alphapilot.modules.alpha_mining.qlib.developer.factor_coder.QlibFactorCoSTEER"
     coder: str = "alphapilot.modules.alpha_mining.qlib.developer.factor_coder.QlibFactorParser"
     """Coder class"""
-
-    runner: str = "alphapilot.modules.alpha_mining.qlib.developer.factor_runner.QlibFactorRunner"
-    """Runner class"""
 
     summarizer: str = "alphapilot.modules.alpha_mining.qlib.developer.feedback.AlphaPilotQlibFactorHypothesisExperiment2Feedback"
     """Summarizer class"""
@@ -101,9 +95,6 @@ class FactorBackTestBasePropSetting(BasePropSetting):
 
     coder: str = "alphapilot.modules.alpha_mining.qlib.developer.factor_coder.QlibFactorCoder"
     """Coder class"""
-
-    runner: str = "alphapilot.modules.alpha_mining.qlib.developer.factor_runner.QlibFactorRunner"
-    """Runner class"""
 
     summarizer: str = "alphapilot.modules.alpha_mining.qlib.developer.feedback.QlibFactorHypothesisExperiment2Feedback"
     """Summarizer class"""

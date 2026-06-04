@@ -8,7 +8,7 @@ from alphapilot.components.coder.model_coder.model import ModelExperiment, Model
 from alphapilot.components.proposal import ModelHypothesis2Experiment, ModelHypothesisGen
 from alphapilot.core.prompts import Prompts
 from alphapilot.core.proposal import Hypothesis, Scenario, Trace
-from alphapilot.modules.alpha_mining.qlib.experiment.model_experiment import QlibModelExperiment
+from alphapilot.systems.backtest.qlib.experiment import QlibModelExperiment
 
 prompt_dict = Prompts(file_path=Path(__file__).parent.parent / "prompts.yaml")
 

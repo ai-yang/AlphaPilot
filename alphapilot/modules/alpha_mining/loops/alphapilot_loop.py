@@ -91,9 +91,6 @@ class AlphaPilotLoop(LoopBase, metaclass=LoopMeta):
             ### 加入代码执行中的 Variables / Functions
             self.coder: Developer = import_class(PROP_SETTING.coder)(scen)
             logger.log_object(self.coder, tag="coder")
-            
-            self.runner: Developer = import_class(PROP_SETTING.runner)(scen)
-            logger.log_object(self.runner, tag="runner")
 
             self.summarizer: HypothesisExperiment2Feedback = import_class(PROP_SETTING.summarizer)(scen)
             logger.log_object(self.summarizer, tag="summarizer")
@@ -158,20 +155,21 @@ class AlphaPilotLoop(LoopBase, metaclass=LoopMeta):
             experiment.persist_scoring_model_log = True
             if self.qlib_config_name:
                 experiment.qlib_config_name = self.qlib_config_name
-            if self.context is not None:
-                from alphapilot.systems.backtest.types import (
-                    FactorExperimentBacktestRequest,
+            if self.context is None:
+                raise RuntimeError(
+                    "factor_backtest requires a kernel Context; inject context when constructing the loop."
                 )
+            from alphapilot.systems.backtest.types import (
+                FactorExperimentBacktestRequest,
+            )
 
-                exp = self.context.backtest().run_factor_experiment(
-                    FactorExperimentBacktestRequest(
-                        experiment=experiment,
-                        qlib_config_name=self.qlib_config_name,
-                        use_local=self.use_local,
-                    )
+            exp = self.context.backtest().run_factor_experiment(
+                FactorExperimentBacktestRequest(
+                    experiment=experiment,
+                    qlib_config_name=self.qlib_config_name,
+                    use_local=self.use_local,
                 )
-            else:
-                exp = self.runner.develop(experiment, use_local=self.use_local)
+            )
             if exp is None:
                 logger.error(f"Factor extraction failed.")
                 raise FactorEmptyError("Factor extraction failed.")
@@ -289,114 +287,3 @@ def _keyword_slug(keyword: str | None, max_len: int = 32) -> str:
 def build_mine_strategy_name(round_no: int, keyword: str | None) -> str:
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     return f"mine_round_{round_no:02d}_{ts}_{_keyword_slug(keyword)}"
-
-
-
-
-class BacktestLoop(LoopBase, metaclass=LoopMeta):
-    skip_loop_error = (FactorEmptyError,)
-    @measure_time
-    def __init__(
-        self,
-        PROP_SETTING: BaseFacSetting,
-        factor_path=None,
-        context: Any | None = None,
-        use_local: bool = True,
-        qlib_config_name: str | None = None,
-        qlib_template_dir: str | None = None,
-    ):
-        with logger.tag("init"):
-
-            self.factor_path = factor_path
-            self.context = context
-            self.use_local = use_local
-            self.qlib_config_name = qlib_config_name or getattr(PROP_SETTING, "qlib_config_name", None)
-            self.qlib_template_dir = qlib_template_dir or getattr(PROP_SETTING, "qlib_template_dir", None)
-
-            scen_kwargs: dict[str, Any] = {}
-            if self.qlib_template_dir:
-                scen_kwargs["qlib_template_dir"] = self.qlib_template_dir
-            scen: Scenario = import_class(PROP_SETTING.scen)(**scen_kwargs)
-            logger.log_object(scen, tag="scenario")
-
-            self.hypothesis_generator: HypothesisGen = import_class(PROP_SETTING.hypothesis_gen)(scen)
-            logger.log_object(self.hypothesis_generator, tag="hypothesis generator")
-
-            self.factor_constructor: Hypothesis2Experiment = import_class(PROP_SETTING.hypothesis2experiment)(factor_path=factor_path)
-            logger.log_object(self.factor_constructor, tag="experiment generation")
-
-            self.coder: Developer = import_class(PROP_SETTING.coder)(scen, with_feedback=False, with_knowledge=False, knowledge_self_gen=False)
-            logger.log_object(self.coder, tag="coder")
-            
-            self.runner: Developer = import_class(PROP_SETTING.runner)(scen)
-            logger.log_object(self.runner, tag="runner")
-
-            self.summarizer: HypothesisExperiment2Feedback = import_class(PROP_SETTING.summarizer)(scen)
-            logger.log_object(self.summarizer, tag="summarizer")
-            self.trace = Trace(scen=scen)
-            super().__init__()
-
-    def factor_propose(self, prev_out: dict[str, Any]):
-        """
-        Market hypothesis on which factors are built
-        """
-        with logger.tag("r"):  
-            idea = self.hypothesis_generator.gen(self.trace)
-            logger.log_object(idea, tag="hypothesis generation")
-        return idea
-        
-
-    @measure_time
-    def factor_construct(self, prev_out: dict[str, Any]):
-        """
-        Construct a variety of factors that depend on the hypothesis
-        """
-        with logger.tag("r"): 
-            factor = self.factor_constructor.convert(prev_out["factor_propose"], self.trace)
-            logger.log_object(factor.sub_tasks, tag="experiment generation")
-        return factor
-
-    @measure_time
-    def factor_calculate(self, prev_out: dict[str, Any]):
-        """
-        Debug factors and calculate their values
-        """
-        with logger.tag("d"):  # develop
-            factor = self.coder.develop(prev_out["factor_construct"])
-            logger.log_object(factor.sub_workspace_list, tag="coder result")
-        return factor
-    
-
-    @measure_time
-    def factor_backtest(self, prev_out: dict[str, Any]):
-        """
-        Conduct Backtesting
-        """
-        with logger.tag("ef"):  # evaluate and feedback
-            experiment = prev_out["factor_calculate"]
-            experiment.mining_round = self.loop_idx + 1
-            if self.qlib_config_name:
-                experiment.qlib_config_name = self.qlib_config_name
-            if self.context is not None:
-                from alphapilot.systems.backtest.types import (
-                    FactorExperimentBacktestRequest,
-                )
-
-                exp = self.context.backtest().run_factor_experiment(
-                    FactorExperimentBacktestRequest(
-                        experiment=experiment,
-                        qlib_config_name=self.qlib_config_name,
-                        use_local=self.use_local,
-                    )
-                )
-            else:
-                exp = self.runner.develop(experiment, use_local=self.use_local)
-            if exp is None:
-                logger.error(f"Factor extraction failed.")
-                raise FactorEmptyError("Factor extraction failed.")
-            logger.log_object(exp, tag="runner result")
-        return exp
-
-    @measure_time
-    def stop(self, prev_out: dict[str, Any]):
-        exit(0)

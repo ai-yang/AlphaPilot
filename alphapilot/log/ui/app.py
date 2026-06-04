@@ -32,10 +32,7 @@ from alphapilot.modules.alpha_mining.qlib.experiment.factor_experiment import Ql
 from alphapilot.modules.alpha_mining.qlib.experiment.factor_from_report_experiment import (
     QlibFactorFromReportScenario,
 )
-from alphapilot.modules.alpha_mining.qlib.experiment.model_experiment import (
-    QlibModelExperiment,
-    QlibModelScenario,
-)
+from alphapilot.modules.alpha_mining.qlib.experiment.model_experiment import QlibModelScenario
 
 import requests
 from datetime import datetime

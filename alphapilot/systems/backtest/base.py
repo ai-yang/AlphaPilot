@@ -14,8 +14,8 @@ from typing import Any
 from alphapilot.kernel.base import BaseSystem
 from alphapilot.systems.backtest.types import (
     FactorBacktestRequest,
-    FactorExperimentBacktestRequest,
     FactorBacktestResult,
+    FactorExperimentBacktestRequest,
     ModelExperimentBacktestRequest,
     SavedModelBacktestRequest,
     WorkspaceBacktestRequest,
@@ -26,10 +26,6 @@ class BaseBacktestSystem(BaseSystem):
     """Run factor/model backtests and manage their artifacts."""
 
     name = "backtest"
-
-    @abstractmethod
-    def run_factor_backtest(self, request: FactorBacktestRequest) -> FactorBacktestResult:
-        """High-level factor backtest API (csv/list input)."""
 
     @abstractmethod
     def test_factors(self, experiment: Any, *, use_local: bool | None = None) -> Any:
@@ -55,9 +51,19 @@ class BaseBacktestSystem(BaseSystem):
     def results(self) -> Any:
         """Return the :class:`BacktestResultStore` for saved artifacts."""
 
-    @abstractmethod
-    def run_saved_model_backtest(self, request: SavedModelBacktestRequest) -> Any:
-        """Run backtest using a previously fitted model artifact."""
+    def run_factor_evaluation(self, request: FactorBacktestRequest) -> FactorBacktestResult:
+        """Evaluate user-supplied factors (CSV/list) end-to-end."""
+        from alphapilot.systems.backtest.pipelines.factor_evaluation import run_factor_evaluation
+
+        return run_factor_evaluation(self.context, request)
+
+    def run_saved_model_evaluation(self, request: SavedModelBacktestRequest) -> FactorBacktestResult:
+        """Evaluate factors with a saved model artifact hint."""
+        from alphapilot.systems.backtest.pipelines.saved_model_evaluation import (
+            run_saved_model_evaluation,
+        )
+
+        return run_saved_model_evaluation(self.context, request)
 
     # ---- Typed request wrappers (preferred in new code) ----
 

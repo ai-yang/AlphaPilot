@@ -1,36 +1,18 @@
 from copy import deepcopy
 from pathlib import Path
-from typing import Any
 
-from alphapilot.components.coder.factor_coder.factor import (
-    FactorExperiment,
-    FactorFBWorkspace,
-    FactorTask,
-)
 from alphapilot.core.experiment import Task
 from alphapilot.core.prompts import Prompts
 from alphapilot.core.scenario import Scenario
-from alphapilot.modules.alpha_mining.qlib.experiment.template_paths import (
-    DEFAULT_QLIB_FACTOR_TEMPLATE_DIR,
-    resolve_qlib_template_dir,
-)
+from alphapilot.modules.alpha_mining.qlib.experiment.template_paths import resolve_qlib_template_dir
 from alphapilot.modules.alpha_mining.qlib.experiment.utils import get_data_folder_intro
-from alphapilot.modules.alpha_mining.qlib.experiment.workspace import QlibFBWorkspace
 
 rdagent_prompt_dict = Prompts(file_path=Path(__file__).parent / "prompts_rdagent.yaml")
 
-
-class QlibFactorExperiment(FactorExperiment[FactorTask, QlibFBWorkspace, FactorFBWorkspace]):
-    def __init__(
-        self,
-        *args: Any,
-        template_folder_path: str | Path | None = None,
-        **kwargs: Any,
-    ) -> None:
-        super().__init__(*args, **kwargs)
-        tpl = resolve_qlib_template_dir(template_folder_path)
-        self.qlib_template_dir = str(tpl)
-        self.experiment_workspace = QlibFBWorkspace(template_folder_path=tpl)
+__all__ = [
+    "QlibFactorScenario",
+    "QlibAlphaPilotScenario",
+]
 
 
 class QlibFactorScenario(Scenario):

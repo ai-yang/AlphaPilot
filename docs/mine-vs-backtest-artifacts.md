@@ -8,7 +8,7 @@
 |------|-----|--------|----------|-------------------|
 | 因子挖掘 | `mine` | `AlphaPilotLoop` | `QlibFactorRunner.develop` → `qrun` | `strategy_zoo/<策略名>/`（每轮 `_save_strategy_asset`） |
 | 因子回测 | `backtest` | `BacktestLoop` | 同上 | 无（仅 workspace + 日志） |
-| 策略复测 | `strategy_backtest` | 经 `run_factor_backtest` 走 `BacktestLoop` | 同上 | 仅 `strategy_zoo/.../retests/` |
+| 策略复测 | `strategy_backtest` | 经 `alpha_mining.run_factor_backtest_request` 走 `BacktestLoop` | 同上 | 仅 `strategy_zoo/.../retests/` |
 
 三条路径**共用**同一套因子计算与 Qlib 回测实现，因此会写到同一批「全局目录」，但**绝大多数 workspace 按 UUID 隔离**。
 

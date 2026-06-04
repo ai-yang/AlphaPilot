@@ -9,7 +9,7 @@ from alphapilot.components.proposal import FactorHypothesis2Experiment, FactorHy
 from alphapilot.core.prompts import Prompts
 from alphapilot.core.proposal import Hypothesis, Scenario, Trace
 from alphapilot.core.experiment import Experiment
-from alphapilot.modules.alpha_mining.qlib.experiment.factor_experiment import QlibFactorExperiment
+from alphapilot.systems.backtest.qlib.experiment import QlibFactorExperiment
 from alphapilot.adapters import get_llm
 
 

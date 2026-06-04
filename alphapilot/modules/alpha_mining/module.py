@@ -15,6 +15,13 @@ from alphapilot.kernel.base import BaseModule
 
 if TYPE_CHECKING:
     from alphapilot.kernel.context import Context
+    from alphapilot.modules.alpha_mining.pipelines.strategy_backtest import StrategyAssetBacktestRun
+    from alphapilot.systems.backtest.types import (
+        FactorBacktestRequest,
+        FactorBacktestResult,
+        FactorDefinition,
+        SavedModelBacktestRequest,
+    )
 
 
 class AlphaMiningModule(BaseModule):
@@ -73,6 +80,55 @@ class AlphaMiningModule(BaseModule):
                 loop.qlib_template_dir = resolved_template_dir
         loop.run(step_n=step_n, stop_event=stop_event)
 
+    def run_factor_backtest_request(self, request: "FactorBacktestRequest") -> "FactorBacktestResult":
+        """Orchestrate CSV/list factor backtest (propose → calculate → qlib via backtest system)."""
+        from alphapilot.modules.alpha_mining.pipelines.factor_backtest import (
+            run_factor_backtest_from_request,
+        )
+        from alphapilot.systems.backtest.types import FactorBacktestRequest, FactorBacktestResult
+
+        return run_factor_backtest_from_request(self.context, request)
+
+    def run_saved_model_backtest_request(
+        self, request: "SavedModelBacktestRequest"
+    ) -> "FactorBacktestResult":
+        from alphapilot.modules.alpha_mining.pipelines.factor_backtest import (
+            run_saved_model_backtest_from_request,
+        )
+        from alphapilot.systems.backtest.types import FactorBacktestResult, SavedModelBacktestRequest
+
+        return run_saved_model_backtest_from_request(self.context, request)
+
+    def run_strategy_asset_backtest(
+        self,
+        *,
+        mode: str,
+        factors: list["FactorDefinition"],
+        scenario: str = "factor_backtest",
+        qlib_config_name: str | None = None,
+        qlib_template_dir: str | None = None,
+        qlib_data_dir: str | None = None,
+        use_local: bool | None = None,
+        model_pickle_path: str | None = None,
+    ) -> "StrategyAssetBacktestRun":
+        from alphapilot.modules.alpha_mining.pipelines.strategy_backtest import (
+            run_strategy_asset_backtest,
+        )
+
+        if mode not in ("retrain", "reuse_model"):
+            raise ValueError(f"Unsupported mode: {mode!r}")
+        return run_strategy_asset_backtest(
+            self.context,
+            mode=mode,  # type: ignore[arg-type]
+            factors=factors,
+            scenario=scenario,
+            qlib_config_name=qlib_config_name,
+            qlib_template_dir=qlib_template_dir,
+            qlib_data_dir=qlib_data_dir,
+            use_local=use_local,
+            model_pickle_path=model_pickle_path,
+        )
+
     def run_backtest(
         self,
         path: str | None = None,
@@ -82,44 +138,26 @@ class AlphaMiningModule(BaseModule):
         qlib_config_name: str | None = None,
         qlib_template_dir: str | None = None,
     ) -> None:
-        """Run a single-shot factor backtest from a factor CSV/session."""
+        """Run a single-shot factor backtest from a factor CSV."""
         from alphapilot.systems.backtest.types import FactorBacktestRequest
 
-        if path is None and factor_path:
-            self.context.backtest().run_factor_backtest(
-                FactorBacktestRequest(
-                    factor_path=factor_path,
-                    scenario=scenario,
-                    qlib_config_name=qlib_config_name,
-                    qlib_template_dir=qlib_template_dir,
-                    use_local=self.context.config.backtest.use_local,
-                )
+        if path is not None:
+            raise NotImplementedError(
+                "Resuming factor backtest from a saved session path is no longer supported; "
+                "use --factor_path with a factor CSV instead."
             )
-            return
+        if factor_path is None:
+            raise ValueError("factor_path is required for alphapilot backtest.")
 
-        from alphapilot.core.utils import import_class
-        from alphapilot.modules.alpha_mining.registry import get_scenario
-
-        spec = get_scenario(scenario, command="backtest")
-        loop_cls = import_class(spec.loop_class_path)
-        prop_setting = import_class(spec.prop_setting_path)
-
-        resolved_qlib_config = qlib_config_name or getattr(prop_setting, "qlib_config_name", None)
-        resolved_template_dir = qlib_template_dir or getattr(prop_setting, "qlib_template_dir", None)
-        if path is None:
-            loop = loop_cls(
-                prop_setting,
+        self.run_factor_backtest_request(
+            FactorBacktestRequest(
                 factor_path=factor_path,
-                context=self.context,
+                scenario=scenario,
+                qlib_config_name=qlib_config_name,
+                qlib_template_dir=qlib_template_dir,
                 use_local=self.context.config.backtest.use_local,
-                qlib_config_name=resolved_qlib_config,
-                qlib_template_dir=resolved_template_dir,
             )
-        else:
-            loop = loop_cls.load(path)
-            setattr(loop, "context", self.context)
-            setattr(loop, "use_local", self.context.config.backtest.use_local)
-        loop.run(step_n=step_n)
+        )
 
     # ---- CLI contribution ----
 

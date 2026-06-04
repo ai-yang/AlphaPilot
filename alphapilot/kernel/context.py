@@ -40,6 +40,10 @@ class Context:
     def backtest(self) -> "BaseBacktestSystem":
         return self.engine.get_system("backtest")
 
+    def module(self, name: str) -> Any:
+        """Return a loaded pluggable module (e.g. ``alpha_mining``)."""
+        return self.engine.get_module(name)
+
     def system(self, name: str) -> Any:
         return self.engine.get_system(name)
 

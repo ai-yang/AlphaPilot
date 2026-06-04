@@ -5,7 +5,7 @@ from __future__ import annotations
 import pickle
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, Union
 
 import pandas as pd
 from pandarallel import pandarallel
@@ -13,10 +13,10 @@ from pandarallel import pandarallel
 from alphapilot.components.runner import CachedRunner
 from alphapilot.core.conf import RD_AGENT_SETTINGS
 from alphapilot.core.exception import FactorEmptyError
-from alphapilot.core.utils import cache_with_pickle, multiprocessing_wrapper
+from alphapilot.core.utils import cache_with_pickle, md5_hash, multiprocessing_wrapper
 from alphapilot.log import logger
+from alphapilot.systems.backtest.protocols import FactorBacktestCapable
 from alphapilot.systems.backtest.qlib_config import resolve_qlib_config_name
-from alphapilot.oai.llm_utils import md5_hash
 
 pandarallel.initialize(verbose=1)
 
@@ -95,7 +95,7 @@ class QlibFactorRunner(CachedRunner[Any]):
         return new_feature.iloc[:, ic_max[ic_max < 0.99].index]
 
     @cache_with_pickle(CachedRunner.get_cache_key, CachedRunner.assign_cached_result)
-    def develop(self, exp: Any, use_local: bool = True) -> Any:
+    def develop(self, exp: Union[FactorBacktestCapable, Any], use_local: bool = True) -> Any:
         if exp.based_experiments and exp.based_experiments[-1].result is None:
             exp.based_experiments[-1] = self.develop(exp.based_experiments[-1], use_local=use_local)
 

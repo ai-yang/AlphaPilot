@@ -13,7 +13,7 @@ from alphapilot.components.coder.factor_coder.factor import FactorFBWorkspace, F
 from alphapilot.components.loader.experiment_loader import FactorExperimentLoader
 
 DEFAULT_FACTOR_EXPERIMENT_CLASS = (
-    "alphapilot.modules.alpha_mining.qlib.experiment.factor_experiment.QlibFactorExperiment"
+    "alphapilot.systems.backtest.qlib.experiment.QlibFactorExperiment"
 )
 
 
