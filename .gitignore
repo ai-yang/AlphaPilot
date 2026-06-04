@@ -154,7 +154,7 @@ reports/
 git_ignore_folder/
 
 # User-owned strategy assets and qlib templates (see important_data/README.md)
-important_data/
+important_data/strategy_zoo/
 factor_zoo/*
 saved_mlruns/
 #cache
@@ -180,8 +180,4 @@ mlruns/
 
 *_debug*
 *.ipynb
-alphapilot/modules/alpha_mining/qlib/experiment/factor_template/*
-alphapilot/app/data_mining/
-alphapilot/app/general_model/
-alphapilot/app/kaggle/
 backend/
