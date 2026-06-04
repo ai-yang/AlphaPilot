@@ -46,7 +46,7 @@
 | **内核 kernel** | `alphapilot/kernel/` | `MainEngine` 持有配置与系统/模块；`Context` 是模块访问系统的唯一入口；`AppConfig` 集中路径配置；`registry` 负责内置注册 + 入口点发现 |
 | **数据管理系统** | `alphapilot/systems/data/` | 股票数据下载、复权、Qlib 转换、h5 生成与存储（`prepare_data` 实现；`app/data` 已移除） |
 | **因子管理系统** | `alphapilot/systems/factor/` | 导入因子、因子库（`FactorDatabase` 包装 `FactorRegulator`）、表达式 DSL |
-| **策略管理系统** | `alphapilot/systems/strategy/` | 策略资产落盘（`git_ignore_folder/strategy_zoo/`）、`backtest_from_asset` 复测编排 |
+| **策略管理系统** | `alphapilot/systems/strategy/` | 策略资产落盘（`important_data/strategy_zoo/`）、`backtest_from_asset` 复测编排 |
 | **策略复测模块** | `alphapilot/modules/strategy_backtest/` | CLI：`strategy_backtest` / `strategy_backtest_list` |
 | **交易回测系统** | `alphapilot/systems/backtest/` | 因子/模型回测（统一由 system 内部 qlib workspace 执行）、结果存取（`BacktestResultStore`） |
 | **模块 modules** | `alphapilot/modules/` | 可插拔特性；内置 `alpha_mining`（即原 `AlphaPilotLoop`）通过 `Context` 编排四大系统 |
@@ -199,7 +199,7 @@ flowchart TB
 | `coder` | `QlibFactorParser` |
 | `runner` | `QlibFactorRunner` |
 | `summarizer` | `AlphaPilotQlibFactorHypothesisExperiment2Feedback` |
-| `qlib_template_dir` | 可选；`.env` → `QLIB_FACTOR_QLIB_TEMPLATE_DIR`，如 `git_ignore_folder/factor_qlib_templates` |
+| `qlib_template_dir` | 可选；`.env` → `QLIB_FACTOR_QLIB_TEMPLATE_DIR`，如 `important_data/factor_qlib_templates` |
 | `qlib_config_name` | 可选；`.env` → `QLIB_FACTOR_QLIB_CONFIG_NAME`，如 `conf_cn_combined_kdd_ver.yaml` |
 
 单次 `factor_backtest` 时，`QlibFactorRunner`（`systems/backtest/runners/factor_runner.py`）按 `resolve_qlib_config_name()` 选择 yaml；显式配置优先于 `based_experiments` 默认规则。
@@ -453,8 +453,8 @@ HypothesisExperiment2Feedback.generate_feedback() → HypothesisFeedback
 | `alphapilot/systems/data/` | 数据准备核心实现（原 `app/data` 与根目录脚本能力已收拢至此） |
 | `requirements.txt` / `pyproject.toml` | 安装 `alphapilot` 包并注册 CLI |
 | `.env` | API Key、`USE_LOCAL`、`QLIB_FACTOR_*`、`FACTOR_CoSTEER_*` 等，由 `cli.py` 与各 `*PropSetting` 读取 |
-| `git_ignore_folder/factor_qlib_templates/` | 用户自定义 Qlib 模板副本（可选） |
-| `git_ignore_folder/strategy_zoo/` | mine 策略资产与复测记录 |
+| `important_data/factor_qlib_templates/` | 用户自定义 Qlib 模板副本（可选） |
+| `important_data/strategy_zoo/` | mine 策略资产与复测记录 |
 | `backup_data/` | 个人股票列表等备份，不参与程序自动加载 |
 | `.github/` | GitHub Actions、Dependabot、Issue/PR 模板（本地开发通常无影响） |
 
@@ -465,7 +465,7 @@ HypothesisExperiment2Feedback.generate_feedback() → HypothesisFeedback
 1. **LLM JSON 容错**（`oai/llm_utils.py`）：适配非标准 JSON 输出  
 2. **回测可视化**（`app/backtest_viewer/`）：`alphapilot backtest_ui`  
 3. **数据准备**（`systems/data/`）：baostock 下载 A 股数据、Qlib 转换与 h5 导出  
-4. **回测配置**：内置 `factor_template/` + 可选 `git_ignore_folder/factor_qlib_templates/`；`QLIB_FACTOR_QLIB_TEMPLATE_DIR` / `QLIB_FACTOR_QLIB_CONFIG_NAME`  
+4. **回测配置**：内置 `factor_template/` + 可选 `important_data/factor_qlib_templates/`；`QLIB_FACTOR_QLIB_TEMPLATE_DIR` / `QLIB_FACTOR_QLIB_CONFIG_NAME`  
 5. **策略资产复测**（`modules/strategy_backtest/` + `systems/strategy/`）：`strategy_backtest` / `strategy_backtest_list`  
 6. **因子执行环境**：`FACTOR_CoSTEER_PYTHON_BIN` 默认当前解释器；失败 execute 不写入 pickle 缓存  
 

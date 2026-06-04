@@ -65,13 +65,13 @@ alphapilot prepare_data --action download --stock_csv backup_data/main_stock_202
 | `conf_cn_combined_kdd_ver.yaml` | 合并 LLM 新因子后的回测（`mine` 多轮常用） |
 | `read_exp_res.py` | `qrun` 后导出 IC、收益等到 `qlib_res.csv` / `ret.pkl` |
 
-**自定义模板目录（推荐二开）**：可将上述文件复制到 `git_ignore_folder/factor_qlib_templates/` 后只改副本，避免动仓库内置配置。说明见该目录下 [README.md](git_ignore_folder/factor_qlib_templates/README.md)。
+**自定义模板目录（推荐二开）**：可将上述文件复制到 `important_data/factor_qlib_templates/` 后只改副本，避免动仓库内置配置。说明见该目录下 [README.md](important_data/factor_qlib_templates/README.md)。
 
 **可选环境变量**（前缀 `QLIB_FACTOR_`，在 `.env` 中配置；CLI 参数优先）：
 
 | 变量 | 含义 |
 |------|------|
-| `QLIB_FACTOR_QLIB_TEMPLATE_DIR` | 拷入 workspace 的模板目录（相对项目根，如 `git_ignore_folder/factor_qlib_templates`） |
+| `QLIB_FACTOR_QLIB_TEMPLATE_DIR` | 拷入 workspace 的模板目录（相对项目根，如 `important_data/factor_qlib_templates`） |
 | `QLIB_FACTOR_QLIB_CONFIG_NAME` | 上述目录中的 yaml 文件名（如 `conf_cn_combined_kdd_ver.yaml`） |
 
 `alphapilot prepare_data h5` 会从 Qlib 导出 `daily_pv.h5` 到 `git_ignore_folder/factor_implementation_source_data*`，供因子 Python 代码使用。
@@ -302,7 +302,7 @@ FACTOR_MINING_TIMEOUT=36000  # 因子挖掘最长运行时间（秒），不设 
 EMBEDDING_MAX_STR_NUM=10     # DashScope 等 embedding 接口的单次 batch 上限（按需）
 
 # 可选：Qlib 回测模板与 yaml（mine / backtest / strategy_backtest 共用 QLIB_FACTOR_ 前缀）
-# QLIB_FACTOR_QLIB_TEMPLATE_DIR=git_ignore_folder/factor_qlib_templates
+# QLIB_FACTOR_QLIB_TEMPLATE_DIR=important_data/factor_qlib_templates
 # QLIB_FACTOR_QLIB_CONFIG_NAME=conf_cn_combined_kdd_ver.yaml
 
 # 可选：因子 factor.py 子进程 Python（默认当前解释器 sys.executable）
@@ -354,7 +354,7 @@ alphapilot mine --direction "行为金融学假说" --step_n 10
 
 ```bash
 alphapilot mine --direction "行为金融学假说" \
-  --qlib_template_dir=git_ignore_folder/factor_qlib_templates \
+  --qlib_template_dir=important_data/factor_qlib_templates \
   --qlib_config_name=conf_cn_combined_kdd_ver.yaml
 ```
 
@@ -364,7 +364,7 @@ alphapilot mine --direction "行为金融学假说" \
 2. Factor Agent 生成因子表达式与 Python 代码  
 3. 在 `daily_pv.h5` 上计算因子值  
 4. Qlib + LightGBM 回测，输出 IC、收益等指标  
-5. 根据反馈进入下一轮；每轮成功结束后可将因子/模型/指标写入 `git_ignore_folder/strategy_zoo/`（策略资产）
+5. 根据反馈进入下一轮；每轮成功结束后可将因子/模型/指标写入 `important_data/strategy_zoo/`（策略资产）
 
 回测工作区与日志默认在 `git_ignore_folder/` 下。
 
@@ -392,7 +392,7 @@ RSI_Factor,"RSI($close)"
 
 ### 3. 策略资产复测（`strategy_backtest`）
 
-`mine` 每轮结束后会在 `git_ignore_folder/strategy_zoo/<策略名>/` 落盘策略资产（因子公式、`fitted_model.pkl`、IC 等指标、`metadata.json`）。可用独立命令对**已保存资产**重新回测，无需重跑完整挖掘流程。
+`mine` 每轮结束后会在 `important_data/strategy_zoo/<策略名>/` 落盘策略资产（因子公式、`fitted_model.pkl`、IC 等指标、`metadata.json`）。可用独立命令对**已保存资产**重新回测，无需重跑完整挖掘流程。
 
 **列出已保存策略：**
 
@@ -522,8 +522,8 @@ alphapilot backtest_ui --workspace_root /path/to/git_ignore_folder/RD-Agent_work
 | 路径 | 内容 | 何时需要清理 |
 |------|------|----------------|
 | `pickle_cache/` | 因子计算、Qlib 回测等步骤的 pickle 缓存 | 修改回测参数、因子逻辑，或结果异常需重跑；**因子 `execute` 仅缓存成功结果**，旧失败条目会在下次执行时自动丢弃 |
-| `git_ignore_folder/strategy_zoo/` | `mine` 保存的策略资产与 `retests/` 复测记录 | 一般无需删；换策略或只想重导资产时再清理 |
-| `git_ignore_folder/factor_qlib_templates/` | 用户自定义 Qlib 模板（yaml + `read_exp_res.py`） | 修改回测区间、组合策略参数时编辑此目录 |
+| `important_data/strategy_zoo/` | `mine` 保存的策略资产与 `retests/` 复测记录 | 一般无需删；换策略或只想重导资产时再清理 |
+| `important_data/factor_qlib_templates/` | 用户自定义 Qlib 模板（yaml + `read_exp_res.py`） | 修改回测区间、组合策略参数时编辑此目录 |
 | `git_ignore_folder/` | 工作区、回测产物、`daily_pv.h5` 副本等 | 更换股票池、重跑 `mine` / `backtest` |
 | `alphapilot/modules/alpha_mining/qlib/experiment/factor_data_template/daily_pv_*.h5` | 从 Qlib 导出的价量 h5 源文件 | 修改 `market`、股票池或 `generate.py` |
 | `prompt_cache.db`（可选） | LLM 对话/Embedding 本地缓存（`.env` 开启缓存时） | 更换模型或希望 LLM 输出不复用旧缓存 |
@@ -588,9 +588,10 @@ AlphaPilot/
 │   ├── app/backtest_viewer/    # 回测结果可视化（alphapilot backtest_ui）
 │   └── log/ui/                 # 运行日志可视化（alphapilot ui）
 ├── .env.example             # 环境变量模板
+├── important_data/          # 策略资产与 Qlib 模板（已 gitignore）
+│   ├── strategy_zoo/        # mine 保存的策略与 retests/
+│   └── factor_qlib_templates/  # 可选：自定义 Qlib 回测模板
 └── git_ignore_folder/       # 运行产物（已 gitignore）
-    ├── factor_qlib_templates/  # 可选：自定义 Qlib 回测模板
-    ├── strategy_zoo/           # mine 保存的策略资产
     └── RD-Agent_workspace/     # 每轮回测工作区
 
 ~/.qlib/qlib_data/cn_data/   # Qlib 行情数据（不在仓库内）

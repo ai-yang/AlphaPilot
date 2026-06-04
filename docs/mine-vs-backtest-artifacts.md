@@ -19,8 +19,8 @@
 | `pickle_cache/` | ~数百 MB | 因子 `execute`、回测 `develop` | **缓存键碰撞**（逻辑错用旧结果） |
 | `git_ignore_folder/RD-Agent_workspace/<uuid>/` | ~1GB+ 累积 | 每次实验新建 UUID 目录 | 一般不互相覆盖；占磁盘 |
 | `git_ignore_folder/factor_implementation_source_data/` | 共享只读 | 因子执行 symlink | 并发更新 `daily_pv.h5` 时可能读到半成品 |
-| `git_ignore_folder/factor_qlib_templates/` | 用户可改 | 模板 **拷贝** 进 workspace | 运行中改模板不影响已拷贝目录 |
-| `git_ignore_folder/strategy_zoo/` | 小 | mine 写资产；`strategy_backtest` 写 `retests/` | 仅当**同时**写同一策略目录时需注意 |
+| `important_data/factor_qlib_templates/` | 用户可改 | 模板 **拷贝** 进 workspace | 运行中改模板不影响已拷贝目录 |
+| `important_data/strategy_zoo/` | 小 | mine 写资产；`strategy_backtest` 写 `retests/` | 仅当**同时**写同一策略目录时需注意 |
 | `log/<时间戳>/` | 中等 | mine 快照 + 打分模型；独立回测也可能写入 | **可能覆盖** `rounds/round_01/.../scoring_model` |
 | `~/.qlib/qlib_data/` | 大 | Qlib 行情 | 只读为主，多进程读一般无妨 |
 

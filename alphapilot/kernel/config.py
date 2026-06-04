@@ -16,6 +16,8 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from alphapilot.kernel.paths import strategy_zoo_dir
+
 
 def _env_path(name: str, default: Path) -> Path:
     value = os.getenv(name)
@@ -106,7 +108,7 @@ class StrategyConfig:
         default_factory=lambda: _env_path_legacy(
             "ALPHAPILOT_STRATEGY_PARAM_DIR",
             "ALPHAPILOT_MODEL_PARAM_DIR",
-            Path.cwd() / "git_ignore_folder" / "strategy_zoo",
+            strategy_zoo_dir(),
         )
     )
 

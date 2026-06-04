@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from alphapilot.kernel.paths import factor_qlib_templates_dir, remap_legacy_relative_path
+
 _EXPERIMENT_DIR = Path(__file__).resolve().parent
 
 DEFAULT_QLIB_FACTOR_TEMPLATE_DIR = _EXPERIMENT_DIR / "factor_template"
 DEFAULT_QLIB_MODEL_TEMPLATE_DIR = _EXPERIMENT_DIR / "model_template"
+DEFAULT_USER_QLIB_FACTOR_TEMPLATE_DIR = factor_qlib_templates_dir()
 
 
 def resolve_qlib_template_dir(path: str | Path | None, *, default: Path | None = None) -> Path:
@@ -19,8 +22,13 @@ def resolve_qlib_template_dir(path: str | Path | None, *, default: Path | None =
     - absolute path → used as-is
     """
     if path is None or (isinstance(path, str) and not str(path).strip()):
-        return (default or DEFAULT_QLIB_FACTOR_TEMPLATE_DIR).resolve()
-    p = Path(path).expanduser()
+        if default is not None:
+            return default.resolve()
+        if DEFAULT_USER_QLIB_FACTOR_TEMPLATE_DIR.is_dir():
+            return DEFAULT_USER_QLIB_FACTOR_TEMPLATE_DIR
+        return DEFAULT_QLIB_FACTOR_TEMPLATE_DIR.resolve()
+    remapped = remap_legacy_relative_path(path)
+    p = Path(remapped if remapped is not None else path).expanduser()
     if not p.is_absolute():
         p = Path.cwd() / p
     return p.resolve()

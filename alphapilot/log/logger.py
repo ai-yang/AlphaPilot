@@ -58,7 +58,11 @@ class AgentLog(SingletonBaseClass):
     def __init__(self, log_trace_path: Union[str, None] = RD_AGENT_SETTINGS.log_trace_path) -> None:
         if log_trace_path is None:
             timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S-%f")
-            self.log_trace_path = Path.cwd() / "log" / timestamp
+            log_root = os.getenv("ALPHAPILOT_LOG_DIR")
+            if log_root:
+                self.log_trace_path = Path(log_root).expanduser() / timestamp
+            else:
+                self.log_trace_path = Path.cwd() / "log" / timestamp
         else:
             self.log_trace_path = Path(log_trace_path)
 

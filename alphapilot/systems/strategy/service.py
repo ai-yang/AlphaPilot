@@ -23,6 +23,7 @@ from alphapilot.systems.strategy.base import (
     StrategyRecord,
 )
 from alphapilot.components.coder.factor_coder.config import resolve_factor_python_bin
+from alphapilot.kernel.paths import remap_legacy_relative_path
 from alphapilot.log import logger
 from alphapilot.systems.strategy.database import build_strategy_param_database
 
@@ -197,7 +198,9 @@ class StrategySystem(BaseStrategySystem):
 
         factors = self._factors_to_defs(record.factor_formulas)
         qlib_config_name = request.qlib_config_name or (record.metadata or {}).get("qlib_config_name")
-        qlib_template_dir = request.qlib_template_dir or (record.metadata or {}).get("qlib_template_dir")
+        qlib_template_dir = remap_legacy_relative_path(
+            request.qlib_template_dir or (record.metadata or {}).get("qlib_template_dir")
+        )
         use_local = (
             request.use_local
             if request.use_local is not None

@@ -1,6 +1,7 @@
 import io
 import re
 import shutil
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -13,17 +14,30 @@ from alphapilot.utils.env import QTDockerEnv
 from alphapilot.log import logger
 
 
+def _repo_root() -> Path:
+    """AlphaPilot repository root (parent of the ``alphapilot`` package)."""
+    return Path(__file__).resolve().parents[5]
+
+
 def generate_data_folder_from_qlib(use_local: bool = True):
-    template_path = Path(__file__).parent / "factor_data_template"
-    qtde = QTDockerEnv(is_local=use_local)
-    qtde.prepare()
-    
-    # 运行数据生成脚本
-    logger.info(f"在{'本地' if use_local else 'Docker容器'}中生成因子数据")
-    execute_log = qtde.run(
-        local_path=str(template_path),
-        entry=f"python generate.py",
-    )
+    template_path = (Path(__file__).parent / "factor_data_template").resolve()
+
+    # Run h5 export in-process (local) or from repo root (Docker).
+    # Do not use cwd=template_path: AgentLog would create factor_data_template/log/.
+    logger.info(f"在{'本地' if use_local else 'Docker容器'}中生成因子数据 -> {template_path}")
+    if use_local:
+        from alphapilot.systems.data.generate_h5 import generate_daily_pv_h5
+
+        generate_daily_pv_h5(output_dir=template_path)
+    else:
+        qtde = QTDockerEnv(is_local=False)
+        qtde.prepare()
+        out = str(template_path).replace("\\", "\\\\")
+        entry = (
+            f'{sys.executable} -c "from alphapilot.systems.data.generate_h5 import '
+            f"generate_daily_pv_h5; generate_daily_pv_h5(output_dir=r'{out}')\""
+        )
+        qtde.run(local_path=str(_repo_root()), entry=entry)
 
     # 检查文件是否生成
     daily_pv_all = Path(__file__).parent / "factor_data_template" / "daily_pv_all.h5"

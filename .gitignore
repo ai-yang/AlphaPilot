@@ -152,6 +152,9 @@ reports/
 
 # git_ignore_folder
 git_ignore_folder/
+
+# User-owned strategy assets and qlib templates (see important_data/README.md)
+important_data/
 factor_zoo/*
 saved_mlruns/
 #cache
