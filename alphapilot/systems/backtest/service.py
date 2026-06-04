@@ -66,6 +66,7 @@ class QlibBacktestSystem(BaseBacktestSystem):
         return self.run_factor_experiment(request)
 
     def run_factor_experiment(self, request: FactorExperimentBacktestRequest) -> Any:
+        from alphapilot.core.pickle_cache import pickle_cache_scope
         from alphapilot.systems.backtest.qlib_config import resolve_qlib_config_name
         from alphapilot.systems.backtest.runners.factor_runner import QlibFactorRunner
 
@@ -74,10 +75,17 @@ class QlibBacktestSystem(BaseBacktestSystem):
 
         scen = getattr(request.experiment, "scen", None)
         runner = QlibFactorRunner(scen)
-        exp = runner.develop(
-            request.experiment,
-            use_local=self._use_local(request.use_local),
-        )
+        scope = request.pickle_cache_scope
+        develop_kwargs: dict[str, Any] = {
+            "use_local": self._use_local(request.use_local),
+            "run_env": getattr(request.experiment, "run_env", None) or {},
+        }
+
+        with pickle_cache_scope(
+            scope if scope in ("mine", "backtest") else None,
+            folder=request.pickle_cache_folder,
+        ):
+            exp = runner.develop(request.experiment, **develop_kwargs)
         exp.qlib_config_name = resolve_qlib_config_name(exp)
         return exp
 

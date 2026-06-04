@@ -23,6 +23,7 @@ from alphapilot.log import logger
 from alphapilot.log.time import measure_time
 from alphapilot.utils.workflow import LoopBase, LoopMeta
 from alphapilot.core.exception import FactorEmptyError
+from alphapilot.core.pickle_cache import pickle_cache_scope
 import threading
 
 
@@ -136,7 +137,7 @@ class AlphaPilotLoop(LoopBase, metaclass=LoopMeta):
         """
         根据因子表达式计算过去的因子表（因子值）
         """
-        with logger.tag("d"):  # develop
+        with logger.tag("d"), pickle_cache_scope("mine"):
             factor = self.coder.develop(prev_out["factor_construct"])
             logger.log_object(factor.sub_workspace_list, tag="coder result")
         return factor
@@ -163,13 +164,15 @@ class AlphaPilotLoop(LoopBase, metaclass=LoopMeta):
                 FactorExperimentBacktestRequest,
             )
 
-            exp = self.context.backtest().run_factor_experiment(
-                FactorExperimentBacktestRequest(
-                    experiment=experiment,
-                    qlib_config_name=self.qlib_config_name,
-                    use_local=self.use_local,
+            with pickle_cache_scope("mine"):
+                exp = self.context.backtest().run_factor_experiment(
+                    FactorExperimentBacktestRequest(
+                        experiment=experiment,
+                        qlib_config_name=self.qlib_config_name,
+                        use_local=self.use_local,
+                        pickle_cache_scope="mine",
+                    )
                 )
-            )
             if exp is None:
                 logger.error(f"Factor extraction failed.")
                 raise FactorEmptyError("Factor extraction failed.")

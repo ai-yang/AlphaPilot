@@ -322,6 +322,10 @@ EMBEDDING_MAX_STR_NUM=10     # DashScope 等 embedding 接口的单次 batch 上
 # ALPHAPILOT_IMPORTANT_DATA_DIR=important_data
 # ALPHAPILOT_STRATEGY_PARAM_DIR=important_data/strategy_zoo
 
+# 可选：pickle 缓存（mine 与 backtest 分目录，见 §5 清理缓存）
+# ALPHAPILOT_PICKLE_CACHE_DIR_MINE=pickle_cache/mine
+# ALPHAPILOT_PICKLE_CACHE_DIR_BACKTEST=pickle_cache/backtest
+
 # 可选：Qlib 回测模板与 yaml（mine / backtest / strategy_backtest 共用 QLIB_FACTOR_ 前缀）
 # QLIB_FACTOR_QLIB_TEMPLATE_DIR=important_data/factor_qlib_templates
 # QLIB_FACTOR_QLIB_CONFIG_NAME=conf_cn_combined_kdd_ver.yaml
@@ -542,7 +546,11 @@ alphapilot backtest_ui --workspace_root /path/to/git_ignore_folder/RD-Agent_work
 
 | 路径 | 内容 | 何时需要清理 |
 |------|------|----------------|
-| `pickle_cache/` | 因子计算、Qlib 回测等步骤的 pickle 缓存 | 修改回测参数、因子逻辑，或结果异常需重跑；**因子 `execute` 仅缓存成功结果**，旧失败条目会在下次执行时自动丢弃 |
+| `pickle_cache/mine/` | **因子挖掘**（`alphapilot mine`）的因子 `execute`、Qlib `develop` 缓存 | 改 yaml/因子后清此目录；与回测缓存互不影响 |
+| `pickle_cache/backtest/` | **`backtest` / `strategy_backtest`** 等一般回测缓存 | 改 yaml/因子后清此目录 |
+| `pickle_cache/`（旧版单目录） | 未设置 scope 时的回退路径 | 新项目建议用上面两个子目录 |
+
+环境变量（见 `.env.example`）：`ALPHAPILOT_PICKLE_CACHE_DIR_MINE`、`ALPHAPILOT_PICKLE_CACHE_DIR_BACKTEST`；`ALPHAPILOT_PICKLE_CACHE_ENABLED=false` 可关闭。定义位置：`alphapilot/core/conf.py`（默认根路径）、`alphapilot/core/pickle_cache.py`（按 mine/backtest 解析）。
 | `important_data/strategy_zoo/` | `mine` 保存的策略资产与 `retests/` 复测记录 | 一般无需删；换策略或只想重导资产时再清理 |
 | `important_data/factor_qlib_templates/` | 用户自定义 Qlib 模板（yaml + `read_exp_res.py`） | 修改回测区间、组合策略参数时编辑此目录 |
 | `important_data/stock_lists/` | 股票池 CSV（`prepare_data` 默认列表等） | 换股票池后重新 `download` / `convert` / `h5`，并同步 yaml 中 `market` |
@@ -557,7 +565,7 @@ alphapilot backtest_ui --workspace_root /path/to/git_ignore_folder/RD-Agent_work
 ```bash
 cd /path/to/AlphaPilot
 
-rm -rf ./pickle_cache/*
+rm -rf ./pickle_cache/mine/* ./pickle_cache/backtest/*
 rm -rf ./git_ignore_folder/*
 ```
 
@@ -566,7 +574,7 @@ rm -rf ./git_ignore_folder/*
 ```bash
 cd /path/to/AlphaPilot
 
-rm -rf ./pickle_cache/*
+rm -rf ./pickle_cache/mine/* ./pickle_cache/backtest/*
 rm -rf ./git_ignore_folder/*
 rm -f alphapilot/modules/alpha_mining/qlib/experiment/factor_data_template/daily_pv_all.h5
 rm -f alphapilot/modules/alpha_mining/qlib/experiment/factor_data_template/daily_pv_debug.h5
@@ -580,7 +588,7 @@ alphapilot prepare_data h5
 ```bash
 cd /path/to/AlphaPilot
 
-rm -rf ./pickle_cache/*
+rm -rf ./pickle_cache/mine/* ./pickle_cache/backtest/*
 rm -rf ./git_ignore_folder/*
 rm -f alphapilot/modules/alpha_mining/qlib/experiment/factor_data_template/daily_pv_all.h5
 rm -f alphapilot/modules/alpha_mining/qlib/experiment/factor_data_template/daily_pv_debug.h5

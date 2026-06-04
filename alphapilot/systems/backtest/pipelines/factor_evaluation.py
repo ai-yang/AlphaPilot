@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from alphapilot.components.coder.factor_coder import FactorCoder
+from alphapilot.core.pickle_cache import pickle_cache_scope
 from alphapilot.components.coder.factor_coder.data import ensure_factor_data
 from alphapilot.systems.backtest.pipelines.factor_source import build_factor_experiment_from_csv
 from alphapilot.systems.backtest.qlib.scenario import QlibFactorEvaluationScenario
@@ -70,25 +71,26 @@ class FactorEvaluationPipeline:
                 experiment.qlib_config_name = request.qlib_config_name
             experiment.run_env = dict(request.run_env)
 
-            coder = FactorCoder(
-                scenario,
-                with_feedback=False,
-                with_knowledge=False,
-                knowledge_self_gen=False,
-            )
-            experiment = coder.develop(experiment)
+            with pickle_cache_scope("backtest"):
+                coder = FactorCoder(
+                    scenario,
+                    with_feedback=False,
+                    with_knowledge=False,
+                    knowledge_self_gen=False,
+                )
+                experiment = coder.develop(experiment)
 
-            from alphapilot.systems.backtest.qlib_config import resolve_qlib_config_name
-            from alphapilot.systems.backtest.runners.factor_runner import QlibFactorRunner
+                from alphapilot.systems.backtest.qlib_config import resolve_qlib_config_name
+                from alphapilot.systems.backtest.runners.factor_runner import QlibFactorRunner
 
-            if request.qlib_config_name:
-                experiment.qlib_config_name = request.qlib_config_name
-            runner = QlibFactorRunner(None)
-            experiment = runner.develop(
-                experiment,
-                use_local=use_local,
-                run_env=experiment.run_env,
-            )
+                if request.qlib_config_name:
+                    experiment.qlib_config_name = request.qlib_config_name
+                runner = QlibFactorRunner(None)
+                experiment = runner.develop(
+                    experiment,
+                    use_local=use_local,
+                    run_env=experiment.run_env,
+                )
             experiment.qlib_config_name = resolve_qlib_config_name(experiment)
             return FactorBacktestResult(
                 experiment=experiment,

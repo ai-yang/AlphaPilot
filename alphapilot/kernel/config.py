@@ -18,6 +18,18 @@ from pathlib import Path
 
 from alphapilot.kernel.paths import strategy_zoo_dir
 
+# Defaults aligned with alphapilot.core.pickle_cache (env names must stay in sync).
+def _default_pickle_cache_dir_mine() -> Path:
+    from alphapilot.core.pickle_cache import default_pickle_cache_dir_mine
+
+    return default_pickle_cache_dir_mine()
+
+
+def _default_pickle_cache_dir_backtest() -> Path:
+    from alphapilot.core.pickle_cache import default_pickle_cache_dir_backtest
+
+    return default_pickle_cache_dir_backtest()
+
 
 def _env_path(name: str, default: Path) -> Path:
     value = os.getenv(name)
@@ -75,6 +87,12 @@ class BacktestConfig:
             "ALPHAPILOT_WORKSPACE_ROOT",
             Path.cwd() / "git_ignore_folder" / "RD-Agent_workspace",
         )
+    )
+    pickle_cache_dir_mine: Path = field(default_factory=_default_pickle_cache_dir_mine)
+    pickle_cache_dir_backtest: Path = field(default_factory=_default_pickle_cache_dir_backtest)
+    pickle_cache_enabled: bool = field(
+        default_factory=lambda: os.getenv("ALPHAPILOT_PICKLE_CACHE_ENABLED", "true").lower()
+        in ("true", "1", "yes")
     )
 
 
@@ -148,6 +166,9 @@ class AppConfig:
             f"  strategy.param_dir={self.strategy.param_dir}\n"
             f"  backtest.engine={self.backtest.engine} use_local={self.backtest.use_local}\n"
             f"  backtest.workspace_root={self.backtest.workspace_root}\n"
+            f"  backtest.pickle_cache_dir_mine={self.backtest.pickle_cache_dir_mine}\n"
+            f"  backtest.pickle_cache_dir_backtest={self.backtest.pickle_cache_dir_backtest}\n"
+            f"  backtest.pickle_cache_enabled={self.backtest.pickle_cache_enabled}\n"
             f"  llm.provider={self.llm.provider}\n"
             f"  log_dir={self.log_dir}\n"
             ")"

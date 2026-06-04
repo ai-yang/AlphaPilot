@@ -56,10 +56,12 @@ class AlphaMiningModule(BaseModule):
 
         resolved_qlib_config = qlib_config_name or getattr(prop_setting, "qlib_config_name", None)
         resolved_template_dir = qlib_template_dir or getattr(prop_setting, "qlib_template_dir", None)
+        bt_cfg = self.context.config.backtest
         logger.info(
             f"[alpha_mining] scenario={scenario} use_local={use_local} "
             f"qlib_config_name={resolved_qlib_config or 'default'} "
-            f"qlib_template_dir={resolved_template_dir or 'factor_template (default)'}"
+            f"qlib_template_dir={resolved_template_dir or 'factor_template (default)'} "
+            f"pickle_cache_mine={bt_cfg.pickle_cache_dir_mine}"
         )
         if path is None:
             loop = loop_cls(

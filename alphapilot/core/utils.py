@@ -154,6 +154,13 @@ def multiprocessing_wrapper(func_calls: list[tuple[Callable, tuple]], n: int) ->
         return [result.get() for result in results]
 
 
+_PICKLE_CACHE_KWARGS = frozenset({"pickle_cache_folder", "pickle_cache_scope"})
+
+
+def _kwargs_without_pickle_cache_controls(kwargs: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in kwargs.items() if k not in _PICKLE_CACHE_KWARGS}
+
+
 def cache_with_pickle(
     hash_func: Callable,
     post_process_func: Callable | None = None,
@@ -175,15 +182,22 @@ def cache_with_pickle(
     def cache_decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def cache_wrapper(*args: Any, **kwargs: Any) -> Any:
-            if not RD_AGENT_SETTINGS.cache_with_pickle:
+            from alphapilot.core.pickle_cache import pickle_cache_enabled, resolve_pickle_cache_dir
+
+            if not pickle_cache_enabled():
                 return func(*args, **kwargs)
 
-            target_folder = Path(RD_AGENT_SETTINGS.pickle_cache_folder_path_str) / f"{func.__module__}.{func.__name__}"
+            cache_root = resolve_pickle_cache_dir(
+                explicit_folder=kwargs.get("pickle_cache_folder"),
+                scope=kwargs.get("pickle_cache_scope"),
+            )
+            target_folder = cache_root / f"{func.__module__}.{func.__name__}"
             target_folder.mkdir(parents=True, exist_ok=True)
             hash_key = hash_func(*args, **kwargs)
 
             if hash_key is None:
-                return func(*args, **kwargs)
+                call_kwargs = _kwargs_without_pickle_cache_controls(kwargs)
+                return func(*args, **call_kwargs)
 
             cache_file = target_folder / f"{hash_key}.pkl"
             lock_file = target_folder / f"{hash_key}.lock"
@@ -195,11 +209,12 @@ def cache_with_pickle(
                     return post_process_func(*args, cached_res=cached_res) if post_process_func else cached_res
                 cache_file.unlink(missing_ok=True)
 
+            call_kwargs = _kwargs_without_pickle_cache_controls(kwargs)
             if RD_AGENT_SETTINGS.use_file_lock:
                 with FileLock(lock_file):
-                    result = func(*args, **kwargs)
+                    result = func(*args, **call_kwargs)
             else:
-                result = func(*args, **kwargs)
+                result = func(*args, **call_kwargs)
 
             if cache_if is None or cache_if(result):
                 with cache_file.open("wb") as f:

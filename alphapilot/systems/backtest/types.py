@@ -43,6 +43,10 @@ class FactorExperimentBacktestRequest:
     experiment: Any
     qlib_config_name: str | None = None
     use_local: bool | None = None
+    pickle_cache_scope: str | None = "backtest"
+    """``mine`` | ``backtest`` — selects separate pickle cache roots from env."""
+    pickle_cache_folder: str | Path | None = None
+    """Optional absolute/relative override for the pickle cache root directory."""
 
 
 @dataclass
