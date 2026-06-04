@@ -6,6 +6,7 @@
 |--------|------|----------|
 | `strategy_zoo/` | `mine` 保存的策略资产、`strategy_backtest` 的 `retests/` | `ALPHAPILOT_STRATEGY_PARAM_DIR`（默认本目录） |
 | `factor_qlib_templates/` | 自定义 Qlib 回测模板（yaml、`read_exp_res.py`） | `QLIB_FACTOR_QLIB_TEMPLATE_DIR` |
+| `stock_lists/` | 股票池 CSV（如 `main_stock_2026_4_27.csv`）、架构图等 | `prepare_data` 默认 `--stock_csv` |
 
 可选环境变量：
 
@@ -14,4 +15,4 @@
 ALPHAPILOT_IMPORTANT_DATA_DIR=/path/to/important_data
 ```
 
-旧路径 `git_ignore_folder/strategy_zoo` 与 `git_ignore_folder/factor_qlib_templates` 会在运行时自动映射到本目录。
+旧路径 `git_ignore_folder/strategy_zoo`、`git_ignore_folder/factor_qlib_templates`、`backup_data/` 会在运行时自动映射到本目录对应子路径。

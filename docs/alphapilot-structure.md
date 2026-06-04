@@ -456,7 +456,7 @@ HypothesisExperiment2Feedback.generate_feedback() → HypothesisFeedback
 | `.env` | API Key、`USE_LOCAL`、`QLIB_FACTOR_*`、`FACTOR_CoSTEER_*` 等，由 `cli.py` 与各 `*PropSetting` 读取 |
 | `important_data/factor_qlib_templates/` | 用户自定义 Qlib 模板副本（可选） |
 | `important_data/strategy_zoo/` | mine 策略资产与复测记录 |
-| `backup_data/` | 个人股票列表等备份，不参与程序自动加载 |
+| `important_data/stock_lists/` | 股票池 CSV 等；`prepare_data` 默认列表为 `main_stock_2026_4_27.csv` |
 | `.github/` | GitHub Actions、Dependabot、Issue/PR 模板（本地开发通常无影响） |
 
 ---

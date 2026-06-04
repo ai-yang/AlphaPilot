@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from alphapilot.kernel.paths import remap_legacy_relative_path
 from alphapilot.log import logger
 
 # Column names tried when --code_column is not set (first match wins).
@@ -139,7 +140,11 @@ def load_stocks_from_file(
     TXT: one symbol per line (``#`` 开头为注释).
     CSV: auto-detect code column or use *code_column*.
     """
-    path = Path(stock_file).expanduser().resolve()
+    remapped = remap_legacy_relative_path(stock_file)
+    path = Path(remapped if remapped is not None else stock_file).expanduser()
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    path = path.resolve()
     if not path.exists():
         raise FileNotFoundError(f"股票列表文件不存在: {path}")
 
