@@ -265,7 +265,9 @@ flowchart TB
 
 1. `modules/strategy_backtest/module.py` → `StrategySystem.backtest_from_asset`
 2. `retrain`：`FactorBacktestRequest` → `BacktestLoop`（`factor_backtest` 场景）→ 因子计算 → `QlibFactorRunner` → `qrun`
-3. 结果写入 `strategy_zoo/<name>/retests/*.json`，终端打印 IC 摘要
+3. 结果写入 `strategy_zoo/<name>/retests/<时间戳>_<mode>.json`；成功时另导出 `retests/<时间戳>_<mode>/`（`daily_report.csv`、`daily_trades.csv`、`daily_holdings.csv` 等），终端打印 IC 摘要
+
+Mine / backtest / strategy_backtest 共用目录与缓存冲突说明见 [mine-vs-backtest-artifacts.md](mine-vs-backtest-artifacts.md)。
 
 ---
 

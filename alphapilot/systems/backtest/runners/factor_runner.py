@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import pickle
+import shutil
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -14,12 +16,56 @@ from alphapilot.core.exception import FactorEmptyError
 from alphapilot.core.utils import cache_with_pickle, multiprocessing_wrapper
 from alphapilot.log import logger
 from alphapilot.systems.backtest.qlib_config import resolve_qlib_config_name
+from alphapilot.oai.llm_utils import md5_hash
 
 pandarallel.initialize(verbose=1)
 
 
+_PORTFOLIO_ARTIFACT_NAMES = (
+    "ret.pkl",
+    "qlib_res.csv",
+    "positions_normal_1day.pkl",
+    "indicators_normal_1day.pkl",
+    "combined_factors_df.pkl",
+)
+
+
 class QlibFactorRunner(CachedRunner[Any]):
     """Factor runner that prepares factor outputs then executes qlib."""
+
+    @staticmethod
+    def _sync_workspace_artifacts(src_ws: Path, dst_ws: Path) -> None:
+        for name in _PORTFOLIO_ARTIFACT_NAMES:
+            src = src_ws / name
+            dst = dst_ws / name
+            if src.exists() and not dst.exists():
+                shutil.copy2(src, dst)
+
+    def get_cache_key(self, exp: Any, **kwargs: Any) -> str:
+        parts: list[str] = []
+        for based_exp in exp.based_experiments:
+            for task in based_exp.sub_tasks:
+                parts.append(task.get_task_information())
+        for task in exp.sub_tasks:
+            parts.append(task.get_task_information())
+        parts.append(f"qlib_config:{resolve_qlib_config_name(exp)}")
+        parts.append(f"qlib_template_dir:{getattr(exp, 'qlib_template_dir', '') or ''}")
+        parts.append(f"use_local:{kwargs.get('use_local', True)}")
+        return md5_hash("\n---\n".join(parts))
+
+    def assign_cached_result(self, exp: Any, cached_res: Any) -> Any:
+        exp = super().assign_cached_result(exp, cached_res)
+        src_ws = getattr(getattr(cached_res, "experiment_workspace", None), "workspace_path", None)
+        dst_ws = getattr(getattr(exp, "experiment_workspace", None), "workspace_path", None)
+        if src_ws is None or dst_ws is None:
+            return exp
+        src_ws, dst_ws = Path(src_ws), Path(dst_ws)
+        if src_ws.resolve() != dst_ws.resolve():
+            self._sync_workspace_artifacts(src_ws, dst_ws)
+            logger.info(
+                f"[factor_runner] synced portfolio artifacts from cached workspace {src_ws.name} -> {dst_ws.name}"
+            )
+        return exp
 
     def calculate_information_coefficient(
         self,
@@ -93,7 +139,7 @@ class QlibFactorRunner(CachedRunner[Any]):
         exp.result = result
 
         round_no = getattr(exp, "mining_round", None)
-        if round_no is not None:
+        if round_no is not None and getattr(exp, "persist_scoring_model_log", False):
             from alphapilot.systems.backtest.scoring_model_export import persist_scoring_model_to_log
 
             persist_scoring_model_to_log(

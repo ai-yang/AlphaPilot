@@ -155,6 +155,7 @@ class AlphaPilotLoop(LoopBase, metaclass=LoopMeta):
             logger.info(f"Start factor backtest (Local: {self.use_local})")
             experiment = prev_out["factor_calculate"]
             experiment.mining_round = self.loop_idx + 1
+            experiment.persist_scoring_model_log = True
             if self.qlib_config_name:
                 experiment.qlib_config_name = self.qlib_config_name
             if self.context is not None:

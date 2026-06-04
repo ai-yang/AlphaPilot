@@ -42,6 +42,9 @@ class BaseStrategyParamDatabase(ABC):
     @abstractmethod
     def append_retest(self, strategy_name: str, payload: dict[str, Any]) -> Path | None: ...
 
+    @abstractmethod
+    def retest_bundle_dir(self, strategy_name: str, timestamp: str, mode: str) -> Path | None: ...
+
 
 class FileStrategyParamDatabase(BaseStrategyParamDatabase):
     """File-backed strategy store under ``param_dir`` (one folder per strategy)."""
@@ -152,6 +155,14 @@ class FileStrategyParamDatabase(BaseStrategyParamDatabase):
         if (sdir / "strategy_record.json").exists():
             return sdir
         return None
+
+    def retest_bundle_dir(self, strategy_name: str, timestamp: str, mode: str) -> Path | None:
+        sdir = self.strategy_dir(strategy_name)
+        if sdir is None:
+            return None
+        bundle = sdir / "retests" / f"{timestamp}_{mode}"
+        bundle.mkdir(parents=True, exist_ok=True)
+        return bundle
 
     def append_retest(self, strategy_name: str, payload: dict[str, Any]) -> Path | None:
         sdir = self.strategy_dir(strategy_name)

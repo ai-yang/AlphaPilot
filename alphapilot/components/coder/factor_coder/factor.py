@@ -43,10 +43,13 @@ class FactorTask(CoSTEERTask):
         super().__init__(name=factor_name, *args, **kwargs)
 
     def get_task_information(self):
+        expr_line = ""
+        if self.factor_expression:
+            expr_line = f"\nfactor_expression: {self.factor_expression}"
         return f"""factor_name: {self.factor_name}
 factor_description: {self.factor_description}
 factor_formulation: {self.factor_formulation}
-variables: {str(self.variables)}"""
+variables: {str(self.variables)}{expr_line}"""
     
 
     def get_task_description(self):

@@ -415,7 +415,17 @@ alphapilot strategy_backtest \
 | `--qlib_template_dir` / `--qlib_config_name` | 可选，覆盖模板目录与 yaml；未传时优先读策略 `metadata`，否则用 `.env` 的 `QLIB_FACTOR_*` |
 | `--use_local` | 与 `USE_LOCAL` 一致，是否本地执行 `qrun` |
 
-复测结果摘要打印在终端，明细写入该策略目录下 `retests/<时间戳>_<mode>.json`。
+复测结果摘要打印在终端，明细写入该策略目录下 `retests/<时间戳>_<mode>.json`。若回测 workspace 含 `ret.pkl`（及 qlib 导出的仓位文件），会额外写入同名的 `retests/<时间戳>_<mode>/` 目录，包括：
+
+| 文件 | 内容 |
+|------|------|
+| `daily_report.csv` | 日频账户曲线（收益、换手、成本等） |
+| `daily_trades.csv` | 每日调仓买卖明细 |
+| `daily_holdings.csv` | 每日持仓明细 |
+| `position_*_wide.csv` | 持仓权重/数量/价格宽表（可选） |
+| `daily_indicators.csv` | 组合指标（若存在） |
+| `portfolio_summary.json` | 累计收益、最大回撤等汇总 |
+| `manifest.json` | 导出文件清单与 workspace 路径 |
 
 > **注意**：请在已安装本包且能 `import alphapilot` 的 Python 环境中运行（如 `conda activate alphapilot`）。因子代码默认使用**当前解释器**执行；失败的历史 pickle 缓存不会阻止重试（仅成功结果会被缓存）。
 

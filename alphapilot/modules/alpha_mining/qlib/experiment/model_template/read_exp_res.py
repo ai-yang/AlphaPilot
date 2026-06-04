@@ -44,5 +44,20 @@ else:
 
     print(f"Output has been saved to {output_path}")
 
-    ret_data_frame = latest_recorder.load_object("portfolio_analysis/report_normal_1day.pkl")
-    ret_data_frame.to_pickle("ret.pkl")
+    portfolio_objects = [
+        ("portfolio_analysis/report_normal_1day.pkl", "ret.pkl"),
+        ("portfolio_analysis/positions_normal_1day.pkl", "positions_normal_1day.pkl"),
+        ("portfolio_analysis/indicators_normal_1day.pkl", "indicators_normal_1day.pkl"),
+    ]
+    for recorder_key, filename in portfolio_objects:
+        try:
+            obj = latest_recorder.load_object(recorder_key)
+            out_path = Path(__file__).resolve().parent / filename
+            if filename == "ret.pkl":
+                obj.to_pickle(out_path)
+            else:
+                with out_path.open("wb") as f:
+                    pickle.dump(obj, f)
+            print(f"Saved {filename}")
+        except Exception as exc:
+            print(f"Warning: could not export {recorder_key}: {exc}")

@@ -96,6 +96,32 @@ class StrategySystem(BaseStrategySystem):
             for i, expr in enumerate(factor_formulas)
         ]
 
+    def _export_retest_portfolio_artifacts(
+        self,
+        record: StrategyRecord,
+        out: StrategyBacktestOutcome,
+        timestamp: str,
+    ) -> None:
+        if not out.workspace_path:
+            return
+        bundle_dir = self._param_db.retest_bundle_dir(record.strategy_name, timestamp, out.mode)
+        if bundle_dir is None:
+            return
+        try:
+            from alphapilot.systems.backtest.portfolio_artifacts import export_portfolio_to_dir
+
+            files = export_portfolio_to_dir(out.workspace_path, bundle_dir)
+            strategy_dir = self._param_db.strategy_dir(record.strategy_name)
+            if strategy_dir is not None:
+                out.details["artifacts_dir"] = str(bundle_dir.relative_to(strategy_dir))
+            out.details["artifact_files"] = files
+        except Exception as exc:
+            out.details["artifact_export_error"] = str(exc)
+            logger.warning(
+                f"[strategy_backtest] portfolio export failed for {record.strategy_name} "
+                f"mode={out.mode}: {exc}"
+            )
+
     @staticmethod
     def _extract_metrics(result: Any) -> StrategyMetrics | None:
         source = getattr(result, "metrics", None)
@@ -272,6 +298,7 @@ class StrategySystem(BaseStrategySystem):
                     },
                 )
 
+            self._export_retest_portfolio_artifacts(record, out, timestamp)
             outcomes.append(out)
             self._param_db.append_retest(
                 record.strategy_name,
@@ -280,6 +307,7 @@ class StrategySystem(BaseStrategySystem):
                     "mode": out.mode,
                     "strategy_name": out.strategy_name,
                     "metrics": out.metrics,
+                    "workspace_path": out.workspace_path,
                     "details": out.details,
                 },
             )
