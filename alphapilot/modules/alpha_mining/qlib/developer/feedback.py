@@ -20,7 +20,47 @@ rdagent_feedback_prompts = Prompts(file_path=Path(__file__).parent.parent / "pro
 DIRNAME = Path(__file__).absolute().resolve().parent
 
 
+def _resolve_sota_result(exp: Experiment, trace: Trace):
+    """SOTA baseline for feedback: last accepted round, not the empty placeholder."""
+    if not getattr(exp, "based_experiments", None):
+        return None
+    for based in reversed(exp.based_experiments):
+        if getattr(based, "sub_tasks", None) and based.result is not None:
+            return based.result
+    if len(trace.hist) > 0:
+        for _hyp, experiment, feedback in reversed(trace.hist):
+            if feedback and bool(feedback) and experiment.result is not None:
+                return experiment.result
+    placeholder = exp.based_experiments[-1]
+    if getattr(placeholder, "sub_tasks", None):
+        return placeholder.result
+    return None
+
+
+_IMPORTANT_METRICS = [
+    "1day.excess_return_without_cost.max_drawdown",
+    "1day.excess_return_without_cost.information_ratio",
+    "1day.excess_return_without_cost.annualized_return",
+    "IC",
+]
+
+
+def _format_current_only(current_result) -> str:
+    current_df = pd.DataFrame(current_result)
+    current_df.index.name = "metric"
+    current_df.rename(columns={"0": "Current Result"}, inplace=True)
+    filtered = current_df.loc[[m for m in _IMPORTANT_METRICS if m in current_df.index]]
+    header = (
+        "First mining round: no prior SOTA baseline to compare against. "
+        "Evaluate the current result on its own merits.\n"
+    )
+    return header + filtered.to_string()
+
+
 def process_results(current_result, sota_result):
+    if sota_result is None:
+        return _format_current_only(current_result)
+
     # Convert the results to dataframes
     current_df = pd.DataFrame(current_result)
     sota_df = pd.DataFrame(sota_result)
@@ -36,16 +76,8 @@ def process_results(current_result, sota_result):
     # Combine the dataframes on the Metric index
     combined_df = pd.concat([current_df, sota_df], axis=1)
 
-    # Select important metrics for comparison
-    important_metrics = [
-        "1day.excess_return_without_cost.max_drawdown",
-        "1day.excess_return_without_cost.information_ratio",
-        "1day.excess_return_without_cost.annualized_return",
-        "IC",
-    ]
-
     # Filter the combined DataFrame to retain only the important metrics
-    filtered_combined_df = combined_df.loc[important_metrics]
+    filtered_combined_df = combined_df.loc[[m for m in _IMPORTANT_METRICS if m in combined_df.index]]
 
     filtered_combined_df[
         "Bigger columns name (Didn't consider the direction of the metric, you should judge it by yourself that bigger is better or smaller is better)"
@@ -73,7 +105,7 @@ class QlibFactorHypothesisExperiment2Feedback(HypothesisExperiment2Feedback):
         hypothesis_text = hypothesis.hypothesis
         current_result = exp.result
         tasks_factors = [task.get_task_information_and_implementation_result() for task in exp.sub_tasks]
-        sota_result = exp.based_experiments[-1].result
+        sota_result = _resolve_sota_result(exp, trace)
 
         # Process the results to filter important metrics
         combined_result = process_results(current_result, sota_result)
@@ -141,7 +173,7 @@ class AlphaPilotQlibFactorHypothesisExperiment2Feedback(HypothesisExperiment2Fee
         hypothesis_text = hypothesis.hypothesis
         current_result = exp.result
         tasks_factors = [task.get_task_information_and_implementation_result() for task in exp.sub_tasks]
-        sota_result = exp.based_experiments[-1].result
+        sota_result = _resolve_sota_result(exp, trace)
 
         # Process the results to filter important metrics
         combined_result = process_results(current_result, sota_result)

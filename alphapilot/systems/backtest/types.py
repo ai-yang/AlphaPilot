@@ -25,6 +25,7 @@ class FactorBacktestRequest:
     qlib_config_name: str | None = None
     qlib_template_dir: str | None = None
     use_local: bool | None = None
+    run_env: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass

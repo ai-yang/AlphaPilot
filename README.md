@@ -410,7 +410,7 @@ alphapilot strategy_backtest \
 
 | 参数 | 说明 |
 |------|------|
-| `--mode` | `retrain`：按资产内公式重算因子并重新训练回测；`reuse_model`：尝试复用已保存模型；`both`：两种都跑 |
+| `--mode` | `retrain`：按资产内公式重算因子并重新训练回测；`reuse_model`：加载 `artifacts/fitted_model.pkl` 跳过训练，仍跑信号与组合回测；`both`：两种都跑 |
 | `--qlib_data_dir` | 可选，切换 Qlib 数据目录（不设则用默认 `~/.qlib/...`） |
 | `--qlib_template_dir` / `--qlib_config_name` | 可选，覆盖模板目录与 yaml；未传时优先读策略 `metadata`，否则用 `.env` 的 `QLIB_FACTOR_*` |
 | `--use_local` | 与 `USE_LOCAL` 一致，是否本地执行 `qrun` |

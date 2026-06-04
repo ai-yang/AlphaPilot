@@ -247,8 +247,8 @@ class StrategySystem(BaseStrategySystem):
                 if m == "reuse_model" and model_uri:
                     details["model_pickle_path"] = model_uri
                     details["note"] = (
-                        "Current backend reuses saved model path via run_env hint; "
-                        "downstream runner support may vary."
+                        "Loads strategy_zoo fitted_model.pkl via PretrainedLGBModel; "
+                        "skips qrun training while still running signal and portfolio backtest."
                     )
                 out = StrategyBacktestOutcome(
                     strategy_name=record.strategy_name,

@@ -68,6 +68,7 @@ class FactorEvaluationPipeline:
             )
             if request.qlib_config_name:
                 experiment.qlib_config_name = request.qlib_config_name
+            experiment.run_env = dict(request.run_env)
 
             coder = FactorCoder(
                 scenario,
@@ -83,7 +84,11 @@ class FactorEvaluationPipeline:
             if request.qlib_config_name:
                 experiment.qlib_config_name = request.qlib_config_name
             runner = QlibFactorRunner(None)
-            experiment = runner.develop(experiment, use_local=use_local)
+            experiment = runner.develop(
+                experiment,
+                use_local=use_local,
+                run_env=experiment.run_env,
+            )
             experiment.qlib_config_name = resolve_qlib_config_name(experiment)
             return FactorBacktestResult(
                 experiment=experiment,

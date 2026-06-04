@@ -25,7 +25,7 @@ def run_saved_model_evaluation(
         run_env["ALPHAPILOT_QLIB_DATA_DIR"] = str(request.qlib_data_dir)
     run_env["ALPHAPILOT_PRETRAINED_MODEL_PKL"] = str(Path(request.model_pickle_path).expanduser())
 
-    result = run_factor_evaluation(
+    return run_factor_evaluation(
         context,
         FactorBacktestRequest(
             factors=request.factors,
@@ -34,7 +34,6 @@ def run_saved_model_evaluation(
             qlib_config_name=request.qlib_config_name,
             qlib_template_dir=request.qlib_template_dir,
             use_local=request.use_local,
+            run_env=run_env,
         ),
     )
-    setattr(result, "_pretrained_model_env", run_env)
-    return result

@@ -17,6 +17,10 @@ from alphapilot.core.utils import cache_with_pickle, md5_hash, multiprocessing_w
 from alphapilot.log import logger
 from alphapilot.systems.backtest.protocols import FactorBacktestCapable
 from alphapilot.systems.backtest.qlib_config import resolve_qlib_config_name
+from alphapilot.systems.backtest.qlib_pretrained import (
+    PRETRAINED_ENV_VAR,
+    patch_qlib_conf_for_pretrained,
+)
 
 pandarallel.initialize(verbose=1)
 
@@ -51,6 +55,9 @@ class QlibFactorRunner(CachedRunner[Any]):
         parts.append(f"qlib_config:{resolve_qlib_config_name(exp)}")
         parts.append(f"qlib_template_dir:{getattr(exp, 'qlib_template_dir', '') or ''}")
         parts.append(f"use_local:{kwargs.get('use_local', True)}")
+        run_env = kwargs.get("run_env") or getattr(exp, "run_env", None) or {}
+        pretrained = run_env.get(PRETRAINED_ENV_VAR, "")
+        parts.append(f"pretrained:{pretrained}")
         return md5_hash("\n---\n".join(parts))
 
     def assign_cached_result(self, exp: Any, cached_res: Any) -> Any:
@@ -95,13 +102,26 @@ class QlibFactorRunner(CachedRunner[Any]):
         return new_feature.iloc[:, ic_max[ic_max < 0.99].index]
 
     @cache_with_pickle(CachedRunner.get_cache_key, CachedRunner.assign_cached_result)
-    def develop(self, exp: Union[FactorBacktestCapable, Any], use_local: bool = True) -> Any:
-        if exp.based_experiments and exp.based_experiments[-1].result is None:
-            exp.based_experiments[-1] = self.develop(exp.based_experiments[-1], use_local=use_local)
+    def develop(
+        self,
+        exp: Union[FactorBacktestCapable, Any],
+        use_local: bool = True,
+        run_env: dict[str, str] | None = None,
+    ) -> Any:
+        run_env = dict(run_env or getattr(exp, "run_env", None) or {})
+        if run_env:
+            exp.run_env = run_env
 
-        if exp.based_experiments:
+        if exp.based_experiments and exp.based_experiments[-1].result is None:
+            based = exp.based_experiments[-1]
+            if based.sub_tasks:
+                exp.based_experiments[-1] = self.develop(
+                    based, use_local=use_local, run_env=run_env
+                )
+
+        if exp.sub_tasks:
             sota_factor = None
-            if len(exp.based_experiments) > 1:
+            if exp.based_experiments and len(exp.based_experiments) > 1:
                 sota_factor = self.process_factor_data(exp.based_experiments)
 
             new_factors = self.process_factor_data(exp)
@@ -130,10 +150,21 @@ class QlibFactorRunner(CachedRunner[Any]):
 
         config_name = resolve_qlib_config_name(exp)
         exp.qlib_config_name = config_name
-        logger.info(f"Execute factor backtest (Use {'Local' if use_local else 'Docker container'}): {config_name}")
+        workspace_path = Path(exp.experiment_workspace.workspace_path)
+        if run_env.get(PRETRAINED_ENV_VAR):
+            patch_qlib_conf_for_pretrained(workspace_path, config_name)
+            logger.info(
+                f"Execute factor backtest with pretrained model "
+                f"(Use {'Local' if use_local else 'Docker'}): {config_name}"
+            )
+        else:
+            logger.info(
+                f"Execute factor backtest (Use {'Local' if use_local else 'Docker container'}): {config_name}"
+            )
         result = exp.experiment_workspace.execute(
             qlib_config_name=config_name,
             use_local=use_local,
+            run_env=run_env,
         )
         logger.info(f"Backtesting results: \n{result.iloc[2:] if result is not None else 'None'}")
         exp.result = result
