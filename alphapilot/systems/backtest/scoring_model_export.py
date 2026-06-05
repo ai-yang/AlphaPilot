@@ -276,6 +276,58 @@ def export_scoring_model_artifacts(
     return artifact_dir
 
 
+def persist_qlib_template_to_log(
+    log_root: Path,
+    round_no: int,
+    workspace_path: Path,
+    qlib_config_name: str,
+    *,
+    template_dir: str | Path | None = None,
+) -> Path:
+    """Copy the qlib yaml and ``read_exp_res.py`` used for this round into the mining log."""
+    from alphapilot.log.mine_paths import qlib_template_log_dir
+
+    workspace_path = Path(workspace_path)
+    log_root = Path(log_root)
+    dst = qlib_template_log_dir(log_root, round_no)
+    if dst.exists():
+        shutil.rmtree(dst)
+    dst.mkdir(parents=True, exist_ok=True)
+
+    saved_files: list[str] = []
+    template_path = Path(template_dir).expanduser().resolve() if template_dir else None
+
+    config_dst = dst / qlib_config_name
+    config_src = workspace_path / qlib_config_name
+    if not config_src.exists() and template_path is not None:
+        config_src = template_path / qlib_config_name
+    if config_src.exists():
+        shutil.copy2(config_src, config_dst)
+        saved_files.append(qlib_config_name)
+
+    read_exp_dst = dst / "read_exp_res.py"
+    read_exp_src = workspace_path / "read_exp_res.py"
+    if not read_exp_src.exists() and template_path is not None:
+        read_exp_src = template_path / "read_exp_res.py"
+    if read_exp_src.exists():
+        shutil.copy2(read_exp_src, read_exp_dst)
+        saved_files.append("read_exp_res.py")
+
+    manifest = {
+        "qlib_config_name": qlib_config_name,
+        "qlib_template_dir": str(template_path) if template_path else None,
+        "workspace": str(workspace_path.resolve()),
+        "files": saved_files,
+    }
+    _write_json(dst / "manifest.json", manifest)
+
+    logger.info(
+        f"[因子挖掘] 第 {round_no} 轮 Qlib 模板已保存: {dst.relative_to(log_root)} "
+        f"(config={qlib_config_name}, files={saved_files})"
+    )
+    return dst
+
+
 def persist_scoring_model_to_log(
     log_root: Path,
     round_no: int,

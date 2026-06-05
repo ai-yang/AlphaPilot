@@ -171,13 +171,24 @@ class QlibFactorRunner(CachedRunner[Any]):
 
         round_no = getattr(exp, "mining_round", None)
         if round_no is not None and getattr(exp, "persist_scoring_model_log", False):
-            from alphapilot.systems.backtest.scoring_model_export import persist_scoring_model_to_log
+            from alphapilot.systems.backtest.scoring_model_export import (
+                persist_qlib_template_to_log,
+                persist_scoring_model_to_log,
+            )
 
+            ws_path = exp.experiment_workspace.workspace_path
             persist_scoring_model_to_log(
                 logger.log_trace_path,
                 int(round_no),
-                exp.experiment_workspace.workspace_path,
+                ws_path,
                 config_name,
+            )
+            persist_qlib_template_to_log(
+                logger.log_trace_path,
+                int(round_no),
+                ws_path,
+                config_name,
+                template_dir=getattr(exp, "qlib_template_dir", None),
             )
 
         return exp

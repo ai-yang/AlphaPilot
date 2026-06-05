@@ -16,6 +16,7 @@ FACTOR_MINING_STEP_DIRS: dict[str, str] = {
 ROUNDS_ROOT = "rounds"
 SESSION_SNAPSHOTS_ROOT = "session_snapshots"
 SCORING_MODEL_SUBDIR = "scoring_model"
+QLIB_TEMPLATE_SUBDIR = "qlib_template"
 
 
 def step_dir_name(step_name: str) -> str:
@@ -39,6 +40,11 @@ def round_backtest_dir(log_root: Path, round_no: int) -> Path:
 
 def scoring_model_log_dir(log_root: Path, round_no: int) -> Path:
     return round_backtest_dir(log_root, round_no) / SCORING_MODEL_SUBDIR
+
+
+def qlib_template_log_dir(log_root: Path, round_no: int) -> Path:
+    """``rounds/round_01/04_backtest/qlib_template/``"""
+    return round_backtest_dir(log_root, round_no) / QLIB_TEMPLATE_SUBDIR
 
 
 def mining_round_tag(round_no: int, step_name: str) -> str:

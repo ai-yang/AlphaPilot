@@ -61,8 +61,6 @@ port_analysis_config: &port_analysis_config
     backtest:
         start_time: 2024-01-01 # 模拟回测的开始时间（对齐测试集起点）
         end_time: 2026-05-22   # 模拟回测的结束时间
-        # start_time: 2020-01-01
-        # end_time: 2024-12-30
         account: 50000    # 初始模拟账户资金
         benchmark: *benchmark  # 基准
         exchange_kwargs:
@@ -94,9 +92,6 @@ task:
                 module_path: qlib.contrib.data.handler
                 kwargs: *data_handler_config
             segments: # 数据集切分区间
-                # train: [2015-01-01, 2019-12-31]
-                # valid: [2020-01-01, 2020-12-31]
-                # test: [2021-01-01, 2025-03-31]
                 train: [2017-01-01, 2022-12-31] # 训练集时间跨度
                 valid: [2023-01-01, 2023-12-31] # 验证集时间跨度
                 test: [2024-01-01, 2026-05-22]  # 测试集时间跨度
