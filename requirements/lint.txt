@@ -1,9 +1,0 @@
-# Requirements for lint.
-black
-isort
-mypy
-ruff
-toml-sort
-types-PyYAML
-types-psutil
-types-tqdm

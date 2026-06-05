@@ -24,15 +24,15 @@ AlphaPilot 通过三个 Agent 协作完成因子挖掘：
 
 适配 MiniMax 等推理模型的非标准 JSON 输出（代码块包裹、尾逗号、推理块等），新增 `extract_and_validate_llm_json()`，降低因子构造阶段 `json.loads` 失败概率。
 
-### 2. 回测结果可视化（`alphapilot/app/backtest_viewer/`）
+### 2. 回测结果可视化（`alphapilot/modules/backtest_viz/` + `systems/backtest/artifacts.py`）
 
-在原版 `alphapilot ui`（运行日志总览）之外，新增独立的回测查看器 `backtest_ui`，支持：
+在原版 `alphapilot ui`（运行日志总览）之外，新增回测查看器（`backtest_viz` / portal「回测详情」），支持：
 
 - 收益曲线、超额收益、回撤
 - 日换手与成本
 - 当日成交、持仓明细
 
-CLI 入口：`alphapilot backtest_ui`（见下方使用流程）。原版日志界面仍使用 `alphapilot ui`，并新增统一门户 `alphapilot portal` 作为推荐入口。
+原独立界面 `alphapilot ui` / `alphapilot backtest_ui` 已整合进统一门户 `alphapilot portal`（见下方使用流程）。
 
 ### 3. 数据准备命令（`alphapilot prepare_data`）
 
@@ -106,7 +106,8 @@ alphapilot prepare_data --action download --stock_csv important_data/stock_lists
 - 历史入口 `alphapilot/app/qlib_rd_loop/*` 已移除，不再保留兼容 shim
 - 数据准备逻辑已迁入 `alphapilot/systems/data/`（含 `prepare_cn.py`、`adjust_prices.py`、`qlib_convert.py`、`generate_h5.py`、`qlib_dump/` 等）；`alphapilot/app/data/` 兼容层已删除
 - `prepare_data` 统一由 `platform -> context.data() -> systems.data` 链路执行（单一调度入口）
-- `mine/backtest/strategy_backtest/prepare_data/ui/backtest_ui/portal` 统一由模块贡献命令（modules-only）
+- `mine/backtest/strategy_backtest/prepare_data/portal/data_viz/backtest_viz` 等由内置模块贡献命令（modules-only）；`ui` / `backtest_ui` 仅保留弃用提示
+- 回测产物解析收拢到 `alphapilot/systems/backtest/artifacts.py`；可视化 UI 在 `alphapilot/modules/backtest_viz/`（原 `app/backtest_viewer/` 已删除）
 
 **数据系统代码位置（供二开参考）**
 
@@ -330,6 +331,11 @@ EMBEDDING_MAX_STR_NUM=10     # DashScope 等 embedding 接口的单次 batch 上
 # QLIB_FACTOR_QLIB_TEMPLATE_DIR=important_data/factor_qlib_templates
 # QLIB_FACTOR_QLIB_CONFIG_NAME=conf_cn_combined_kdd_ver.yaml
 
+# 可选：门户 / 回测可视化默认路径（portal、backtest_viz 共用）
+# ALPHAPILOT_LOG_DIR=./log
+# ALPHAPILOT_WORKSPACE_ROOT=git_ignore_folder/RD-Agent_workspace
+# ALPHAPILOT_BACKTEST_ROOT=git_ignore_folder/RD-Agent_workspace
+
 # 可选：因子 factor.py 子进程 Python（默认当前解释器 sys.executable）
 # FACTOR_CoSTEER_PYTHON_BIN=/path/to/python
 ```
@@ -456,16 +462,17 @@ alphapilot strategy_backtest \
 
 ### 4. 可视化工具
 
-项目提供四个 Streamlit 界面，用途不同：
+**推荐唯一入口**：`alphapilot portal`（统一门户，已整合原 `ui` 与 `backtest_ui` 的全部功能）。
 
-| 命令 | 来源 | 主要用途 |
+| 命令 | 状态 | 主要用途 |
 |------|------|----------|
-| `alphapilot portal` | 本仓库新增（modules 统一入口） | 一站式 Web 门户：系统状态、股票/因子/模型信息、导入导出、动态模块列表与命令执行 |
-| `alphapilot data_viz` | 本仓库新增 | 查看已下载股票 CSV：**K 线图**、时间段筛选、鼠标悬停 OHLCV 详情 |
-| `alphapilot ui` | 原版自带 | 查看因子挖掘**运行日志**（假说、因子代码、反馈、Qlib 报告图等） |
-| `alphapilot backtest_ui` | 本仓库新增 | 查看单次回测**交易与收益**（持仓、成交、收益曲线等） |
+| `alphapilot portal` | **推荐** | 一站式 Web 门户：数据/因子/策略/回测、**挖掘日志**、**回测详情**、K 线、模块命令等 |
+| `alphapilot data_viz` | 可选独立 | 查看已下载股票 CSV：**K 线图**（门户「股票 K 线」标签已内嵌，通常无需单独启动） |
+| `alphapilot backtest_viz` | 可选独立 | 查看回测 workspace 产物（门户「回测 → 回测详情」已内嵌，通常无需单独启动） |
+| `alphapilot ui` | **已弃用** | 打印重定向提示 → 请使用 portal「挖掘日志」标签 |
+| `alphapilot backtest_ui` | **已弃用** | 打印重定向提示 → 请使用 portal「回测 → 回测详情」或 `backtest_viz` |
 
-> 说明：CLI 入口已改为 **modules-only** 分发，`mine/backtest/strategy_backtest/prepare_data/ui/backtest_ui/portal` 均由内置模块提供；新增第三方模块后会自动出现在 `alphapilot modules` 与 `alphapilot portal` 页面中。
+> 说明：CLI 入口已改为 **modules-only** 分发；新增第三方模块后会自动出现在 `alphapilot modules` 与 `alphapilot portal` 页面中。
 
 #### 4.0 股票数据 K 线可视化（`data_viz`）
 
@@ -490,38 +497,34 @@ alphapilot portal --port 19901
 
 浏览器打开 `http://localhost:19901`，可在一个页面中访问：
 - Data/Factor/Strategy/Backtest 四大系统能力
-- **股票 K 线** 标签页（内嵌 `data_viz`，无需单独开 `data_viz` 服务）
-- 模块动态列表（自动显示新插件/新包）
-- 模块命令调度（JSON 参数）
+- **股票 K 线** 标签页（内嵌 `data_viz`）
+- **挖掘日志** 标签页（原 `alphapilot ui`：假说、因子代码、反馈、Qlib 报告图等）
+- **回测** 标签页含两个子页：**运行列表** + **回测详情**（内嵌 `backtest_viz`，原 `alphapilot backtest_ui`）
+- 模块动态列表与 JSON 命令调度
 - 因子库与模型参数导入导出
 
-#### 4.2 运行日志可视化（原版 `alphapilot ui`）
+门户使用 `.env` 中的 `ALPHAPILOT_LOG_DIR` 与 `ALPHAPILOT_WORKSPACE_ROOT` 作为日志与回测 workspace 默认路径。
 
-用于监控 `alphapilot mine` 的完整迭代过程，包括每轮假说、因子表达式、代码反馈、回测指标图表等。
+#### 4.2 挖掘日志（portal「挖掘日志」标签，原 `alphapilot ui`）
 
-```bash
-alphapilot ui --port 19899 --log_dir log/
-```
+用于监控 `alphapilot mine` 的完整迭代过程。在 portal 的「挖掘日志」标签中：
+- 选择 `log/` 下的会话目录并刷新
+- 查看每轮假说、因子表达式、代码演化、回测反馈与指标图表
+- 支持 Start/Stop Mining API（若后端服务可用）
 
-浏览器打开 `http://localhost:19899`。`log_dir` 指向运行产生的日志目录，默认为项目下的 `log/`（若你修改过日志输出路径，请对应调整）。
+> `alphapilot ui` 已弃用，执行后仅打印 portal 重定向提示。
 
-开启调试模式：
+#### 4.3 回测详情（portal「回测 → 回测详情」，原 `alphapilot backtest_ui`）
 
-```bash
-alphapilot ui --port 19899 --log_dir log/ --debug
-```
+在 portal「回测」标签的「回测详情」子页中，选择 `git_ignore_folder/RD-Agent_workspace` 下含 `ret.pkl` 的工作区，查看收益曲线、持仓、成交等。下拉列表会尽量显示 **`log/` 里对应的会话文件夹名**。数据由 backtest system 的 `BacktestResultStore` 加载，底层解析在 `systems/backtest/artifacts.py`。
 
-#### 4.3 回测结果可视化（本仓库 `backtest_ui`）
-
-用于查看某次 Qlib 回测工作区的明细结果，适合分析具体某轮回测的持仓与收益。
+也可单独启动回测查看器（功能与 portal 子页相同）：
 
 ```bash
-alphapilot backtest_ui --port 19900
+alphapilot backtest_viz --port 19903
 ```
 
-浏览器打开 `http://localhost:19900`，在界面中选择 `git_ignore_folder/RD-Agent_workspace` 下含 `ret.pkl` 的工作区目录。下拉列表会尽量显示 **`log/` 里对应的会话文件夹名**（如 `run02_best`）：默认按 **workspace 与 log 目录的创建时间一一对应**（`run01` → `run02_best` → `run03_…` → `run04_…`）；同一 log 下多次回测会显示为 `run04_mainboard_bad (05-25 16:24)` 等。若仍不对，可在 `log/backtest_workspace_labels.json` 里手动指定（见下）。
-
-手动指定 workspace 与 log 标题（可选）：
+手动指定 workspace 与 log 标题（可选）：在 log 根目录创建 `backtest_workspace_labels.json`（默认即 `log/backtest_workspace_labels.json`）：
 
 ```json
 {
@@ -532,11 +535,7 @@ alphapilot backtest_ui --port 19900
 
 说明：只有仍含 `ret.pkl` 的 workspace 会出现在列表中；`run01`/`run02` 若已清理旧 workspace，需重新跑完回测或用手动映射文件关联。
 
-指定工作区根目录与 log 目录：
-
-```bash
-alphapilot backtest_ui --workspace_root /path/to/git_ignore_folder/RD-Agent_workspace --log_dir log/
-```
+> `alphapilot backtest_ui` 已弃用。如需修改默认路径，请在 `.env` 中设置 `ALPHAPILOT_WORKSPACE_ROOT`（或 `ALPHAPILOT_BACKTEST_ROOT`）与 `ALPHAPILOT_LOG_DIR`。
 
 ### 5. 清理缓存
 
@@ -549,14 +548,14 @@ alphapilot backtest_ui --workspace_root /path/to/git_ignore_folder/RD-Agent_work
 | `pickle_cache/mine/` | **因子挖掘**（`alphapilot mine`）的因子 `execute`、Qlib `develop` 缓存 | 改 yaml/因子后清此目录；与回测缓存互不影响 |
 | `pickle_cache/backtest/` | **`backtest` / `strategy_backtest`** 等一般回测缓存 | 改 yaml/因子后清此目录 |
 | `pickle_cache/`（旧版单目录） | 未设置 scope 时的回退路径 | 新项目建议用上面两个子目录 |
-
-环境变量（见 `.env.example`）：`ALPHAPILOT_PICKLE_CACHE_DIR_MINE`、`ALPHAPILOT_PICKLE_CACHE_DIR_BACKTEST`；`ALPHAPILOT_PICKLE_CACHE_ENABLED=false` 可关闭。定义位置：`alphapilot/core/conf.py`（默认根路径）、`alphapilot/core/pickle_cache.py`（按 mine/backtest 解析）。
 | `important_data/strategy_zoo/` | `mine` 保存的策略资产与 `retests/` 复测记录 | 一般无需删；换策略或只想重导资产时再清理 |
 | `important_data/factor_qlib_templates/` | 用户自定义 Qlib 模板（yaml + `read_exp_res.py`） | 修改回测区间、组合策略参数时编辑此目录 |
 | `important_data/stock_lists/` | 股票池 CSV（`prepare_data` 默认列表等） | 换股票池后重新 `download` / `convert` / `h5`，并同步 yaml 中 `market` |
 | `git_ignore_folder/` | 工作区、回测产物、`daily_pv.h5` 副本等 | 更换股票池、重跑 `mine` / `backtest` |
 | `alphapilot/modules/alpha_mining/qlib/experiment/factor_data_template/daily_pv_*.h5` | 从 Qlib 导出的价量 h5 源文件 | 修改 `market`、股票池或 `generate.py` |
 | `prompt_cache.db`（可选） | LLM 对话/Embedding 本地缓存（`.env` 开启缓存时） | 更换模型或希望 LLM 输出不复用旧缓存 |
+
+Pickle 缓存相关环境变量（见 `.env.example`）：`ALPHAPILOT_PICKLE_CACHE_DIR_MINE`、`ALPHAPILOT_PICKLE_CACHE_DIR_BACKTEST`；`ALPHAPILOT_PICKLE_CACHE_ENABLED=false` 可关闭。定义位置：`alphapilot/core/conf.py`（默认根路径）、`alphapilot/core/pickle_cache.py`（按 mine/backtest 解析）。
 
 #### 常用命令
 
@@ -608,15 +607,18 @@ AlphaPilot/
 ├── alphapilot/                 # 主程序
 │   ├── kernel/                 # MainEngine / Context / 配置 / 插件发现
 │   ├── systems/                # 四大系统（data/factor/strategy/backtest）
-│   │   └── data/               # 数据下载、复权、Qlib 转换、h5（prepare_data 实现）
+│   │   ├── data/               # 数据下载、复权、Qlib 转换、h5（prepare_data 实现）
+│   │   ├── backtest/           # 回测执行与产物（artifacts.py、results.py、portfolio_artifacts.py）
+│   │   └── strategy/           # 策略资产存储（strategy_zoo）与复测编排
 │   ├── adapters/               # LLM/数据源等外部接口适配层
-│   ├── modules/                # 功能模块（alpha_mining/platform/strategy_backtest + 插件）
+│   ├── modules/                # 功能模块（alpha_mining/portal/platform/data_viz/backtest_viz/strategy_backtest + 插件）
 │   │   ├── alpha_mining/       # 因子挖掘（qlib 场景 + loops + conf + registry）
+│   │   ├── platform/           # prepare_data、modules 命令；ui/backtest_ui 弃用提示
+│   │   ├── portal/             # 统一 Web 门户（alphapilot portal）
+│   │   ├── data_viz/           # 股票 K 线（alphapilot data_viz）
+│   │   ├── backtest_viz/       # 回测详情 UI（alphapilot backtest_viz）
 │   │   └── strategy_backtest/  # 策略资产列表与复测 CLI
-│   ├── systems/strategy/       # 策略资产存储（strategy_zoo）与复测编排
-│   ├── app/portal/             # 统一 Web 门户（alphapilot portal）
-│   ├── app/backtest_viewer/    # 回测结果可视化（alphapilot backtest_ui）
-│   └── log/ui/                 # 运行日志可视化（alphapilot ui）
+│   └── log/ui/                 # 挖掘日志 panel（portal 嵌入；alphapilot ui 已弃用）
 ├── .env.example             # 环境变量模板
 ├── important_data/          # 用户数据（见 important_data/README.md；strategy_zoo 等已 gitignore）
 │   ├── strategy_zoo/        # mine 保存的策略与 retests/

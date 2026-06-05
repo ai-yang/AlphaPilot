@@ -1,4 +1,4 @@
-"""Unified web portal for systems + pluggable modules."""
+"""Streamlit unified web portal for systems + pluggable modules."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any
 
 import streamlit as st
 
-from alphapilot.app.portal.i18n import init_lang, language_selector, t
+from alphapilot.modules.portal.i18n import init_lang, language_selector, t
 
 
 init_lang()
@@ -297,6 +297,18 @@ def _render_module_hub(engine: Any) -> None:
             st.error(t("command_failed", error=exc))
 
 
+def _render_mine_log_tab(engine: Any) -> None:
+    from alphapilot.log.ui.panel import render_log_ui_panel
+
+    render_log_ui_panel(
+        log_dir=engine.config.log_dir,
+        translate=t,
+        use_sidebar=False,
+        show_heading=True,
+        key_prefix="portal_log",
+    )
+
+
 def _render_data_viz_tab() -> None:
     from alphapilot.modules.data_viz.panel import render_data_viz_panel
 
@@ -310,19 +322,34 @@ def _render_data_viz_tab() -> None:
 
 def _render_backtest_tab(engine: Any) -> None:
     st.subheader(t("backtest_subheader"))
-    backtest_system = engine.get_system("backtest")
-    st.text_input(
-        t("workspace_root"),
-        value=str(engine.config.backtest.workspace_root),
-        disabled=True,
-    )
-    if st.button(t("list_backtest_runs")):
-        try:
-            runs = backtest_system.results.list_runs()
-            st.success(t("backtest_runs_found", count=len(runs)))
-            st.dataframe({"workspace": [str(p) for p in runs[:500]]}, use_container_width=True, hide_index=True)
-        except Exception as exc:  # noqa: BLE001
-            st.error(t("list_runs_failed", error=exc))
+    tab_list, tab_detail = st.tabs([t("bt_tab_runs"), t("bt_tab_detail")])
+    with tab_list:
+        backtest_system = engine.get_system("backtest")
+        st.text_input(
+            t("workspace_root"),
+            value=str(engine.config.backtest.workspace_root),
+            disabled=True,
+            key="portal_bt_workspace_root",
+        )
+        if st.button(t("list_backtest_runs"), key="portal_bt_list_runs"):
+            try:
+                runs = backtest_system.results.list_runs()
+                st.success(t("backtest_runs_found", count=len(runs)))
+                st.dataframe({"workspace": [str(p) for p in runs[:500]]}, use_container_width=True, hide_index=True)
+            except Exception as exc:  # noqa: BLE001
+                st.error(t("list_runs_failed", error=exc))
+    with tab_detail:
+        from alphapilot.modules.backtest_viz.panel import render_backtest_panel
+
+        render_backtest_panel(
+            workspace_root=engine.config.backtest.workspace_root,
+            log_root=engine.config.log_dir,
+            translate=t,
+            use_sidebar=False,
+            show_heading=False,
+            key_prefix="portal_bt",
+            load_fn=backtest_system.results.load,
+        )
 
 
 def main() -> None:
@@ -331,11 +358,12 @@ def main() -> None:
     _show_header(engine)
     _show_sidebar(engine)
 
-    tab_overview, tab_data, tab_data_viz, tab_factor, tab_strategy, tab_backtest, tab_module = st.tabs(
+    tab_overview, tab_data, tab_data_viz, tab_mine_log, tab_factor, tab_strategy, tab_backtest, tab_module = st.tabs(
         [
             t("tab_overview"),
             t("tab_data"),
             t("tab_data_viz"),
+            t("tab_mine_log"),
             t("tab_factor"),
             t("tab_strategy"),
             t("tab_backtest"),
@@ -348,6 +376,8 @@ def main() -> None:
         _render_data_tab(engine)
     with tab_data_viz:
         _render_data_viz_tab()
+    with tab_mine_log:
+        _render_mine_log_tab(engine)
     with tab_factor:
         _render_factor_tab(engine)
     with tab_strategy:

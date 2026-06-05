@@ -49,7 +49,8 @@
 | **策略管理系统** | `alphapilot/systems/strategy/` | 策略资产落盘（`important_data/strategy_zoo/`）、`backtest_from_asset` 复测编排 |
 | **策略复测模块** | `alphapilot/modules/strategy_backtest/` | CLI：`strategy_backtest` / `strategy_backtest_list` |
 | **交易回测系统** | `alphapilot/systems/backtest/` | 因子/模型回测（统一由 system 内部 qlib workspace 执行）、结果存取（`BacktestResultStore`） |
-| **模块 modules** | `alphapilot/modules/` | 可插拔特性；内置 `alpha_mining`（即原 `AlphaPilotLoop`）通过 `Context` 编排四大系统 |
+| **模块 modules** | `alphapilot/modules/` | 可插拔特性；内置 `alpha_mining`、`portal`、`platform`、`data_viz` 等 |
+| **Web 门户** | `alphapilot/modules/portal/` | 统一 Streamlit 门户（`alphapilot portal`） |
 
 四大系统通过 `adapters/` 保持外部边界可替换（当前重点为 LLM/数据源）。回测默认由 backtest system 内聚的 qlib 执行链路统一承载；系统服务内部对 qlib/baostock/pandas 采用惰性导入，因此内核装配与命令发现保持轻量。
 
@@ -125,8 +126,7 @@ flowchart TB
 |------|------|
 | `cli.py` | 加载 `.env`，用 Fire 分发子命令 |
 | `cli.py` + `modules/` | `alphapilot mine/backtest/...` 统一走模块分发入口 |
-| `backtest_viewer/` | 本仓库新增的 Streamlit 回测可视化 |
-| `portal/` | 统一 Web 门户（`alphapilot portal`） |
+| `modules/backtest_viz/` | Streamlit 回测详情 panel（由 portal 嵌入；产物解析在 `systems/backtest/artifacts.py`） |
 | `CI/` | 持续集成相关辅助 |
 
 ### `core/` — 抽象框架（与 Qlib 无关的通用骨架）
@@ -464,7 +464,7 @@ HypothesisExperiment2Feedback.generate_feedback() → HypothesisFeedback
 ## 本 fork 相对原版的主要改动（摘要）
 
 1. **LLM JSON 容错**（`oai/llm_utils.py`）：适配非标准 JSON 输出  
-2. **回测可视化**（`app/backtest_viewer/`）：`alphapilot backtest_ui`  
+2. **回测可视化**（`modules/backtest_viz/` + `systems/backtest/artifacts.py`）：`alphapilot backtest_viz` / portal  
 3. **数据准备**（`systems/data/`）：baostock 下载 A 股数据、Qlib 转换与 h5 导出  
 4. **回测配置**：内置 `factor_template/` + 可选 `important_data/factor_qlib_templates/`；`QLIB_FACTOR_QLIB_TEMPLATE_DIR` / `QLIB_FACTOR_QLIB_CONFIG_NAME`  
 5. **策略资产复测**（`modules/strategy_backtest/` + `systems/strategy/`）：`strategy_backtest` / `strategy_backtest_list`  

@@ -1,4 +1,4 @@
-"""Load Qlib backtest artifacts from AlphaPilot workspace directories."""
+"""Load and query Qlib backtest artifacts from AlphaPilot workspace directories."""
 
 from __future__ import annotations
 
@@ -11,10 +11,22 @@ from typing import Optional
 
 import pandas as pd
 
-DEFAULT_WORKSPACE_ROOT = Path(
-    os.environ.get("ALPHAPILOT_BACKTEST_ROOT", Path.cwd() / "git_ignore_folder" / "RD-Agent_workspace")
-)
-DEFAULT_LOG_ROOT = Path(os.environ.get("ALPHAPILOT_LOG_DIR", Path.cwd() / "log"))
+
+def default_workspace_root() -> Path:
+    fallback = Path.cwd() / "git_ignore_folder" / "RD-Agent_workspace"
+    for key in ("ALPHAPILOT_WORKSPACE_ROOT", "ALPHAPILOT_BACKTEST_ROOT"):
+        value = os.environ.get(key)
+        if value:
+            return Path(value)
+    return fallback
+
+
+def default_log_root() -> Path:
+    return Path(os.environ.get("ALPHAPILOT_LOG_DIR", Path.cwd() / "log"))
+
+
+DEFAULT_WORKSPACE_ROOT = default_workspace_root()
+DEFAULT_LOG_ROOT = default_log_root()
 LABELS_FILENAME = "backtest_workspace_labels.json"
 
 
@@ -209,7 +221,7 @@ def list_workspaces(root: Path | str = DEFAULT_WORKSPACE_ROOT) -> list[Path]:
     return sorted(workspaces, key=lambda p: p.stat().st_mtime, reverse=True)
 
 
-def _find_artifact(workspace: Path, filename: str) -> Optional[Path]:
+def find_artifact(workspace: Path, filename: str) -> Optional[Path]:
     direct = workspace / filename
     if direct.exists():
         return direct
@@ -218,13 +230,13 @@ def _find_artifact(workspace: Path, filename: str) -> Optional[Path]:
 
 
 def _load_positions(workspace: Path) -> dict:
-    path = _find_artifact(workspace, "positions_normal_1day.pkl")
+    path = find_artifact(workspace, "positions_normal_1day.pkl")
     if path is None:
         return {}
     return pd.read_pickle(path)
 
 
-def _parse_trades_and_holdings(positions: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
+def parse_trades_and_holdings(positions: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
     if not positions:
         return pd.DataFrame(), pd.DataFrame()
 
@@ -254,9 +266,9 @@ def load_backtest(workspace: Path | str) -> BacktestArtifacts:
         report.index = pd.to_datetime(report.index)
 
     positions = _load_positions(workspace)
-    trades, holdings = _parse_trades_and_holdings(positions)
+    trades, holdings = parse_trades_and_holdings(positions)
 
-    indicators_path = _find_artifact(workspace, "indicators_normal_1day.pkl")
+    indicators_path = find_artifact(workspace, "indicators_normal_1day.pkl")
     indicators = pd.read_pickle(indicators_path) if indicators_path else None
     if indicators is not None and not isinstance(indicators.index, pd.DatetimeIndex):
         indicators.index = pd.to_datetime(indicators.index)

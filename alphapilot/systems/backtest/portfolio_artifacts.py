@@ -11,14 +11,7 @@ from typing import Any
 import pandas as pd
 
 from alphapilot.log import logger
-
-
-def _find_artifact(workspace: Path, filename: str) -> Path | None:
-    direct = workspace / filename
-    if direct.exists():
-        return direct
-    matches = list(workspace.rglob(filename))
-    return matches[0] if matches else None
+from alphapilot.systems.backtest.artifacts import find_artifact, parse_trades_and_holdings
 
 
 def _resolve_daily_report(workspace: Path) -> tuple[pd.DataFrame, Path | None]:
@@ -28,7 +21,7 @@ def _resolve_daily_report(workspace: Path) -> tuple[pd.DataFrame, Path | None]:
         report = pd.read_pickle(ret_path)
         return report, ret_path
 
-    report_path = _find_artifact(workspace, "report_normal_1day.pkl")
+    report_path = find_artifact(workspace, "report_normal_1day.pkl")
     if report_path is not None:
         report = pd.read_pickle(report_path)
         return report, report_path
@@ -36,25 +29,6 @@ def _resolve_daily_report(workspace: Path) -> tuple[pd.DataFrame, Path | None]:
     raise FileNotFoundError(
         f"ret.pkl / report_normal_1day.pkl not found under workspace: {workspace}"
     )
-
-
-def _parse_trades_and_holdings(positions: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
-    if not positions:
-        return pd.DataFrame(), pd.DataFrame()
-
-    from qlib.contrib.report.analysis_position.parse_position import parse_position
-
-    parsed = parse_position(positions)
-    if parsed.empty:
-        return pd.DataFrame(), pd.DataFrame()
-
-    parsed = parsed.reset_index()
-    parsed["datetime"] = pd.to_datetime(parsed["datetime"])
-    parsed["status_label"] = parsed["status"].map({1: "买入", -1: "卖出", 0: "持有"})
-
-    trades = parsed[parsed["status"] != 0].copy()
-    holdings = parsed[parsed["status"] != -1].copy()
-    return trades, holdings
 
 
 def build_portfolio_summary(report: pd.DataFrame) -> dict[str, float]:
@@ -117,7 +91,7 @@ def export_portfolio_to_dir(workspace: Path | str, dest_dir: Path | str) -> dict
         shutil.copy2(metrics_src, metrics_dst)
         exported["qlib_metrics"] = metrics_dst.name
 
-    positions_path = _find_artifact(workspace, "positions_normal_1day.pkl")
+    positions_path = find_artifact(workspace, "positions_normal_1day.pkl")
     if positions_path is not None:
         positions_dst = dest_dir / "positions_normal_1day.pkl"
         shutil.copy2(positions_path, positions_dst)
@@ -125,7 +99,7 @@ def export_portfolio_to_dir(workspace: Path | str, dest_dir: Path | str) -> dict
 
         with positions_dst.open("rb") as f:
             positions = pickle.load(f)
-        trades, holdings = _parse_trades_and_holdings(positions)
+        trades, holdings = parse_trades_and_holdings(positions)
 
         if not trades.empty:
             trades_path = dest_dir / "daily_trades.csv"
@@ -153,7 +127,7 @@ def export_portfolio_to_dir(workspace: Path | str, dest_dir: Path | str) -> dict
                     except Exception as exc:  # noqa: BLE001
                         logger.warning(f"Skip position pivot {col}: {exc}")
 
-    indicators_path = _find_artifact(workspace, "indicators_normal_1day.pkl")
+    indicators_path = find_artifact(workspace, "indicators_normal_1day.pkl")
     if indicators_path is not None:
         indicators_dst = dest_dir / "indicators_normal_1day.pkl"
         shutil.copy2(indicators_path, indicators_dst)

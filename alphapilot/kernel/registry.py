@@ -101,6 +101,14 @@ def _register_builtin_defaults() -> None:
         "data_viz",
         "alphapilot.modules.data_viz.module.DataVizModule",
     )
+    register_module(
+        "portal",
+        "alphapilot.modules.portal.module.PortalModule",
+    )
+    register_module(
+        "backtest_viz",
+        "alphapilot.modules.backtest_viz.module.BacktestVizModule",
+    )
 
 
 _register_builtin_defaults()

@@ -1,0 +1,36 @@
+"""Portal module: unified Streamlit web UI for kernel systems and plugins."""
+
+from __future__ import annotations
+
+import subprocess
+from importlib.resources import path as rpath
+from typing import TYPE_CHECKING, Any, Callable
+
+from alphapilot.kernel.base import BaseModule
+
+if TYPE_CHECKING:
+    from alphapilot.kernel.context import Context
+
+
+class PortalModule(BaseModule):
+    """Launch and host the AlphaPilot unified web portal."""
+
+    name = "portal"
+
+    def setup(self, context: "Context") -> None:
+        self.context = context
+
+    def portal(self, port: int = 19901, host: str = "0.0.0.0") -> None:
+        """Launch unified web portal (systems + modules)."""
+        with rpath("alphapilot.modules.portal", "app.py") as app_path:
+            cmds = [
+                "streamlit",
+                "run",
+                str(app_path),
+                f"--server.port={port}",
+                f"--server.address={host}",
+            ]
+            subprocess.run(cmds, check=False)
+
+    def commands(self) -> dict[str, Callable[..., Any]]:
+        return {"portal": self.portal}

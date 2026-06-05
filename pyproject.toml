@@ -19,7 +19,6 @@ classifiers = [
 description = "AlphaPilot: LLM-driven alpha factor mining agent"
 dynamic = [
   "dependencies",
-  "optional-dependencies",
   "version",
 ]
 keywords = [
@@ -46,7 +45,9 @@ backtest = "alphapilot.systems.backtest.service:QlibBacktestSystem"
 [project.entry-points."alphapilot.modules"]
 alpha_mining = "alphapilot.modules.alpha_mining.module:AlphaMiningModule"
 platform = "alphapilot.modules.platform.module:PlatformModule"
+portal = "alphapilot.modules.portal.module:PortalModule"
 data_viz = "alphapilot.modules.data_viz.module:DataVizModule"
+backtest_viz = "alphapilot.modules.backtest_viz.module:BacktestVizModule"
 strategy_backtest = "alphapilot.modules.strategy_backtest.module:StrategyBacktestModule"
 
 [project.urls]
@@ -58,12 +59,6 @@ packages = ["alphapilot"]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
-
-[tool.setuptools.dynamic.optional-dependencies]
-docs = {file = ["requirements/docs.txt"]}
-lint = {file = ["requirements/lint.txt"]}
-package = {file = ["requirements/package.txt"]}
-test = {file = ["requirements/test.txt"]}
 
 [tool.setuptools_scm]
 local_scheme = "no-local-version"

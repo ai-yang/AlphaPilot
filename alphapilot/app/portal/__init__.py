@@ -1,2 +1,0 @@
-"""Unified web portal package."""
-

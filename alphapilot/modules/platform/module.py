@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
-from importlib.resources import path as rpath
 from typing import TYPE_CHECKING, Any, Callable
 
 from alphapilot.kernel.base import BaseModule
@@ -49,17 +47,19 @@ class PlatformModule(BaseModule):
         )
         return data.dispatch_action(command)
 
+    @staticmethod
+    def _print_portal_deprecation(command: str, tab_hint: str) -> None:
+        print(
+            f"\n[已弃用] `alphapilot {command}` 已整合进统一门户。\n"
+            f"请使用：\n"
+            f"  alphapilot portal --port 19901\n"
+            f"浏览器打开 http://localhost:19901 ，进入「{tab_hint}」标签页。\n"
+        )
+
     def ui(self, port: int = 19899, log_dir: str = "./log", debug: bool = False) -> None:
-        """Launch the existing Streamlit log UI."""
-        with rpath("alphapilot.log.ui", "app.py") as app_path:
-            cmds = ["streamlit", "run", str(app_path), f"--server.port={port}"]
-            if log_dir or debug:
-                cmds.append("--")
-            if log_dir:
-                cmds.append(f"--log_dir={log_dir}")
-            if debug:
-                cmds.append("--debug")
-            subprocess.run(cmds, check=False)
+        """Deprecated: use ``alphapilot portal`` → Mining Log tab."""
+        del port, log_dir, debug
+        self._print_portal_deprecation("ui", "挖掘日志")
 
     def backtest_ui(
         self,
@@ -67,28 +67,9 @@ class PlatformModule(BaseModule):
         workspace_root: str | None = None,
         log_dir: str = "./log",
     ) -> None:
-        """Launch backtest artifacts viewer UI."""
-        with rpath("alphapilot.app.backtest_viewer", "app.py") as app_path:
-            cmds = ["streamlit", "run", str(app_path), f"--server.port={port}"]
-            import os
-
-            if workspace_root:
-                os.environ["ALPHAPILOT_BACKTEST_ROOT"] = workspace_root
-            if log_dir:
-                os.environ["ALPHAPILOT_LOG_DIR"] = log_dir
-            subprocess.run(cmds, check=False)
-
-    def portal(self, port: int = 19901, host: str = "0.0.0.0") -> None:
-        """Launch unified web portal (systems + modules)."""
-        with rpath("alphapilot.app.portal", "app.py") as app_path:
-            cmds = [
-                "streamlit",
-                "run",
-                str(app_path),
-                f"--server.port={port}",
-                f"--server.address={host}",
-            ]
-            subprocess.run(cmds, check=False)
+        """Deprecated: use ``alphapilot portal`` → Backtest → Backtest Detail tab."""
+        del port, workspace_root, log_dir
+        self._print_portal_deprecation("backtest_ui", "回测 → 回测详情")
 
     def modules(self) -> dict[str, Any]:
         """List loaded modules with their command names."""
@@ -102,6 +83,5 @@ class PlatformModule(BaseModule):
             "prepare_data": self.prepare_data,
             "ui": self.ui,
             "backtest_ui": self.backtest_ui,
-            "portal": self.portal,
             "modules": self.modules,
         }
