@@ -109,6 +109,10 @@ def _register_builtin_defaults() -> None:
         "backtest_viz",
         "alphapilot.modules.backtest_viz.module.BacktestVizModule",
     )
+    register_module(
+        "qlib_yaml",
+        "alphapilot.modules.qlib_yaml.module.QlibYamlModule",
+    )
 
 
 _register_builtin_defaults()

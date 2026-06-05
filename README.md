@@ -71,8 +71,19 @@ alphapilot prepare_data --action download --stock_csv important_data/stock_lists
 | 文件 | 用途 |
 |------|------|
 | `conf.yaml` | 基线回测（仅内置价量特征） |
-| `conf_cn_combined_kdd_ver.yaml` | 合并 LLM 新因子后的回测（`mine` 多轮常用） |
+| `conf_cn_combined_kdd_ver.yaml` | 合并 LLM 新因子后的回测（`mine` / `backtest` 常用默认） |
+| `back_test.yaml` | 更短回测窗口的变体（手动 `qrun` 或自定义场景时使用，非 mine 默认） |
 | `read_exp_res.py` | `qrun` 后导出 IC、收益等到 `qlib_res.csv` / `ret.pkl` |
+
+**默认选用哪个 yaml？**
+
+| 命令 | 默认 yaml | 说明 |
+|------|-----------|------|
+| `alphapilot mine` | `.env` 中 `QLIB_FACTOR_QLIB_CONFIG_NAME`，未配置时多为 `conf_cn_combined_kdd_ver.yaml` | 通过 `AlphaPilotLoop` 读取 `QLIB_FACTOR_*` |
+| `alphapilot backtest` | 未传 `--qlib_config_name` 时，按实验结构自动选：有 `based_experiments` → `conf_cn_combined_kdd_ver.yaml`，否则 `conf.yaml` | 一般 backtest 也会落到 combined |
+| `alphapilot strategy_backtest` | 策略 `metadata` 中的记录，否则 `.env` 的 `QLIB_FACTOR_*` | 与 mine 保存时写入的 yaml 名一致 |
+
+模板目录默认优先 `important_data/factor_qlib_templates/`（目录存在时），与是否配置 `.env` 无关；`QLIB_FACTOR_QLIB_TEMPLATE_DIR` 用于显式指定或覆盖。
 
 **二开建议**：将内置模板复制到 `important_data/factor_qlib_templates/` 后只改副本，避免动仓库内置配置。模板说明见 [important_data/factor_qlib_templates/README.md](important_data/factor_qlib_templates/README.md)。
 
@@ -88,6 +99,34 @@ alphapilot prepare_data --action download --stock_csv important_data/stock_lists
 `alphapilot prepare_data h5` 会从 Qlib 导出 `daily_pv.h5` 到 `git_ignore_folder/factor_implementation_source_data*`，供因子 Python 代码使用。
 
 可按需修改股票池（`market` / `instruments`）、训练/验证/测试区间、持仓数量等。
+
+**用 CLI 生成或校验 yaml**（`alphapilot qlib_yaml_*`，实现位于 `systems/backtest/qlib_yaml/`）：
+
+- 不让 LLM 直接写整份带 YAML 锚点的配置，而是：**结构化参数 + 可选自然语言 → LLM 输出 JSON 补丁 → Jinja2 渲染模板**
+- 生成后自动做静态校验；默认还会跑 Qlib handler 冒烟（可用 `--skip_smoke` 跳过）
+
+```bash
+# 结构化参数生成（baseline = conf.yaml 结构；combined = conf_cn_combined_kdd_ver.yaml 结构）
+alphapilot qlib_yaml_generate \
+  --output=important_data/factor_qlib_templates/my_conf.yaml \
+  --template=baseline \
+  --topk=20
+
+# JSON 补丁 + LLM 自然语言
+alphapilot qlib_yaml_generate \
+  --output=important_data/factor_qlib_templates/my_conf.yaml \
+  --template=combined \
+  --params_file=my_params.json \
+  --prompt="回测区间改到2025年底，topk改为20" \
+  --copy_helpers
+
+# 校验已有 yaml（combined 模板可加 --workspace 检查 combined_factors_df.pkl）
+alphapilot qlib_yaml_validate \
+  --config=important_data/factor_qlib_templates/conf.yaml \
+  --skip_smoke
+```
+
+生成产物写入 `important_data/factor_qlib_templates/` 后，`mine` / `backtest` 会自动拾取（与手工编辑 yaml 等效）。详见 [important_data/factor_qlib_templates/README.md](important_data/factor_qlib_templates/README.md)。
 
 ### 5. 运行注意事项
 
@@ -106,7 +145,7 @@ alphapilot prepare_data --action download --stock_csv important_data/stock_lists
 - 历史入口 `alphapilot/app/qlib_rd_loop/*` 已移除，不再保留兼容 shim
 - 数据准备逻辑已迁入 `alphapilot/systems/data/`（含 `prepare_cn.py`、`adjust_prices.py`、`qlib_convert.py`、`generate_h5.py`、`qlib_dump/` 等）；`alphapilot/app/data/` 兼容层已删除
 - `prepare_data` 统一由 `platform -> context.data() -> systems.data` 链路执行（单一调度入口）
-- `mine/backtest/strategy_backtest/prepare_data/portal/data_viz/backtest_viz` 等由内置模块贡献命令（modules-only）；`ui` / `backtest_ui` 仅保留弃用提示
+- `mine/backtest/strategy_backtest/qlib_yaml_generate/qlib_yaml_validate/prepare_data/portal/data_viz/backtest_viz` 等由内置模块贡献命令（modules-only）；`ui` / `backtest_ui` 仅保留弃用提示
 - 回测产物解析收拢到 `alphapilot/systems/backtest/artifacts.py`；可视化 UI 在 `alphapilot/modules/backtest_viz/`（原 `app/backtest_viewer/` 已删除）
 
 **数据系统代码位置（供二开参考）**
@@ -351,7 +390,7 @@ EMBEDDING_MAX_STR_NUM=10     # DashScope 等 embedding 接口的单次 batch 上
 alphapilot modules
 ```
 
-输出会列出当前内置模块与通过 `entry_points` 自动发现的第三方模块，以及每个模块暴露的命令。新增插件后，这里和 `alphapilot portal` 页面都会自动出现。
+输出会列出当前内置模块与通过 `entry_points` 自动发现的第三方模块，以及每个模块暴露的命令（含 `qlib_yaml_generate` / `qlib_yaml_validate`）。新增插件后，这里和 `alphapilot portal` 页面都会自动出现。
 
 ### 1. 因子挖掘（主流程）
 
@@ -435,7 +474,7 @@ MACD_Factor,"MACD($close)"
 RSI_Factor,"RSI($close)"
 ```
 
-同样支持 `--qlib_template_dir`、`--qlib_config_name`（或 `.env` 中的 `QLIB_FACTOR_*`）。
+同样支持 `--qlib_template_dir`、`--qlib_config_name`。未传 `--qlib_config_name` 时按实验结构自动选择 yaml（通常为 `conf_cn_combined_kdd_ver.yaml`）；仅 `mine` 会默认读取 `.env` 中的 `QLIB_FACTOR_QLIB_CONFIG_NAME`。
 
 ### 3. 策略资产复测（`strategy_backtest`）
 
@@ -629,16 +668,17 @@ AlphaPilot/
 │   ├── systems/                # 四大系统（data/factor/strategy/backtest）
 │   │   ├── data/               # 数据下载、复权、Qlib 转换、h5（prepare_data 实现）
 │   │   ├── factor/             # 因子库（factor_zoo）、表达式校验与导入
-│   │   ├── backtest/           # 回测执行与产物（artifacts.py、results.py、portfolio_artifacts.py）
+│   │   ├── backtest/           # 回测执行与产物（artifacts.py、results.py、qlib_yaml/）
 │   │   └── strategy/           # 策略资产存储（strategy_zoo）与复测编排
 │   ├── adapters/               # LLM/数据源等外部接口适配层
-│   ├── modules/                # 功能模块（alpha_mining/portal/platform/data_viz/backtest_viz/strategy_backtest + 插件）
+│   ├── modules/                # 功能模块（alpha_mining/portal/platform/data_viz/backtest_viz/strategy_backtest/qlib_yaml + 插件）
 │   │   ├── alpha_mining/       # 因子挖掘（qlib 场景 + loops + conf + registry）
 │   │   ├── platform/           # prepare_data、modules 命令；ui/backtest_ui 弃用提示
 │   │   ├── portal/             # 统一 Web 门户（alphapilot portal）
 │   │   ├── data_viz/           # 股票 K 线（alphapilot data_viz）
 │   │   ├── backtest_viz/       # 回测详情 UI（alphapilot backtest_viz）
-│   │   └── strategy_backtest/  # 策略资产列表与复测 CLI
+│   │   ├── strategy_backtest/  # 策略资产列表与复测 CLI
+│   │   └── qlib_yaml/          # Qlib qrun yaml 生成与校验（qlib_yaml_generate / qlib_yaml_validate）
 │   └── log/ui/                 # 挖掘日志 panel（portal 嵌入；alphapilot ui 已弃用）
 ├── .env.example             # 环境变量模板
 ├── import_factors_from_log.py  # 从 log 提取因子公式写入因子库（去重）

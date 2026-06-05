@@ -1,0 +1,116 @@
+qlib_init:
+    provider_uri: "{{ p.provider_uri }}"
+    region: {{ p.region }}
+
+market: &market {{ p.market }}
+benchmark: &benchmark {{ p.benchmark }}
+
+data_handler_config: &data_handler_config
+    start_time: {{ p.start_time }}
+    end_time: {{ p.end_time }}
+    instruments: *market
+    data_loader:
+        class: qlib.contrib.data.loader.QlibDataLoader
+        kwargs:
+            config:
+                feature: {{ p.feature_expressions | tojson }}
+                label:
+                    - ["{{ p.label_expression }}"]
+                    - ["LABEL0"]
+
+    learn_processors:
+        - class: Fillna
+          kwargs:
+              fields_group: feature
+        - class: DropnaLabel
+        - class: CSZScoreNorm
+          kwargs:
+              fields_group: feature
+        - class: CSZScoreNorm
+          kwargs:
+              fields_group: label
+    infer_processors:
+        - class: Fillna
+          kwargs:
+              fields_group: feature
+        - class: CSZScoreNorm
+          kwargs:
+              fields_group: feature
+        - class: CSZScoreNorm
+          kwargs:
+              fields_group: label
+
+port_analysis_config: &port_analysis_config
+{% if p.include_executor %}
+    executor:
+        class: SimulatorExecutor
+        module_path: qlib.backtest.executor
+        kwargs:
+            time_per_step: day
+            generate_portfolio_metrics: True
+            verbose: False
+            indicator_config:
+                show_indicator: True
+{% endif %}
+    strategy:
+        class: TopkDropoutStrategy
+        module_path: qlib.contrib.strategy
+        kwargs:
+            signal: <PRED>
+            topk: {{ p.topk }}
+            n_drop: {{ p.n_drop }}
+            hold_thresh: {{ p.hold_thresh }}
+            risk_degree: {{ p.risk_degree }}
+    backtest:
+        start_time: {{ p.backtest_start }}
+        end_time: {{ p.backtest_end }}
+        account: {{ p.account | int if p.account == p.account | int else p.account }}
+        benchmark: *benchmark
+        exchange_kwargs:
+            limit_threshold: {{ p.limit_threshold }}
+            deal_price: ["$open", "$close"]
+            open_cost: {{ p.open_cost }}
+            close_cost: {{ p.close_cost }}
+            min_cost: {{ p.min_cost | int if p.min_cost == p.min_cost | int else p.min_cost }}
+
+task:
+    model:
+        class: LGBModel
+        module_path: qlib.contrib.model.gbdt
+        kwargs:
+            loss: {{ p.loss }}
+            colsample_bytree: {{ p.colsample_bytree }}
+            learning_rate: {{ p.learning_rate }}
+            subsample: {{ p.subsample }}
+            lambda_l1: {{ p.lambda_l1 }}
+            lambda_l2: {{ p.lambda_l2 }}
+            max_depth: {{ p.max_depth }}
+            num_leaves: {{ p.num_leaves }}
+            num_threads: {{ p.num_threads }}
+    dataset:
+        class: DatasetH
+        module_path: qlib.data.dataset
+        kwargs:
+            handler:
+                class: DataHandlerLP
+                module_path: qlib.contrib.data.handler
+                kwargs: *data_handler_config
+            segments:
+                train: [{{ p.train_start }}, {{ p.train_end }}]
+                valid: [{{ p.valid_start }}, {{ p.valid_end }}]
+                test: [{{ p.test_start }}, {{ p.test_end }}]
+    record:
+        - class: SignalRecord
+          module_path: qlib.workflow.record_temp
+          kwargs:
+            model: <MODEL>
+            dataset: <DATASET>
+        - class: SigAnaRecord
+          module_path: qlib.workflow.record_temp
+          kwargs:
+            ana_long_short: {{ p.ana_long_short }}
+            ann_scaler: {{ p.ann_scaler }}
+        - class: PortAnaRecord
+          module_path: qlib.workflow.record_temp
+          kwargs:
+            config: *port_analysis_config

@@ -1,7 +1,5 @@
 # 自定义 Qlib 回测模板目录
 
-本目录从内置 `alphapilot/modules/alpha_mining/qlib/experiment/factor_template/` 复制而来，便于在**不修改仓库内置文件**的前提下调整回测 YAML 与辅助脚本。
-
 ## 目录内文件
 
 | 文件 | 作用 |
@@ -29,5 +27,40 @@ alphapilot strategy_backtest --strategy_name='...' --qlib_config_name=conf_cn_co
 ```
 
 未配置时，`mine` / `backtest` 默认仍使用内置 `factor_template/`。
+
+## 用 `qlib_yaml_generate` 生成配置
+
+可用 CLI 从结构化参数 + 可选 LLM 自然语言描述生成新的 qrun YAML（不会直接让 LLM 写整份带锚点的 YAML，而是渲染内置 Jinja2 模板）：
+
+```bash
+# 基线模板，改 topk 与输出路径
+alphapilot qlib_yaml_generate \
+  --output=important_data/factor_qlib_templates/my_conf.yaml \
+  --template=baseline \
+  --topk=20
+
+# 结构化 JSON + LLM 补充
+alphapilot qlib_yaml_generate \
+  --output=important_data/factor_qlib_templates/my_conf.yaml \
+  --template=combined \
+  --params_file=my_params.json \
+  --prompt="回测区间改到2025年底，topk改为20" \
+  --copy_helpers
+
+# 仅校验已有 yaml（静态 + Qlib handler 冒烟，不跑完整 qrun）
+alphapilot qlib_yaml_validate \
+  --config=important_data/factor_qlib_templates/conf.yaml \
+  --skip_smoke
+```
+
+常用参数：
+
+| 参数 | 说明 |
+|------|------|
+| `--template` | `baseline`（单 QlibDataLoader）或 `combined`（NestedDataLoader + pkl） |
+| `--params_file` | JSON 补丁，字段见 `QlibYamlParams`（market、segments、topk、feature_expressions 等） |
+| `--prompt` | 自然语言描述，由 LLM 生成 JSON 补丁 |
+| `--skip_smoke` | 只做静态校验，跳过 Qlib 数据加载冒烟 |
+| `--workspace` | combined 模板时检查 `combined_factors_df.pkl` 是否存在 |
 
 更完整说明见项目根目录 [README.md](../../../README.md)。
