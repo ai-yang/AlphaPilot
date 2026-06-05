@@ -78,6 +78,9 @@ class StrategySystem(BaseStrategySystem):
                 records.append(rec)
         return records
 
+    def delete_strategy(self, strategy_name: str) -> bool:
+        return self._param_db.delete_strategy(strategy_name.strip())
+
     @staticmethod
     def _metrics_to_dict(metrics: StrategyMetrics | None) -> dict[str, Any]:
         if metrics is None:

@@ -157,6 +157,25 @@ def _render_factor_tab(engine: Any) -> None:
     else:
         st.info(t("factor_zoo_missing"))
 
+    factors = factor_system.list_factors()
+    if factors:
+        st.markdown(f"#### {t('delete_heading')}")
+        factor_names = [item["factor_name"] for item in factors]
+        delete_factor_name = st.selectbox(t("select_factor_to_delete"), factor_names, key="portal_delete_factor")
+        delete_factor_confirm = st.checkbox(t("delete_confirm"), key="portal_delete_factor_confirm")
+        if st.button(t("delete_factor_btn"), key="portal_delete_factor_btn"):
+            if not delete_factor_confirm:
+                st.warning(t("delete_confirm"))
+            else:
+                try:
+                    if factor_system.delete_factor(delete_factor_name):
+                        st.success(t("factor_deleted", name=delete_factor_name))
+                        st.rerun()
+                    else:
+                        st.error(t("factor_delete_failed", name=delete_factor_name))
+                except Exception as exc:  # noqa: BLE001
+                    st.error(t("factor_delete_error", error=exc))
+
     st.markdown(f"#### {t('factor_validate_heading')}")
     expr = st.text_area(
         t("expression"),
@@ -220,6 +239,20 @@ def _render_strategy_tab(engine: Any) -> None:
         selected = st.selectbox(t("select_strategy"), strategies)
         params = db.load(selected)
         st.json(params or {})
+        st.markdown(f"#### {t('delete_heading')}")
+        delete_strategy_confirm = st.checkbox(t("delete_confirm"), key="portal_delete_strategy_confirm")
+        if st.button(t("delete_strategy_btn"), key="portal_delete_strategy_btn"):
+            if not delete_strategy_confirm:
+                st.warning(t("delete_confirm"))
+            else:
+                try:
+                    if strategy_system.delete_strategy(selected):
+                        st.success(t("strategy_deleted", name=selected))
+                        st.rerun()
+                    else:
+                        st.error(t("strategy_delete_failed", name=selected))
+                except Exception as exc:  # noqa: BLE001
+                    st.error(t("strategy_delete_error", error=exc))
     else:
         st.info(t("no_stored_params"))
 
@@ -300,12 +333,14 @@ def _render_module_hub(engine: Any) -> None:
 def _render_mine_log_tab(engine: Any) -> None:
     from alphapilot.log.ui.panel import render_log_ui_panel
 
+    mining_module = engine.get_module("alpha_mining")
     render_log_ui_panel(
         log_dir=engine.config.log_dir,
         translate=t,
         use_sidebar=False,
         show_heading=True,
         key_prefix="portal_log",
+        delete_session_fn=mining_module.delete_mining_session,
     )
 
 
@@ -331,13 +366,33 @@ def _render_backtest_tab(engine: Any) -> None:
             disabled=True,
             key="portal_bt_workspace_root",
         )
-        if st.button(t("list_backtest_runs"), key="portal_bt_list_runs"):
-            try:
-                runs = backtest_system.results.list_runs()
-                st.success(t("backtest_runs_found", count=len(runs)))
-                st.dataframe({"workspace": [str(p) for p in runs[:500]]}, use_container_width=True, hide_index=True)
-            except Exception as exc:  # noqa: BLE001
-                st.error(t("list_runs_failed", error=exc))
+        try:
+            runs = backtest_system.results.list_runs()
+            st.success(t("backtest_runs_found", count=len(runs)))
+            if runs:
+                workspace_ids = [p.name for p in runs[:500]]
+                st.dataframe({"workspace": workspace_ids}, use_container_width=True, hide_index=True)
+                st.markdown(f"#### {t('delete_heading')}")
+                delete_workspace_id = st.selectbox(
+                    t("select_backtest_workspace"),
+                    workspace_ids,
+                    key="portal_delete_backtest_ws",
+                )
+                delete_backtest_confirm = st.checkbox(t("delete_confirm"), key="portal_delete_backtest_confirm")
+                if st.button(t("delete_backtest_btn"), key="portal_delete_backtest_btn"):
+                    if not delete_backtest_confirm:
+                        st.warning(t("delete_confirm"))
+                    else:
+                        try:
+                            if backtest_system.delete_workspace(delete_workspace_id):
+                                st.success(t("backtest_deleted", name=delete_workspace_id))
+                                st.rerun()
+                            else:
+                                st.error(t("backtest_delete_failed", name=delete_workspace_id))
+                        except Exception as exc:  # noqa: BLE001
+                            st.error(t("backtest_delete_error", error=exc))
+        except Exception as exc:  # noqa: BLE001
+            st.error(t("list_runs_failed", error=exc))
     with tab_detail:
         from alphapilot.modules.backtest_viz.panel import render_backtest_panel
 

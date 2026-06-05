@@ -118,16 +118,37 @@ class FactorRegulator(Evaluator):
         cond3 = -np.log(1 - unique_vars_ratio) < 0.693
         return cond1 and cond2 and cond3
 
+    def list_factors(self) -> list[dict[str, str]]:
+        if self.alphazoo.empty or "factor_name" not in self.alphazoo.columns:
+            return []
+        return [
+            {
+                "factor_name": str(row["factor_name"]),
+                "factor_expression": str(row["factor_expression"]),
+            }
+            for _, row in self.alphazoo.iterrows()
+        ]
+
     def add_factor(self, factor_name: str, factor_expression: str) -> bool:
         new_factor = pd.DataFrame(
             {
-                "factor_name": factor_name,
-                "factor_expression": factor_expression,
+                "factor_name": [factor_name],
+                "factor_expression": [factor_expression],
             }
         )
-        self.alphazoo = pd.concat([self.alphazoo, new_factor])
+        self.alphazoo = pd.concat([self.alphazoo, new_factor], ignore_index=True)
         self.new_factors.append((factor_name, factor_expression))
         logger.info(f"Added new factor: {factor_name} with expression: {factor_expression}")
+        return True
+
+    def remove_factor(self, factor_name: str) -> bool:
+        if self.alphazoo.empty or "factor_name" not in self.alphazoo.columns:
+            return False
+        mask = self.alphazoo["factor_name"].astype(str) == factor_name
+        if not mask.any():
+            return False
+        self.alphazoo = self.alphazoo.loc[~mask].reset_index(drop=True)
+        logger.info(f"Removed factor: {factor_name}")
         return True
 
     def save_factor_zoo(self, output_path: Optional[str] = None) -> None:

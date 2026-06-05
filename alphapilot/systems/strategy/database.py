@@ -45,6 +45,9 @@ class BaseStrategyParamDatabase(ABC):
     @abstractmethod
     def retest_bundle_dir(self, strategy_name: str, timestamp: str, mode: str) -> Path | None: ...
 
+    @abstractmethod
+    def delete_strategy(self, strategy_name: str) -> bool: ...
+
 
 class FileStrategyParamDatabase(BaseStrategyParamDatabase):
     """File-backed strategy store under ``param_dir`` (one folder per strategy)."""
@@ -163,6 +166,24 @@ class FileStrategyParamDatabase(BaseStrategyParamDatabase):
         bundle = sdir / "retests" / f"{timestamp}_{mode}"
         bundle.mkdir(parents=True, exist_ok=True)
         return bundle
+
+    def delete_strategy(self, strategy_name: str) -> bool:
+        from alphapilot.core.path_safety import ensure_child_path
+
+        deleted = False
+        sdir = self._strategy_dir(strategy_name)
+        if (sdir / "strategy_record.json").exists():
+            ensure_child_path(self.param_dir, sdir)
+            shutil.rmtree(sdir)
+            deleted = True
+
+        legacy = self._legacy_path(strategy_name)
+        if legacy.exists():
+            ensure_child_path(self.param_dir, legacy)
+            legacy.unlink()
+            deleted = True
+
+        return deleted
 
     def append_retest(self, strategy_name: str, payload: dict[str, Any]) -> Path | None:
         sdir = self.strategy_dir(strategy_name)

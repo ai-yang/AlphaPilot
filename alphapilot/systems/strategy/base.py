@@ -105,6 +105,10 @@ class BaseStrategySystem(BaseSystem):
     def backtest_from_asset(self, request: StrategyBacktestRequest) -> list[StrategyBacktestOutcome]:
         """Run backtest(s) from a saved strategy asset."""
 
+    @abstractmethod
+    def delete_strategy(self, strategy_name: str) -> bool:
+        """Remove a persisted strategy asset by name."""
+
     @property
     @abstractmethod
     def param_database(self) -> Any:

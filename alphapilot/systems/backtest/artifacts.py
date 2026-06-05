@@ -213,6 +213,22 @@ def format_workspace_label(
     return f"{short_id}  ({mtime}，未匹配日志)"
 
 
+def remove_workspace_label(log_root: Path | str, workspace_id: str) -> bool:
+    """Remove *workspace_id* from manual backtest label mapping if present."""
+    path = Path(log_root) / LABELS_FILENAME
+    if not path.exists():
+        return False
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(data, dict) or workspace_id not in data:
+        return False
+    del data[workspace_id]
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return True
+
+
 def list_workspaces(root: Path | str = DEFAULT_WORKSPACE_ROOT) -> list[Path]:
     root = Path(root)
     if not root.exists():

@@ -147,6 +147,10 @@ class QlibBacktestSystem(BaseBacktestSystem):
             raw=metrics,
         )
 
+    def delete_workspace(self, workspace: str | Path, log_root: str | Path | None = None) -> bool:
+        resolved_log_root = log_root if log_root is not None else self.context.config.log_dir
+        return self._results.delete_run(workspace, log_root=resolved_log_root)
+
     @property
     def results(self) -> BacktestResultStore:
         return self._results

@@ -19,6 +19,10 @@ def strategy_zoo_dir() -> Path:
     return important_data_dir() / "strategy_zoo"
 
 
+def factor_zoo_dir() -> Path:
+    return important_data_dir() / "factor_zoo"
+
+
 def factor_qlib_templates_dir() -> Path:
     return important_data_dir() / "factor_qlib_templates"
 
@@ -34,6 +38,7 @@ def default_stock_csv_path() -> Path:
 # Relative paths stored in older strategy metadata / .env examples.
 LEGACY_PATH_REMAP: dict[str, str] = {
     "git_ignore_folder/strategy_zoo": "important_data/strategy_zoo",
+    "git_ignore_folder/factor_zoo": "important_data/factor_zoo",
     "git_ignore_folder/factor_qlib_templates": "important_data/factor_qlib_templates",
     "backup_data": "important_data/stock_lists",
 }

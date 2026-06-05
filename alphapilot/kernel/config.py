@@ -16,7 +16,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from alphapilot.kernel.paths import strategy_zoo_dir
+from alphapilot.kernel.paths import factor_zoo_dir, strategy_zoo_dir
 
 # Defaults aligned with alphapilot.core.pickle_cache (env names must stay in sync).
 def _default_pickle_cache_dir_mine() -> Path:
@@ -106,7 +106,7 @@ class FactorConfig:
     zoo_dir: Path = field(
         default_factory=lambda: _env_path(
             "ALPHAPILOT_FACTOR_ZOO_DIR",
-            Path.cwd() / "git_ignore_folder" / "factor_zoo",
+            factor_zoo_dir(),
         )
     )
 

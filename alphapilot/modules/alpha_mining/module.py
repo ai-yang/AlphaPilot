@@ -9,8 +9,11 @@ store, demonstrating cross-system orchestration via the context.
 
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
+from alphapilot.core.path_safety import ensure_child_path
 from alphapilot.kernel.base import BaseModule
 
 if TYPE_CHECKING:
@@ -161,10 +164,37 @@ class AlphaMiningModule(BaseModule):
             )
         )
 
+    # ---- Mining log session management ----
+
+    def list_mining_sessions(self) -> list[str]:
+        """Return mining log session folder names under the configured log root."""
+        from alphapilot.log.ui.session import filter_log_folders
+
+        log_root = Path(self.context.config.log_dir)
+        return [p.name for p in filter_log_folders(log_root)]
+
+    def delete_mining_session(self, session: str) -> bool:
+        """Delete a mining log session directory under the configured log root."""
+        log_root = Path(self.context.config.log_dir).expanduser().resolve()
+        candidate = Path(session).expanduser()
+        if candidate.is_absolute() or len(candidate.parts) > 1:
+            target = candidate.resolve()
+        else:
+            target = (log_root / session).resolve()
+        ensure_child_path(log_root, target)
+        if target == log_root:
+            raise ValueError(f"Refusing to delete log root: {log_root}")
+        if not target.is_dir():
+            return False
+        shutil.rmtree(target)
+        return True
+
     # ---- CLI contribution ----
 
     def commands(self) -> dict[str, Callable[..., Any]]:
         return {
             "mine": self.run_mining,
             "backtest": self.run_backtest,
+            "list_mine_logs": self.list_mining_sessions,
+            "delete_mine_log": self.delete_mining_session,
         }

@@ -40,7 +40,7 @@ AlphaPilot 通过三个 Agent 协作完成因子挖掘：
 - 通过 baostock 下载行情：支持**直接下载前/后复权**（`--adjust_mode forward|backward`），或下载除权日线 + 复权因子后用 `apply_adjust` 本地合成，再 `convert` 为 Qlib 与 `daily_pv.h5`
 - 默认股票列表：`important_data/stock_lists/main_stock_2026_4_27.csv`（可用 `--stock_csv` 指定任意 CSV/TXT，例如同目录下的 `kechuang_stock.csv`）
 
-> 用户数据目录总览见 [important_data/README.md](important_data/README.md)（策略资产、Qlib 模板、股票池列表）。
+> 用户数据目录总览见 [important_data/README.md](important_data/README.md)（策略资产、**因子库**、Qlib 模板、股票池列表）。
 
 > 当前 CLI 已改为 **modules-only** 分发，`prepare_data` 由内置 `platform` 模块提供。  
 > 从本地化重构版本起，`prepare_data` 的各 action 统一经由 **data system** 调度（单一入口），避免模块层直接分支调用。  
@@ -120,7 +120,7 @@ alphapilot prepare_data --action download --stock_csv important_data/stock_lists
 | h5 导出 | `systems/data/generate_h5.py` | 生成 `daily_pv.h5` |
 | dump 工具 | `systems/data/qlib_dump/` | `dump_bin`、交易日历扩展 |
 | 系统 API | `systems/data/service.py` | `QlibDataSystem` 与 typed DTO（`types.py`） |
-| 路径约定 | `kernel/paths.py` | `important_data_dir`、`stock_lists_dir`、默认 `stock_csv`、旧路径 remap |
+| 路径约定 | `kernel/paths.py` | `important_data_dir`、`strategy_zoo_dir`、`factor_zoo_dir`、`stock_lists_dir`、默认 `stock_csv`、旧路径 remap |
 
 程序化调用示例：
 
@@ -319,9 +319,10 @@ MAX_RETRY=5
 FACTOR_MINING_TIMEOUT=36000  # 因子挖掘最长运行时间（秒），不设 step_n 时生效
 EMBEDDING_MAX_STR_NUM=10     # DashScope 等 embedding 接口的单次 batch 上限（按需）
 
-# 可选：用户数据根目录（策略资产、Qlib 模板、股票池 CSV 均在其下）
+# 可选：用户数据根目录（策略资产、因子库、Qlib 模板、股票池 CSV 均在其下）
 # ALPHAPILOT_IMPORTANT_DATA_DIR=important_data
 # ALPHAPILOT_STRATEGY_PARAM_DIR=important_data/strategy_zoo
+# ALPHAPILOT_FACTOR_ZOO_DIR=important_data/factor_zoo
 
 # 可选：pickle 缓存（mine 与 backtest 分目录，见 §5 清理缓存）
 # ALPHAPILOT_PICKLE_CACHE_DIR_MINE=pickle_cache/mine
@@ -397,7 +398,22 @@ alphapilot mine --direction "行为金融学假说" \
 4. Qlib + LightGBM 回测，输出 IC、收益等指标  
 5. 根据反馈进入下一轮；每轮成功结束后可将因子/模型/指标写入 `important_data/strategy_zoo/`（策略资产）
 
-回测工作区与日志默认在 `git_ignore_folder/` 下。
+回测工作区默认在 `git_ignore_folder/RD-Agent_workspace/`；挖掘日志在 `log/`。因子库 CSV 默认在 `important_data/factor_zoo/factor_zoo.csv`（与策略资产一样长期保留，可用 Portal 或 API 管理）。
+
+**从挖掘日志批量导入因子库**（自动按名称/表达式去重）：
+
+```bash
+python import_factors_from_log.py                  # 扫描整个 log/
+python import_factors_from_log.py --dry-run      # 仅预览
+python import_factors_from_log.py --log-dir log/<会话目录>
+```
+
+**管理挖掘 log 会话（CLI，可选）**：
+
+```bash
+alphapilot list_mine_logs
+alphapilot delete_mine_log --session=2026-06-04_15-32-47-893456
+```
 
 ### 2. 多因子回测
 
@@ -497,13 +513,14 @@ alphapilot portal --port 19901
 
 浏览器打开 `http://localhost:19901`，可在一个页面中访问：
 - Data/Factor/Strategy/Backtest 四大系统能力
+- **因子** 标签页：校验/添加表达式、导入导出、**删除单条因子**（`important_data/factor_zoo/factor_zoo.csv`）
+- **策略** 标签页：查看/保存策略参数、**删除整个策略资产文件夹**
 - **股票 K 线** 标签页（内嵌 `data_viz`）
-- **挖掘日志** 标签页（原 `alphapilot ui`：假说、因子代码、反馈、Qlib 报告图等）
-- **回测** 标签页含两个子页：**运行列表** + **回测详情**（内嵌 `backtest_viz`，原 `alphapilot backtest_ui`）
+- **挖掘日志** 标签页（原 `alphapilot ui`：假说、因子代码、反馈、Qlib 报告图等；支持**删除当前 log 会话**）
+- **回测** 标签页含两个子页：**运行列表**（可**删除 workspace**）+ **回测详情**（内嵌 `backtest_viz`，原 `alphapilot backtest_ui`）
 - 模块动态列表与 JSON 命令调度
-- 因子库与模型参数导入导出
 
-门户使用 `.env` 中的 `ALPHAPILOT_LOG_DIR` 与 `ALPHAPILOT_WORKSPACE_ROOT` 作为日志与回测 workspace 默认路径。
+门户使用 `.env` 中的 `ALPHAPILOT_LOG_DIR`、`ALPHAPILOT_WORKSPACE_ROOT`、`ALPHAPILOT_FACTOR_ZOO_DIR`、`ALPHAPILOT_STRATEGY_PARAM_DIR` 等作为默认路径。
 
 #### 4.2 挖掘日志（portal「挖掘日志」标签，原 `alphapilot ui`）
 
@@ -511,12 +528,13 @@ alphapilot portal --port 19901
 - 选择 `log/` 下的会话目录并刷新
 - 查看每轮假说、因子表达式、代码演化、回测反馈与指标图表
 - 支持 Start/Stop Mining API（若后端服务可用）
+- 勾选确认后可删除当前 log 会话目录（**不**会连带删除 `strategy_zoo` 或回测 workspace）
 
 > `alphapilot ui` 已弃用，执行后仅打印 portal 重定向提示。
 
 #### 4.3 回测详情（portal「回测 → 回测详情」，原 `alphapilot backtest_ui`）
 
-在 portal「回测」标签的「回测详情」子页中，选择 `git_ignore_folder/RD-Agent_workspace` 下含 `ret.pkl` 的工作区，查看收益曲线、持仓、成交等。下拉列表会尽量显示 **`log/` 里对应的会话文件夹名**。数据由 backtest system 的 `BacktestResultStore` 加载，底层解析在 `systems/backtest/artifacts.py`。
+在 portal「回测」标签的「运行列表」子页可列出并**删除**含 `ret.pkl` 的 workspace；「回测详情」子页中选择 `git_ignore_folder/RD-Agent_workspace` 下的工作区，查看收益曲线、持仓、成交等。下拉列表会尽量显示 **`log/` 里对应的会话文件夹名**。数据由 backtest system 的 `BacktestResultStore` 加载，底层解析在 `systems/backtest/artifacts.py`。
 
 也可单独启动回测查看器（功能与 portal 子页相同）：
 
@@ -548,8 +566,10 @@ alphapilot backtest_viz --port 19903
 | `pickle_cache/mine/` | **因子挖掘**（`alphapilot mine`）的因子 `execute`、Qlib `develop` 缓存 | 改 yaml/因子后清此目录；与回测缓存互不影响 |
 | `pickle_cache/backtest/` | **`backtest` / `strategy_backtest`** 等一般回测缓存 | 改 yaml/因子后清此目录 |
 | `pickle_cache/`（旧版单目录） | 未设置 scope 时的回退路径 | 新项目建议用上面两个子目录 |
-| `important_data/strategy_zoo/` | `mine` 保存的策略资产与 `retests/` 复测记录 | 一般无需删；换策略或只想重导资产时再清理 |
+| `important_data/strategy_zoo/` | `mine` 保存的策略资产与 `retests/` 复测记录 | Portal「策略」或 `delete_strategy` 可删；换策略或重导资产时再清理 |
+| `important_data/factor_zoo/` | 因子库 `factor_zoo.csv`（校验/去重参考库） | Portal「因子」或 `import_factors_from_log.py` 维护；可用 `delete_factor` 删单条 |
 | `important_data/factor_qlib_templates/` | 用户自定义 Qlib 模板（yaml + `read_exp_res.py`） | 修改回测区间、组合策略参数时编辑此目录 |
+| `log/` | 挖掘会话日志与 snapshot | Portal「挖掘日志」或 `delete_mine_log` 可删单会话；`clean_log_dirs.py` 可清理空目录/桩目录 |
 | `important_data/stock_lists/` | 股票池 CSV（`prepare_data` 默认列表等） | 换股票池后重新 `download` / `convert` / `h5`，并同步 yaml 中 `market` |
 | `git_ignore_folder/` | 工作区、回测产物、`daily_pv.h5` 副本等 | 更换股票池、重跑 `mine` / `backtest` |
 | `alphapilot/modules/alpha_mining/qlib/experiment/factor_data_template/daily_pv_*.h5` | 从 Qlib 导出的价量 h5 源文件 | 修改 `market`、股票池或 `generate.py` |
@@ -608,6 +628,7 @@ AlphaPilot/
 │   ├── kernel/                 # MainEngine / Context / 配置 / 插件发现
 │   ├── systems/                # 四大系统（data/factor/strategy/backtest）
 │   │   ├── data/               # 数据下载、复权、Qlib 转换、h5（prepare_data 实现）
+│   │   ├── factor/             # 因子库（factor_zoo）、表达式校验与导入
 │   │   ├── backtest/           # 回测执行与产物（artifacts.py、results.py、portfolio_artifacts.py）
 │   │   └── strategy/           # 策略资产存储（strategy_zoo）与复测编排
 │   ├── adapters/               # LLM/数据源等外部接口适配层
@@ -620,8 +641,11 @@ AlphaPilot/
 │   │   └── strategy_backtest/  # 策略资产列表与复测 CLI
 │   └── log/ui/                 # 挖掘日志 panel（portal 嵌入；alphapilot ui 已弃用）
 ├── .env.example             # 环境变量模板
+├── import_factors_from_log.py  # 从 log 提取因子公式写入因子库（去重）
+├── clean_log_dirs.py        # 清理 log 下空目录与失败桩目录
 ├── important_data/          # 用户数据（见 important_data/README.md；strategy_zoo 等已 gitignore）
 │   ├── strategy_zoo/        # mine 保存的策略与 retests/
+│   ├── factor_zoo/          # 因子库 factor_zoo.csv
 │   ├── factor_qlib_templates/  # Qlib 回测模板（mine 默认，推荐在此改 yaml）
 │   └── stock_lists/         # 股票池 CSV（prepare_data 默认列表）
 └── git_ignore_folder/       # 运行产物（已 gitignore）

@@ -55,6 +55,16 @@ class FactorSystem(BaseFactorSystem):
 
         return parse_expression(expression)
 
+    def list_factors(self) -> list[dict[str, str]]:
+        return self._database.list_factors()
+
+    def delete_factor(self, factor_name: str, *, save: bool = True) -> bool:
+        removed = self._database.delete(factor_name.strip())
+        if removed and save:
+            self._database.save()
+            self._database.reload()
+        return removed
+
     @property
     def database(self) -> Any:
         return self._database

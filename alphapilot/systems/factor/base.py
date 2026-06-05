@@ -30,6 +30,14 @@ class BaseFactorSystem(BaseSystem):
     def evaluate_expression(self, expression: str) -> Any:
         """Parse/evaluate a factor expression (DSL)."""
 
+    @abstractmethod
+    def list_factors(self) -> list[dict[str, str]]:
+        """List all factors in the zoo."""
+
+    @abstractmethod
+    def delete_factor(self, factor_name: str, *, save: bool = True) -> bool:
+        """Remove a factor by name from the zoo."""
+
     @property
     @abstractmethod
     def database(self) -> Any:

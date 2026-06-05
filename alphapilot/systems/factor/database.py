@@ -25,6 +25,14 @@ class BaseFactorDatabase(ABC):
         """Add a factor to the zoo; return True if added."""
 
     @abstractmethod
+    def list_factors(self) -> list[dict[str, str]]:
+        """Return all factors in the zoo."""
+
+    @abstractmethod
+    def delete(self, factor_name: str) -> bool:
+        """Remove a factor by name; return True if removed."""
+
+    @abstractmethod
     def save(self, output_path: str | None = None) -> None:
         """Persist the zoo to disk."""
 
@@ -61,6 +69,15 @@ class FileFactorDatabase(BaseFactorDatabase):
 
     def add(self, factor_name: str, factor_expression: str) -> bool:
         return self.regulator.add_factor(factor_name, factor_expression)
+
+    def list_factors(self) -> list[dict[str, str]]:
+        return self.regulator.list_factors()
+
+    def delete(self, factor_name: str) -> bool:
+        return self.regulator.remove_factor(factor_name)
+
+    def reload(self) -> None:
+        self._regulator = None
 
     def save(self, output_path: str | None = None) -> None:
         self.zoo_dir.mkdir(parents=True, exist_ok=True)

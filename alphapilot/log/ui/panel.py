@@ -6,6 +6,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+DeleteSessionFn = Callable[[str], bool]
+
 import requests
 import streamlit as st
 
@@ -56,6 +58,8 @@ def _render_controls(
     key_prefix: str,
     debug: bool,
     use_sidebar: bool,
+    translate: TranslateFn | None = None,
+    delete_session_fn: DeleteSessionFn | None = None,
 ) -> bool:
     """Render control panel. Returns effective debug flag."""
 
@@ -107,6 +111,32 @@ def _render_controls(
                     sess.log_path = Path(picked)
                 else:
                     st.warning("No valid log sessions found.")
+
+        if delete_session_fn is not None and sess.log_path is not None:
+            session_name = Path(sess.log_path).name
+            with st.container(border=True):
+                st.markdown(f"**{_msg(translate, 'delete_heading')}**")
+                st.caption(session_name)
+                delete_log_confirm = st.checkbox(
+                    _msg(translate, "delete_confirm"),
+                    key=f"{key_prefix}_delete_log_confirm",
+                )
+                if st.button(
+                    _msg(translate, "delete_mine_log_btn"),
+                    key=f"{key_prefix}_delete_log_btn",
+                ):
+                    if not delete_log_confirm:
+                        st.warning(_msg(translate, "delete_confirm"))
+                    else:
+                        try:
+                            if delete_session_fn(session_name):
+                                st.success(_msg(translate, "mine_log_deleted", name=session_name))
+                                sess.log_path = None
+                                st.rerun()
+                            else:
+                                st.error(_msg(translate, "mine_log_delete_failed", name=session_name))
+                        except Exception as exc:  # noqa: BLE001
+                            st.error(_msg(translate, "mine_log_delete_error", error=exc))
 
         c1, c2 = st.columns([1, 1], vertical_alignment="center")
         with c1:
@@ -273,6 +303,7 @@ def render_log_ui_panel(
     key_prefix: str = "log_ui",
     api_base: str = "http://127.0.0.1:6701",
     debug: bool = False,
+    delete_session_fn: DeleteSessionFn | None = None,
 ) -> None:
     """Render factor-mining log viewer."""
     inject_log_ui_css()
@@ -299,6 +330,8 @@ def render_log_ui_panel(
         key_prefix=key_prefix,
         debug=debug,
         use_sidebar=use_sidebar,
+        translate=translate,
+        delete_session_fn=delete_session_fn,
     )
     _render_debug(sess, effective_debug)
 

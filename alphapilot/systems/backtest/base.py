@@ -83,3 +83,7 @@ class BaseBacktestSystem(BaseSystem):
             run_env=request.run_env,
             use_local=request.use_local,
         )
+
+    def delete_workspace(self, workspace: str | Path, log_root: str | Path | None = None) -> bool:
+        """Delete a backtest workspace and optional manual label entry."""
+        return self.results.delete_run(workspace, log_root=log_root)
