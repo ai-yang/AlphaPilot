@@ -5,14 +5,15 @@ We think this part can be shared.
 """
 
 import re
-from abc import abstractclassmethod
+from abc import abstractmethod
 from typing import Any
 
 from alphapilot.utils.agent.tpl import T
 
 
 class AgentOut:
-    @abstractclassmethod
+    @classmethod
+    @abstractmethod
     def get_spec(cls, **context: Any) -> str:
         raise NotImplementedError(f"Please implement the `get_spec` method")
 
