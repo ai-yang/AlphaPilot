@@ -21,7 +21,7 @@ class PlatformModule(BaseModule):
     def prepare_data(
         self,
         action: str = "pipeline",
-        start_date: str = "2005-01-01",
+        start_date: str = "2015-01-01",
         end_date: str | None = None,
         stock_csv: str | None = None,
         adjust_mode: str = "backward",

@@ -74,8 +74,11 @@ def dispatch_prepare_action(
         kwargs = {
             "start_date": start_date,
             "end_date": end_date,
+            "adjust_mode": adjust_mode,
         }
         kwargs.update(options)
+        if stock_csv:
+            kwargs["stock_csv"] = stock_csv
         if output_dir:
             kwargs["output_dir"] = output_dir
         return download_handler(**kwargs)

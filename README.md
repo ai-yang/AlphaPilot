@@ -196,10 +196,6 @@ cd AlphaPilot
 pip install -e .
 ```
 
-安装后 CLI 命令为 **`alphapilot`**（例如 `alphapilot mine`）。若你此前安装过旧包名 `alphaagent`，请先 `pip uninstall alphaagent` 再重新 `pip install -e .`。
-
-可选环境变量前缀已由 `ALPHAAGENT_*` 统一为 **`ALPHAPILOT_*`**（如 `ALPHAPILOT_QLIB_DATA_DIR`、`ALPHAPILOT_WORKSPACE_ROOT`）。旧前缀不再读取。
-
 ### 3. macOS 额外依赖（LightGBM 回测）
 
 在 **macOS** 上跑 `alphapilot mine` 时，Qlib 回测默认使用 **LightGBM**（`LGBModel`）。除 conda 环境内的 Python 包外，还需要本机通过 **Homebrew** 安装 OpenMP 运行时；`brew` 装的是**系统级**库（如 `/opt/homebrew/opt/libomp`），**不会**装进 `alphapilot` 虚拟环境，运行时由 LightGBM 动态加载。
