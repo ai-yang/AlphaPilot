@@ -147,6 +147,8 @@ alphapilot qlib_yaml_validate \
 - `prepare_data` 统一由 `platform -> context.data() -> systems.data` 链路执行（单一调度入口）
 - `mine/backtest/strategy_backtest/qlib_yaml_generate/qlib_yaml_validate/prepare_data/portal/data_viz/backtest_viz` 等由内置模块贡献命令（modules-only）；`ui` / `backtest_ui` 仅保留弃用提示
 - 回测产物解析收拢到 `alphapilot/systems/backtest/artifacts.py`；可视化 UI 在 `alphapilot/modules/backtest_viz/`（原 `app/backtest_viewer/` 已删除）
+- 策略复测编排收拢到 `alphapilot/systems/strategy/backtest.py`，经 `context.backtest()` 执行，**不再**经 `alpha_mining` 模块中转
+- 挖掘日志 UI（`alphapilot/log/ui/`）通过 `core.scenario.Scenario` 的 UI trait 分支渲染，**不再 import** `alpha_mining` 具体场景类
 
 **数据系统代码位置（供二开参考）**
 
@@ -496,6 +498,8 @@ RSI_Factor,"RSI($close)"
 
 `mine` 每轮结束后会在 `important_data/strategy_zoo/<策略名>/` 落盘策略资产（因子公式、`fitted_model.pkl`、IC 等指标、`metadata.json`）。可用独立命令对**已保存资产**重新回测，无需重跑完整挖掘流程。
 
+**调用链**：`strategy_backtest` 模块 → `StrategySystem.backtest_from_asset` → `systems/strategy/backtest.py` → `context.backtest()`（`retrain` / `reuse_model`）。
+
 **列出已保存策略：**
 
 ```bash
@@ -686,17 +690,17 @@ AlphaPilot/
 │   │   ├── data/               # 数据下载、复权、Qlib 转换、h5（prepare_data 实现）
 │   │   ├── factor/             # 因子库（factor_zoo）、表达式校验与导入
 │   │   ├── backtest/           # 回测执行与产物（artifacts.py、results.py、qlib_yaml/）
-│   │   └── strategy/           # 策略资产存储（strategy_zoo）与复测编排
+│   │   └── strategy/           # 策略资产存储（strategy_zoo）、复测编排（backtest.py）
 │   ├── adapters/               # LLM/数据源等外部接口适配层
 │   ├── modules/                # 功能模块（alpha_mining/portal/platform/data_viz/backtest_viz/strategy_backtest/qlib_yaml + 插件）
 │   │   ├── alpha_mining/       # 因子挖掘（qlib 场景 + loops + conf + registry）
-│   │   ├── platform/           # prepare_data、modules 命令；ui/backtest_ui 弃用提示
+│   │   ├── platform/           # prepare_data、单股数据管理、modules 命令；ui/backtest_ui 弃用提示
 │   │   ├── portal/             # 统一 Web 门户（alphapilot portal）
 │   │   ├── data_viz/           # 股票 K 线（alphapilot data_viz）
 │   │   ├── backtest_viz/       # 回测详情 UI（alphapilot backtest_viz）
 │   │   ├── strategy_backtest/  # 策略资产列表与复测 CLI
 │   │   └── qlib_yaml/          # Qlib qrun yaml 生成与校验（qlib_yaml_generate / qlib_yaml_validate）
-│   └── log/ui/                 # 挖掘日志 panel（portal 嵌入；alphapilot ui 已弃用）
+│   └── log/ui/                 # 挖掘日志 panel（portal 嵌入；基于 Scenario trait，不依赖 alpha_mining）
 ├── .env.example             # 环境变量模板
 ├── import_factors_from_log.py  # 从 log 提取因子公式写入因子库（去重）
 ├── clean_log_dirs.py        # 清理 log 下空目录与失败桩目录

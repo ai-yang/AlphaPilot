@@ -32,8 +32,9 @@
 | `alphapilot backtest` | 对已有因子 CSV 做回测 |
 | `alphapilot strategy_backtest` | 从 `strategy_zoo` 已保存策略资产复测 |
 | `alphapilot strategy_backtest_list` | 列出已保存策略资产 |
-| `alphapilot ui` | Streamlit 查看运行日志 |
-| `alphapilot backtest_ui` | 本 fork 新增：查看回测持仓/收益曲线 |
+| `alphapilot portal` | 统一 Web 门户（数据/因子/策略/回测、挖掘日志、K 线等） |
+| `alphapilot ui` | **已弃用**，请使用 `alphapilot portal` →「挖掘日志」 |
+| `alphapilot backtest_ui` | **已弃用**，请使用 `alphapilot portal` →「回测 → 回测详情」 |
 
 ---
 
@@ -46,7 +47,7 @@
 | **内核 kernel** | `alphapilot/kernel/` | `MainEngine` 持有配置与系统/模块；`Context` 是模块访问系统的唯一入口；`AppConfig` 集中路径配置；`registry` 负责内置注册 + 入口点发现 |
 | **数据管理系统** | `alphapilot/systems/data/` | 股票数据下载、复权、Qlib 转换、h5 生成与存储（`prepare_data` 实现；`app/data` 已移除） |
 | **因子管理系统** | `alphapilot/systems/factor/` | 导入因子、因子库（`FactorDatabase` 包装 `FactorRegulator`）、表达式 DSL |
-| **策略管理系统** | `alphapilot/systems/strategy/` | 策略资产落盘（`important_data/strategy_zoo/`）、`backtest_from_asset` 复测编排 |
+| **策略管理系统** | `alphapilot/systems/strategy/` | 策略资产落盘（`important_data/strategy_zoo/`）、`backtest_from_asset` 复测编排（经 `strategy/backtest.py` 委托 backtest 系统，不依赖 `alpha_mining` 模块） |
 | **策略复测模块** | `alphapilot/modules/strategy_backtest/` | CLI：`strategy_backtest` / `strategy_backtest_list` |
 | **交易回测系统** | `alphapilot/systems/backtest/` | 因子/模型回测（统一由 system 内部 qlib workspace 执行）、结果存取（`BacktestResultStore`） |
 | **模块 modules** | `alphapilot/modules/` | 可插拔特性；内置 `alpha_mining`、`portal`、`platform`、`data_viz` 等 |
@@ -210,6 +211,7 @@ flowchart TB
 | 路径 | 职责 |
 |------|------|
 | `service.py` | `register_strategy`、`backtest_from_asset`（`retrain` / `reuse_model`） |
+| `backtest.py` | `run_strategy_asset_backtest`：经 `context.backtest()` 调用 `run_factor_evaluation` / `run_saved_model_evaluation` |
 | `database.py` | `FileStrategyParamDatabase`：每策略一目录（`factors.json`、`model.json`、`metrics.json`、`artifacts/`、`retests/`） |
 | `base.py` | `StrategyRecord`、`StrategyBacktestRequest` 等 DTO |
 
@@ -234,7 +236,9 @@ flowchart TB
 | 路径 | 职责 |
 |------|------|
 | `logger.py` / `storage.py` | 结构化记录每轮假说、代码、回测结果 |
-| `ui/` | `alphapilot ui` 使用的 Streamlit 界面 |
+| `tag_utils.py` | 日志 tag 规范化；`resolve_scenario_from_log` 从 pickle 恢复 `core.scenario.Scenario` |
+| `ui/` | 挖掘日志 Streamlit panel（由 `alphapilot portal` 嵌入；`alphapilot ui` 已弃用） |
+| `ui/session.py` | 通过 `Scenario` 的 UI trait（`is_mining_scenario` 等）分支渲染，**不 import** `alpha_mining` 具体场景类 |
 | `ui/qlib_report_figure.py` | Qlib 报告图表 |
 
 ### `utils/` — 工具
@@ -265,8 +269,9 @@ flowchart TB
 ### `alphapilot strategy_backtest` 代码路径
 
 1. `modules/strategy_backtest/module.py` → `StrategySystem.backtest_from_asset`
-2. `retrain`：`FactorBacktestRequest` → `BacktestLoop`（`factor_backtest` 场景）→ 因子计算 → `QlibFactorRunner` → `qrun`
-3. 结果写入 `strategy_zoo/<name>/retests/<时间戳>_<mode>.json`；成功时另导出 `retests/<时间戳>_<mode>/`（`daily_report.csv`、`daily_trades.csv`、`daily_holdings.csv` 等），终端打印 IC 摘要
+2. `systems/strategy/backtest.py` → `context.backtest().run_factor_evaluation`（`retrain`）或 `run_saved_model_evaluation`（`reuse_model`）
+3. `systems/backtest/pipelines/factor_evaluation.py` → 因子计算 → `QlibFactorRunner` → `qrun`
+4. 结果写入 `strategy_zoo/<name>/retests/<时间戳>_<mode>.json`；成功时另导出 `retests/<时间戳>_<mode>/`（`daily_report.csv`、`daily_trades.csv`、`daily_holdings.csv` 等），终端打印 IC 摘要
 
 Mine / backtest / strategy_backtest 共用目录与缓存冲突说明见 [mine-vs-backtest-artifacts.md](mine-vs-backtest-artifacts.md)。
 
@@ -295,7 +300,7 @@ Mine / backtest / strategy_backtest 共用目录与缓存冲突说明见 [mine-v
 | `proposal.py` | `Hypothesis`、`Trace`、`HypothesisGen` 等：假说—实验—反馈的数据与三步接口 |
 | `developer.py` | `Developer.develop(exp)`：编码 / 回测执行的统一入口（coder、runner 都实现它） |
 | `experiment.py` | `Task`、`Experiment`、`Workspace`、`FBWorkspace`：一次实验的任务 + 磁盘工作区 + 执行代码 |
-| `scenario.py` | `Scenario`：拼出给 LLM 的 **场景说明**（背景、数据、接口、`output_format` 文本） |
+| `scenario.py` | `Scenario`：拼出给 LLM 的 **场景说明**（背景、数据、接口、`output_format` 文本）；并提供 log UI 用的 trait（`is_mining_scenario`、`has_alpha158_baseline`、`uses_qlib_metric_index`），具体 mining 场景在 `modules/alpha_mining/qlib/experiment/` 中覆盖 |
 | `evaluation.py` | `Feedback`、`Evaluator`：评估结果的抽象 |
 
 这些是 **面向对象的流水线设计**（来自 RD-Agent），让 `AlphaPilotLoop` 可以写死五步，而 Qlib 因子、模型训练等用不同子类替换。
@@ -467,7 +472,8 @@ HypothesisExperiment2Feedback.generate_feedback() → HypothesisFeedback
 2. **回测可视化**（`modules/backtest_viz/` + `systems/backtest/artifacts.py`）：`alphapilot backtest_viz` / portal  
 3. **数据准备**（`systems/data/`）：baostock 下载 A 股数据、Qlib 转换与 h5 导出  
 4. **回测配置**：内置 `factor_template/` + 可选 `important_data/factor_qlib_templates/`；`QLIB_FACTOR_QLIB_TEMPLATE_DIR` / `QLIB_FACTOR_QLIB_CONFIG_NAME`  
-5. **策略资产复测**（`modules/strategy_backtest/` + `systems/strategy/`）：`strategy_backtest` / `strategy_backtest_list`  
-6. **因子执行环境**：`FACTOR_CoSTEER_PYTHON_BIN` 默认当前解释器；失败 execute 不写入 pickle 缓存  
+5. **策略资产复测**（`modules/strategy_backtest/` + `systems/strategy/backtest.py` → `context.backtest()`）：`strategy_backtest` / `strategy_backtest_list`  
+6. **挖掘日志 UI 解耦**（`log/ui/`）：通过 `core.scenario.Scenario` UI trait 渲染，不依赖 `alpha_mining` 具体场景类  
+7. **因子执行环境**：`FACTOR_CoSTEER_PYTHON_BIN` 默认当前解释器；失败 execute 不写入 pickle 缓存  
 
 更完整的使用说明见项目根目录 [README.md](../README.md)。
