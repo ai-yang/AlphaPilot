@@ -18,10 +18,12 @@ from alphapilot.components.coder.model_coder.evaluators import ModelSingleFeedba
 from alphapilot.components.coder.model_coder.model import ModelFBWorkspace, ModelTask
 from alphapilot.core.proposal import Hypothesis, HypothesisFeedback
 from alphapilot.log.ui.qlib_report_figure import report_figure
-from alphapilot.modules.alpha_mining.qlib.experiment.factor_experiment import QlibFactorScenario
-from alphapilot.modules.alpha_mining.qlib.experiment.factor_from_report_experiment import QlibFactorFromReportScenario
-from alphapilot.modules.alpha_mining.qlib.experiment.model_experiment import QlibModelScenario
-from alphapilot.log.ui.session import LogSession, SIMILAR_SCENARIOS
+from alphapilot.log.ui.session import (
+    LogSession,
+    scenario_has_alpha158_baseline,
+    scenario_is_mining,
+    scenario_uses_qlib_metric_index,
+)
 
 if TYPE_CHECKING:
     pass
@@ -343,7 +345,7 @@ def metrics_window(sess: LogSession, df: pd.DataFrame, R: int, C: int, *, height
 
 
 def summary_window(sess: LogSession) -> None:
-    if isinstance(sess.scenario, SIMILAR_SCENARIOS):
+    if scenario_is_mining(sess.scenario):
         st.header("Runing Summary📊", divider="rainbow", anchor="_summary")
         if sess.lround == 0:
             return
@@ -365,7 +367,7 @@ def summary_window(sess: LogSession) -> None:
             #     display_hypotheses(sess.hypotheses, sess.h_decisions, show_true_only)
 
             with chart_c:
-                if isinstance(sess.scenario, QlibFactorScenario) and sess.alpha158_metrics is not None:
+                if scenario_has_alpha158_baseline(sess.scenario) and sess.alpha158_metrics is not None:
                     df = pd.DataFrame([sess.alpha158_metrics] + sess.metric_series)
                 else:
                     df = pd.DataFrame(sess.metric_series)
@@ -446,7 +448,7 @@ def research_window(sess: LogSession, round: int) -> None:
     with st.container(border=True):
         title = "Idea Agent💡"
         st.subheader(title, divider="blue", anchor="_idea")
-        if isinstance(sess.scenario, SIMILAR_SCENARIOS):
+        if scenario_is_mining(sess.scenario):
             # pdf image
             if pim := sess.msgs[round]["r.extract_factors_and_implement.load_pdf_screenshot"]:
                 for i in range(min(2, len(pim))):
@@ -487,13 +489,11 @@ def research_window(sess: LogSession, round: int) -> None:
 
 
 def feedback_window(sess: LogSession, round: int) -> None:
-    if isinstance(sess.scenario, SIMILAR_SCENARIOS):
+    if scenario_is_mining(sess.scenario):
         with st.container(border=True):
             st.subheader("Eval Agent📝", divider="orange", anchor="_eval")
 
-            if sess.lround > 0 and isinstance(
-                sess.scenario, (QlibModelScenario, QlibFactorScenario, QlibFactorFromReportScenario)
-            ):
+            if sess.lround > 0 and scenario_uses_qlib_metric_index(sess.scenario):
                 with st.expander("**Config**", expanded=True):
                     st.markdown(sess.scenario.experiment_setting, unsafe_allow_html=True)
             
@@ -666,7 +666,7 @@ def feedback_window(sess: LogSession, round: int) -> None:
 
 
 def evolving_window(sess: LogSession, round: int, *, key_prefix: str = "log_ui") -> None:
-    title = "Debugging" if isinstance(sess.scenario, SIMILAR_SCENARIOS) else "Development🛠️ (evolving coder)"
+    title = "Debugging" if scenario_is_mining(sess.scenario) else "Development🛠️ (evolving coder)"
     st.subheader(title, divider="green", anchor="_debugging")
 
     # Evolving Status

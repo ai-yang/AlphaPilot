@@ -55,6 +55,18 @@ class QlibFactorScenario(Scenario):
     def experiment_setting(self) -> str:
         return self._experiment_setting
 
+    @property
+    def is_mining_scenario(self) -> bool:
+        return True
+
+    @property
+    def has_alpha158_baseline(self) -> bool:
+        return True
+
+    @property
+    def uses_qlib_metric_index(self) -> bool:
+        return True
+
     def get_scenario_all_desc(
         self, task: Task | None = None, filtered_tag: str | None = None, simple_background: bool | None = None
     ) -> str:
@@ -116,6 +128,10 @@ class QlibAlphaPilotScenario(Scenario):
     @property
     def experiment_setting(self) -> str:
         return self._experiment_setting
+
+    @property
+    def is_mining_scenario(self) -> bool:
+        return True
 
     def get_scenario_all_desc(
         self, task: Task | None = None, filtered_tag: str | None = None, simple_background: bool | None = None

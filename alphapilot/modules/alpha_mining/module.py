@@ -18,11 +18,9 @@ from alphapilot.kernel.base import BaseModule
 
 if TYPE_CHECKING:
     from alphapilot.kernel.context import Context
-    from alphapilot.modules.alpha_mining.pipelines.strategy_backtest import StrategyAssetBacktestRun
     from alphapilot.systems.backtest.types import (
         FactorBacktestRequest,
         FactorBacktestResult,
-        FactorDefinition,
         SavedModelBacktestRequest,
     )
 
@@ -103,36 +101,6 @@ class AlphaMiningModule(BaseModule):
         from alphapilot.systems.backtest.types import FactorBacktestResult, SavedModelBacktestRequest
 
         return run_saved_model_backtest_from_request(self.context, request)
-
-    def run_strategy_asset_backtest(
-        self,
-        *,
-        mode: str,
-        factors: list["FactorDefinition"],
-        scenario: str = "factor_backtest",
-        qlib_config_name: str | None = None,
-        qlib_template_dir: str | None = None,
-        qlib_data_dir: str | None = None,
-        use_local: bool | None = None,
-        model_pickle_path: str | None = None,
-    ) -> "StrategyAssetBacktestRun":
-        from alphapilot.modules.alpha_mining.pipelines.strategy_backtest import (
-            run_strategy_asset_backtest,
-        )
-
-        if mode not in ("retrain", "reuse_model"):
-            raise ValueError(f"Unsupported mode: {mode!r}")
-        return run_strategy_asset_backtest(
-            self.context,
-            mode=mode,  # type: ignore[arg-type]
-            factors=factors,
-            scenario=scenario,
-            qlib_config_name=qlib_config_name,
-            qlib_template_dir=qlib_template_dir,
-            qlib_data_dir=qlib_data_dir,
-            use_local=use_local,
-            model_pickle_path=model_pickle_path,
-        )
 
     def run_backtest(
         self,

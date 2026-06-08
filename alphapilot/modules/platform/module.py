@@ -47,6 +47,89 @@ class PlatformModule(BaseModule):
         )
         return data.dispatch_action(command)
 
+    # ---- Single-stock data management ----
+
+    def list_stocks(self, adjust_mode: str | None = None) -> dict[str, Any]:
+        """List local stock symbols (optionally for one adjust mode)."""
+        return self.context.data().list_symbols(adjust_mode)
+
+    def delete_stock(
+        self,
+        symbol: str,
+        adjust_mode: str = "all",
+        dry_run: bool = False,
+    ) -> Any:
+        """Delete one stock across raw CSVs, factor, Qlib features and instruments.
+
+        ``adjust_mode`` defaults to ``all`` (delete every adjust-mode CSV). The
+        combined ``daily_pv`` h5 must be rebuilt afterwards (see ``prepare_data h5``).
+        """
+        return self.context.data().delete_symbol(
+            symbol, adjust_mode=adjust_mode, dry_run=dry_run
+        )
+
+    def trim_stock(
+        self,
+        symbol: str,
+        adjust_mode: str = "all",
+        start_date: str | None = None,
+        end_date: str | None = None,
+        drop_dates: str | None = None,
+        qlib_adjust_mode: str = "backward",
+        resync_qlib: bool = True,
+        rebuild_h5: bool = False,
+        market: str | None = None,
+        dry_run: bool = False,
+    ) -> Any:
+        """Trim one stock's CSV to ``[start_date, end_date]`` / drop ``drop_dates``.
+
+        Re-dumps that symbol's Qlib binary (``resync_qlib``); the daily_pv h5 is
+        rebuilt only when ``rebuild_h5=True``.
+        """
+        data = self.context.data()
+        result = data.trim_symbol(
+            symbol,
+            adjust_mode=adjust_mode,
+            start=start_date,
+            end=end_date,
+            drop_dates=drop_dates,
+            resync_qlib=resync_qlib,
+            qlib_adjust_mode=qlib_adjust_mode,
+            dry_run=dry_run,
+        )
+        if rebuild_h5 and not dry_run:
+            result["rebuild_h5"] = self._rebuild_h5(data, market)
+        return result
+
+    def refresh_stock(
+        self,
+        symbol: str,
+        adjust_mode: str = "backward",
+        start_date: str = "2016-12-31",
+        end_date: str | None = None,
+        qlib_adjust_mode: str = "backward",
+        resync_qlib: bool = True,
+        rebuild_h5: bool = False,
+        market: str | None = None,
+    ) -> Any:
+        """Re-download one stock (incremental) and re-sync its Qlib binary."""
+        data = self.context.data()
+        result = data.refresh_symbol(
+            symbol,
+            adjust_mode=adjust_mode,
+            start_date=start_date,
+            end_date=end_date,
+            resync_qlib=resync_qlib,
+            qlib_adjust_mode=qlib_adjust_mode,
+        )
+        if rebuild_h5:
+            result["rebuild_h5"] = self._rebuild_h5(data, market)
+        return result
+
+    @staticmethod
+    def _rebuild_h5(data: Any, market: str | None) -> Any:
+        return data.rebuild_h5(market=market) if market else data.rebuild_h5()
+
     @staticmethod
     def _print_portal_deprecation(command: str, tab_hint: str) -> None:
         print(
@@ -81,6 +164,10 @@ class PlatformModule(BaseModule):
     def commands(self) -> dict[str, Callable[..., Any] | Any]:
         return {
             "prepare_data": self.prepare_data,
+            "list_stocks": self.list_stocks,
+            "delete_stock": self.delete_stock,
+            "trim_stock": self.trim_stock,
+            "refresh_stock": self.refresh_stock,
             "ui": self.ui,
             "backtest_ui": self.backtest_ui,
             "modules": self.modules,

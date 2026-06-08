@@ -158,6 +158,7 @@ alphapilot qlib_yaml_validate \
 | Qlib 转换 | `systems/data/qlib_convert.py` | CSV → Qlib 二进制 |
 | h5 导出 | `systems/data/generate_h5.py` | 生成 `daily_pv.h5` |
 | dump 工具 | `systems/data/qlib_dump/` | `dump_bin`、交易日历扩展 |
+| 单股管理 | `systems/data/manage.py` | 单只股票的删除 / 裁剪 / 单股重 dump（`delete_symbol`、`trim_symbol`、`resync_symbol_to_qlib`、instruments 增删改） |
 | 系统 API | `systems/data/service.py` | `QlibDataSystem` 与 typed DTO（`types.py`） |
 | 路径约定 | `kernel/paths.py` | `important_data_dir`、`strategy_zoo_dir`、`factor_zoo_dir`、`stock_lists_dir`、默认 `stock_csv`、旧路径 remap |
 
@@ -175,6 +176,25 @@ data.run_download(DataDownloadCommand(
     options={"adjust_mode": "backward"},
 ))
 ```
+
+**单只股票数据管理（删除 / 修改）**
+
+一只股票的数据横跨多层：各复权目录 raw CSV、复权因子 CSV、Qlib 二进制 `features/{code}/`、`instruments/{all.txt, market.txt}`、衍生 `daily_pv_*.h5`。CSV 是「源」，Qlib 二进制与 h5 是「派生物」，**改 CSV 后必须同步**否则回测仍读旧数据。新增命令会自动处理这条链路：
+
+| 命令 | 作用 | Qlib/h5 同步 |
+|------|------|--------------|
+| `alphapilot list_stocks` | 列出本地已下载代码（可加 `--adjust_mode`） | — |
+| `alphapilot delete_stock --symbol sz.300001` | 删除该股各复权 CSV、复权因子、`features/{code}/`、`instruments` 行 | 删除天然 per-symbol 安全，无需重 dump；h5 需重建 |
+| `alphapilot refresh_stock --symbol sz.300001 --adjust_mode backward` | 增量重下该股（含复权因子） | 自动用 `DumpDataUpdate` 单股重 dump（扩日历 + 追加）；h5 需重建 |
+| `alphapilot trim_stock --symbol sz.300001 --start_date 2018-01-01 --drop_dates 2020-02-03,2020-02-04` | 按区间裁剪 / 删除指定异常日期（本地，不联网） | 自动用 `DumpDataFix` 单股重 dump；h5 需重建 |
+
+要点：
+
+- `delete_stock` 的 `--adjust_mode` 默认 `all`（删除全部复权目录的 CSV）；`refresh/trim` 用 `--qlib_adjust_mode`（默认 `backward`）指定**重 dump 读哪个复权目录**，需与你 `convert` 时所用复权类型一致。
+- **`daily_pv_*.h5` 无增量模式**，默认**延后重建**：上述命令会提示「h5 已过期」。请在改动完成后运行 `alphapilot prepare_data h5`（或给 `refresh/trim` 加 `--rebuild_h5 True`）让因子数据同步。
+- 所有破坏性操作支持 `--dry_run True` 先预览将改动的文件 / instruments 行。
+- 单股重 dump 依赖已存在的 `instruments/all.txt` 与 `calendars/day.txt`；若缺失会提示改跑全量 `alphapilot prepare_data convert`。
+- Portal「数据」标签也内嵌了同一套删除 / 刷新 / 裁剪控件与「重建 daily_pv h5」按钮。
 
 ---
 
@@ -548,6 +568,7 @@ alphapilot portal --port 19901
 
 浏览器打开 `http://localhost:19901`，可在一个页面中访问：
 - Data/Factor/Strategy/Backtest 四大系统能力
+- **数据** 标签页：查看路径、加载股票池、运行数据操作，并提供**单股管理**（**删除/刷新/裁剪单只股票**，自动单股重 dump + 「重建 daily_pv h5」按钮）
 - **因子** 标签页：校验/添加表达式、导入导出、**删除单条因子**（`important_data/factor_zoo/factor_zoo.csv`）
 - **策略** 标签页：查看/保存策略参数、**删除整个策略资产文件夹**
 - **股票 K 线** 标签页（内嵌 `data_viz`）

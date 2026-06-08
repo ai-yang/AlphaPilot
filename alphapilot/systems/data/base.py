@@ -53,6 +53,28 @@ class BaseDataSystem(BaseSystem):
     def run_action(self, action: str, **options: Any) -> Any:
         """Run a named prepare-data action through a unified entrypoint."""
 
+    # ---- Single-stock management ----
+
+    @abstractmethod
+    def list_symbols(self, adjust_mode: Any = None) -> Any:
+        """List the stock symbols present on disk (optionally per adjust mode)."""
+
+    @abstractmethod
+    def delete_symbol(self, symbol: str, **options: Any) -> Any:
+        """Delete one stock across raw CSVs, factor CSV, Qlib features and universe."""
+
+    @abstractmethod
+    def trim_symbol(self, symbol: str, **options: Any) -> Any:
+        """Trim one stock's CSV to a date range / drop bad rows, then re-sync Qlib."""
+
+    @abstractmethod
+    def refresh_symbol(self, symbol: str, **options: Any) -> Any:
+        """Re-download one stock from the data source, then re-sync the Qlib binary."""
+
+    @abstractmethod
+    def rebuild_h5(self, **options: Any) -> Any:
+        """Rebuild the combined ``daily_pv`` h5 (no incremental mode)."""
+
     @property
     @abstractmethod
     def storage(self) -> Any:

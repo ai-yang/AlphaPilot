@@ -9,12 +9,10 @@ from typing import Callable
 
 import streamlit as st
 
+from alphapilot.core.scenario import Scenario
 from alphapilot.log.base import Message
 from alphapilot.log.storage import FileStorage
 from alphapilot.log.tag_utils import canonical_ui_msg_tag, resolve_scenario_from_log, ui_round_from_tag
-from alphapilot.modules.alpha_mining.qlib.experiment.factor_experiment import QlibFactorScenario, QlibAlphaPilotScenario
-from alphapilot.modules.alpha_mining.qlib.experiment.factor_from_report_experiment import QlibFactorFromReportScenario
-from alphapilot.modules.alpha_mining.qlib.experiment.model_experiment import QlibModelScenario
 
 QLIB_SELECTED_METRICS = [
     "IC",
@@ -23,13 +21,24 @@ QLIB_SELECTED_METRICS = [
     "max_drawdown",
 ]
 
-SIMILAR_SCENARIOS = (
-    QlibAlphaPilotScenario,
-    QlibModelScenario,
-    QlibModelScenario,
-    QlibFactorScenario,
-    QlibFactorFromReportScenario,
-)
+
+# ---- Scenario trait predicates (None-safe) ----
+#
+# The log UI branches on scenario *kind* via overridable traits on the
+# abstract ``Scenario`` rather than importing concrete scenario classes from
+# the alpha-mining module, so the infra ``log`` layer stays decoupled from
+# feature modules.
+
+def scenario_is_mining(scen: Scenario | None) -> bool:
+    return scen is not None and scen.is_mining_scenario
+
+
+def scenario_has_alpha158_baseline(scen: Scenario | None) -> bool:
+    return scen is not None and scen.has_alpha158_baseline
+
+
+def scenario_uses_qlib_metric_index(scen: Scenario | None) -> bool:
+    return scen is not None and scen.uses_qlib_metric_index
 
 
 class LogSession:
@@ -147,7 +156,7 @@ def get_msgs_until(sess: LogSession, end_func: Callable[[Message], bool] | None 
                     sess.last_msg = msg
 
                     if "model runner result" in tags or "factor runner result" in tags or "runner result" in tags:
-                        if isinstance(sess.scenario, QlibFactorScenario) and sess.alpha158_metrics is None:
+                        if scenario_has_alpha158_baseline(sess.scenario) and sess.alpha158_metrics is None:
                             sms = msg.content.based_experiments[0].result.loc[QLIB_SELECTED_METRICS]
                             sms.name = "alpha158"
                             sess.alpha158_metrics = sms
@@ -158,20 +167,14 @@ def get_msgs_until(sess: LogSession, end_func: Callable[[Message], bool] | None 
                             and msg.content.based_experiments[-1].result is not None
                         ):
                             sms = msg.content.based_experiments[-1].result
-                            if isinstance(
-                                sess.scenario,
-                                (QlibModelScenario, QlibFactorFromReportScenario, QlibFactorScenario),
-                            ):
+                            if scenario_uses_qlib_metric_index(sess.scenario):
                                 sms = sms.loc[QLIB_SELECTED_METRICS]
                             sms.name = "Baseline"
                             sess.metric_series.append(sms)
 
                         if msg.content.result is not None:
                             sms = msg.content.result
-                            if isinstance(
-                                sess.scenario,
-                                (QlibModelScenario, QlibFactorFromReportScenario, QlibFactorScenario),
-                            ):
+                            if scenario_uses_qlib_metric_index(sess.scenario):
                                 sms = sms.loc[QLIB_SELECTED_METRICS]
                             sms.name = f"Round {ui_round}"
                             sess.metric_series.append(sms)

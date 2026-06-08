@@ -137,6 +137,118 @@ def _render_data_tab(engine: Any) -> None:
         except Exception as exc:  # noqa: BLE001
             st.error(t("data_action_failed", error=exc))
 
+    _render_stock_manage(data_system)
+
+
+def _render_h5_rebuild(data_system: Any) -> None:
+    """Deferred daily_pv h5 rebuild, shown once a modify/delete marks it stale."""
+    if not st.session_state.get("portal_stock_h5_stale"):
+        return
+    st.warning(t("stock_h5_stale_warning"))
+    market = st.text_input(t("stock_rebuild_h5_market"), value="", key="portal_stock_h5_market")
+    if st.button(t("stock_rebuild_h5_btn"), key="portal_stock_h5_btn"):
+        try:
+            if market.strip():
+                data_system.rebuild_h5(market=market.strip())
+            else:
+                data_system.rebuild_h5()
+            st.session_state["portal_stock_h5_stale"] = False
+            st.success(t("stock_h5_rebuilt"))
+        except Exception as exc:  # noqa: BLE001
+            st.error(t("stock_h5_rebuild_failed", error=exc))
+
+
+def _render_stock_manage(data_system: Any) -> None:
+    """Single-stock delete / refresh / trim controls in the Data tab."""
+    st.markdown(f"#### {t('stock_manage_heading')}")
+    st.caption(t("stock_manage_caption"))
+    try:
+        by_mode = data_system.list_symbols()
+    except Exception as exc:  # noqa: BLE001
+        st.error(t("data_action_failed", error=exc))
+        return
+
+    all_symbols = sorted({s for syms in by_mode.values() for s in syms})
+    if not all_symbols:
+        st.info(t("stock_manage_no_symbols"))
+        _render_h5_rebuild(data_system)
+        return
+
+    available_modes = [m for m, syms in by_mode.items() if syms]
+    symbol = st.selectbox(t("stock_select_symbol"), all_symbols, key="portal_stock_symbol")
+    modes = st.multiselect(
+        t("stock_adjust_modes"),
+        list(by_mode.keys()),
+        default=available_modes,
+        key="portal_stock_modes",
+    )
+    qlib_mode = st.selectbox(
+        t("stock_qlib_adjust_mode"),
+        ["backward", "forward", "none"],
+        index=0,
+        key="portal_stock_qlib_mode",
+    )
+
+    # --- Delete ---
+    st.markdown(f"##### {t('stock_delete_heading')}")
+    del_confirm = st.checkbox(t("delete_confirm"), key="portal_stock_del_confirm")
+    if st.button(t("stock_delete_btn"), key="portal_stock_del_btn"):
+        if not del_confirm:
+            st.warning(t("delete_confirm"))
+        else:
+            try:
+                report = data_system.delete_symbol(symbol, adjust_mode=modes or None)
+                st.session_state["portal_stock_h5_stale"] = True
+                st.cache_data.clear()
+                st.success(
+                    t("stock_deleted", name=symbol, detail=f"{len(report.get('deleted', []))} items")
+                )
+                st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                st.error(t("stock_delete_failed", error=exc))
+
+    # --- Refresh / re-download ---
+    st.markdown(f"##### {t('stock_refresh_heading')}")
+    refresh_start = st.text_input(t("start_date"), value="2016-12-31", key="portal_stock_refresh_start")
+    refresh_end = st.text_input(t("end_date"), value="", key="portal_stock_refresh_end")
+    if st.button(t("stock_refresh_btn"), key="portal_stock_refresh_btn"):
+        try:
+            data_system.refresh_symbol(
+                symbol,
+                adjust_mode=modes or "backward",
+                start_date=refresh_start.strip() or "2016-12-31",
+                end_date=refresh_end.strip() or None,
+                qlib_adjust_mode=qlib_mode,
+            )
+            st.session_state["portal_stock_h5_stale"] = True
+            st.cache_data.clear()
+            st.success(t("stock_refreshed", name=symbol))
+        except Exception as exc:  # noqa: BLE001
+            st.error(t("stock_refresh_failed", error=exc))
+
+    # --- Trim ---
+    st.markdown(f"##### {t('stock_trim_heading')}")
+    trim_start = st.text_input(t("stock_trim_start"), value="", key="portal_stock_trim_start")
+    trim_end = st.text_input(t("stock_trim_end"), value="", key="portal_stock_trim_end")
+    drop_dates = st.text_input(t("stock_drop_dates"), value="", key="portal_stock_drop_dates")
+    if st.button(t("stock_trim_btn"), key="portal_stock_trim_btn"):
+        try:
+            data_system.trim_symbol(
+                symbol,
+                adjust_mode=modes or None,
+                start=trim_start.strip() or None,
+                end=trim_end.strip() or None,
+                drop_dates=drop_dates.strip() or None,
+                qlib_adjust_mode=qlib_mode,
+            )
+            st.session_state["portal_stock_h5_stale"] = True
+            st.cache_data.clear()
+            st.success(t("stock_trimmed", name=symbol))
+        except Exception as exc:  # noqa: BLE001
+            st.error(t("stock_trim_failed", error=exc))
+
+    _render_h5_rebuild(data_system)
+
 
 def _render_factor_tab(engine: Any) -> None:
     st.subheader(t("factor_subheader"))

@@ -1,4 +1,10 @@
-"""Strategy-asset backtest orchestration (delegates to backtest evaluation pipeline)."""
+"""Strategy-asset backtest orchestration.
+
+Delegates to the backtest system's evaluation pipeline. Lives in the
+strategy system (its sole consumer) rather than the alpha-mining module
+so that the strategy system never has to reach "up" into a module — the
+dependency only flows strategy-system -> backtest-system via the context.
+"""
 
 from __future__ import annotations
 

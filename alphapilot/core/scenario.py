@@ -62,3 +62,27 @@ class Scenario(ABC):
     def experiment_setting(self) -> str | None:
         """Get experiment setting and return as rich text string"""
         return None
+
+    # ---- UI presentation traits ----
+    #
+    # Overridable metadata the log UI consumes to decide how to render a
+    # trace, without importing concrete scenario classes (keeps the infra
+    # ``log`` layer decoupled from feature modules). Defaults suit
+    # non-mining / evaluation scenarios.
+
+    @property
+    def is_mining_scenario(self) -> bool:
+        """True for LLM-driven evolving mining scenarios whose logs follow the
+        round / hypothesis / evolving-code UI layout."""
+        return False
+
+    @property
+    def has_alpha158_baseline(self) -> bool:
+        """True if runner results carry an Alpha158 baseline row the UI charts."""
+        return False
+
+    @property
+    def uses_qlib_metric_index(self) -> bool:
+        """True if result Series are indexed by qlib metric names, so the UI can
+        slice them down to the selected metric subset."""
+        return False

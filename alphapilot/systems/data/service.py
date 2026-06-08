@@ -143,6 +143,120 @@ class QlibDataSystem(BaseDataSystem):
             **options,
         )
 
+    # ---- Single-stock management ----
+
+    def list_symbols(self, adjust_mode: Any = None) -> dict[str, list[str]]:
+        from alphapilot.systems.data import manage
+
+        return manage.list_symbols(adjust_mode)
+
+    def delete_symbol(
+        self,
+        symbol: str,
+        *,
+        adjust_mode: Any = None,
+        remove_factor: bool = True,
+        remove_qlib_features: bool = True,
+        remove_from_instruments: bool = True,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        from alphapilot.systems.data import manage
+
+        report = manage.delete_symbol(
+            symbol,
+            qlib_dir=self._storage.qlib_data_dir,
+            factor_dir=self._storage.factor_dir,
+            adjust_modes=adjust_mode,
+            remove_factor=remove_factor,
+            remove_qlib_features=remove_qlib_features,
+            remove_from_instruments=remove_from_instruments,
+            dry_run=dry_run,
+        )
+        self._warn_h5_stale(report)
+        return report
+
+    def trim_symbol(
+        self,
+        symbol: str,
+        *,
+        adjust_mode: Any = None,
+        start: str | None = None,
+        end: str | None = None,
+        drop_dates: Any = None,
+        resync_qlib: bool = True,
+        qlib_adjust_mode: str = "backward",
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        from alphapilot.systems.data import manage
+        from alphapilot.systems.data.prepare_cn import default_raw_dir
+
+        report = manage.trim_symbol(
+            symbol,
+            adjust_modes=adjust_mode,
+            start=start,
+            end=end,
+            drop_dates=drop_dates,
+            dry_run=dry_run,
+        )
+        if resync_qlib:
+            report["resync"] = manage.resync_symbol_to_qlib(
+                symbol,
+                raw_dir=default_raw_dir(qlib_adjust_mode),
+                qlib_dir=self._storage.qlib_data_dir,
+                op="trim",
+                dry_run=dry_run,
+            )
+        self._warn_h5_stale(report)
+        return report
+
+    def refresh_symbol(
+        self,
+        symbol: str,
+        *,
+        adjust_mode: Any = None,
+        start_date: str = "2016-12-31",
+        end_date: str | None = None,
+        resync_qlib: bool = True,
+        qlib_adjust_mode: str = "backward",
+        **options: Any,
+    ) -> dict[str, Any]:
+        from alphapilot.systems.data import manage
+        from alphapilot.systems.data.prepare_cn import default_raw_dir
+
+        modes = manage.resolve_adjust_modes(adjust_mode if adjust_mode is not None else "backward")
+        downloads: dict[str, Any] = {}
+        for mode in modes:
+            downloads[mode] = self.download(
+                start_date=start_date,
+                end_date=end_date,
+                symbols=[symbol],
+                adjust_mode=mode,
+                **options,
+            )
+        report: dict[str, Any] = {"symbol": symbol, "downloaded_modes": list(modes), "h5_stale": True}
+        if resync_qlib:
+            report["resync"] = manage.resync_symbol_to_qlib(
+                symbol,
+                raw_dir=default_raw_dir(qlib_adjust_mode),
+                qlib_dir=self._storage.qlib_data_dir,
+                op="refresh",
+            )
+        self._warn_h5_stale(report)
+        return report
+
+    def rebuild_h5(self, **options: Any) -> Any:
+        return self.build_h5(**options)
+
+    @staticmethod
+    def _warn_h5_stale(report: dict[str, Any]) -> None:
+        if report.get("h5_stale"):
+            from alphapilot.log import logger
+
+            logger.warning(
+                "daily_pv h5 已过期：请运行 `alphapilot prepare_data h5`"
+                "（或 Portal「重建 daily_pv h5」按钮 / 传 --rebuild_h5 True）以同步因子数据。"
+            )
+
     @property
     def storage(self) -> DataStorage:
         return self._storage

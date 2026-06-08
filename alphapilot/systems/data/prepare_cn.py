@@ -210,6 +210,7 @@ def download_stock_data(
     max_workers: int = DEFAULT_DOWNLOAD_WORKERS,
     adjust_mode: str = "backward",
     factor_dir: str | Path | None = None,
+    symbols: list[str] | None = None,
 ) -> list[str]:
     """
     Download daily CSV files. Returns the list of baostock codes that were requested.
@@ -217,6 +218,8 @@ def download_stock_data(
     Args:
         adjust_mode: ``none`` (不复权/除权), ``forward`` (前复权), ``backward`` (后复权).
         factor_dir: When ``adjust_mode`` is ``none``, save adjust factors under this directory.
+        symbols: Explicit list of codes (any supported format). When provided, takes
+            precedence over ``stock_csv_path`` / ``all_market`` (used for single-stock refresh).
     """
     mode = normalize_adjust_mode(adjust_mode)
     adjustflag = _BAOSTOCK_ADJUST_FLAG[mode]
@@ -224,7 +227,11 @@ def download_stock_data(
     output_path.mkdir(parents=True, exist_ok=True)
     factor_path = resolve_factor_dir(factor_dir) if mode == "none" else None
 
-    if all_market:
+    if symbols:
+        all_stocks = [c for c in (normalize_to_baostock(s) for s in symbols) if c]
+        if not all_stocks:
+            raise ValueError(f"未从 symbols 解析到有效股票代码: {symbols}")
+    elif all_market:
         all_stocks = get_all_stocks_in_period(start_date, end_date)
     elif stock_csv_path:
         all_stocks = load_stocks_from_file(stock_csv_path, code_column=code_column)
@@ -329,6 +336,7 @@ def download_cn_data(
     max_workers: int = DEFAULT_DOWNLOAD_WORKERS,
     adjust_mode: str = "backward",
     factor_dir: str | Path | None = None,
+    symbols: list[str] | None = None,
 ) -> list[str]:
     if end_date is None:
         end_date = datetime.now().strftime("%Y-%m-%d")
@@ -349,6 +357,7 @@ def download_cn_data(
         max_workers=max_workers,
         adjust_mode=adjust_mode,
         factor_dir=factor_dir,
+        symbols=symbols,
     )
     logger.info("CSV 下载完成。")
     return codes

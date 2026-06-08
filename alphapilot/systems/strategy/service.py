@@ -25,6 +25,7 @@ from alphapilot.systems.strategy.base import (
 from alphapilot.components.coder.factor_coder.config import resolve_factor_python_bin
 from alphapilot.kernel.paths import remap_legacy_relative_path
 from alphapilot.log import logger
+from alphapilot.systems.strategy.backtest import run_strategy_asset_backtest
 from alphapilot.systems.strategy.database import build_strategy_param_database
 
 if TYPE_CHECKING:
@@ -214,7 +215,6 @@ class StrategySystem(BaseStrategySystem):
         old_qlib_data_dir = os.environ.get("ALPHAPILOT_QLIB_DATA_DIR")
         if request.qlib_data_dir:
             os.environ["ALPHAPILOT_QLIB_DATA_DIR"] = str(request.qlib_data_dir)
-        mining = self.context.module("alpha_mining")
         for m in modes:
             try:
                 logger.info(
@@ -229,7 +229,8 @@ class StrategySystem(BaseStrategySystem):
                         raise ValueError(
                             f"Strategy {record.strategy_name} has no trained_artifact_uri for reuse_model mode."
                         )
-                run = mining.run_strategy_asset_backtest(
+                run = run_strategy_asset_backtest(
+                    self.context,
                     mode=m,
                     factors=factors,
                     scenario=request.scenario,

@@ -11,7 +11,7 @@ DeleteSessionFn = Callable[[str], bool]
 import requests
 import streamlit as st
 
-from alphapilot.log.ui.session import LogSession, SIMILAR_SCENARIOS, filter_log_folders, get_msgs_until, refresh
+from alphapilot.log.ui.session import LogSession, scenario_is_mining, filter_log_folders, get_msgs_until, refresh
 from alphapilot.log.ui.views import (
     evolving_window,
     feedback_window,
@@ -263,7 +263,7 @@ def _render_main(sess: LogSession, key_prefix: str) -> None:
 
     summary_window(sess)
 
-    if not isinstance(sess.scenario, SIMILAR_SCENARIOS):
+    if not scenario_is_mining(sess.scenario):
         st.error("Unknown Scenario!")
         return
 
