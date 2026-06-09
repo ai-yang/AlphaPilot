@@ -19,6 +19,19 @@ from alphapilot.components.coder.factor_coder.factor_ast import (
 )
 from alphapilot.core.evaluation import Evaluator
 from alphapilot.log import logger
+from alphapilot.systems.factor.types import (
+    OK_CODE,
+    REJECT_EMPTY_EXPRESSION,
+    REJECT_EVALUATION_FAILED,
+    REJECT_INSUFFICIENT_VARIABLES,
+    REJECT_INVALID_RATIOS,
+    REJECT_PARSE_ERROR,
+    REJECT_TOO_MANY_LITERALS,
+    REJECT_TOO_SIMILAR,
+    FactorValidationResult,
+)
+
+_STRUCTURAL_EVAL_MESSAGE = "Expression failed structural evaluation (duplicate / AST analysis)."
 
 
 class FactorRegulator(Evaluator):
@@ -60,7 +73,7 @@ class FactorRegulator(Evaluator):
 
         success, eval_dict = self.evaluate(expression)
         if not success or eval_dict is None:
-            return False, None, "Expression failed structural evaluation (duplicate / AST analysis)."
+            return False, None, _STRUCTURAL_EVAL_MESSAGE
         return True, eval_dict, None
 
     def evaluate(self, expression: str) -> tuple[bool, dict | None]:
@@ -94,29 +107,114 @@ class FactorRegulator(Evaluator):
             logger.error(f"Failed to evaluate expression: {expression}. Error: {str(exc)}")
             return False, None
 
-    def is_expression_acceptable(self, eval_dict: dict) -> bool:
-        cond1 = eval_dict["duplicated_subtree_size"] <= self.duplication_threshold
+    def explain_acceptability(self, eval_dict: dict) -> tuple[bool, str, str, dict[str, object]]:
+        """Return (acceptable, code, message, details) for a successful *evaluate* dict."""
+        threshold = self.duplication_threshold
+        dup_size = int(eval_dict["duplicated_subtree_size"])
+        num_free_args = int(eval_dict["num_free_args"])
+        num_unique_vars = int(eval_dict["num_unique_vars"])
+        num_all_nodes = int(eval_dict["num_all_nodes"])
 
-        num_free_args = eval_dict["num_free_args"]
-        num_unique_vars = eval_dict["num_unique_vars"]
-        num_all_nodes = eval_dict["num_all_nodes"]
+        details: dict[str, object] = {
+            "duplicated_subtree_size": dup_size,
+            "duplication_threshold": threshold,
+            "duplicated_subtree": eval_dict.get("duplicated_subtree"),
+            "matched_alpha": eval_dict.get("matched_alpha"),
+            "num_free_args": num_free_args,
+            "num_unique_vars": num_unique_vars,
+            "num_all_nodes": num_all_nodes,
+        }
 
         if num_all_nodes == 0:
-            logger.warning(f"Expression has no nodes: {eval_dict['expr']}")
-            return False
+            return False, REJECT_EMPTY_EXPRESSION, "Expression has no AST nodes.", details
 
         free_args_ratio = float(num_free_args) / float(num_all_nodes)
         unique_vars_ratio = float(num_unique_vars) / float(num_all_nodes)
-        if free_args_ratio >= 1 or unique_vars_ratio >= 1:
-            logger.warning(
-                f"Invalid ratio detected: free_args_ratio={free_args_ratio}, "
-                f"unique_vars_ratio={unique_vars_ratio}"
-            )
-            return False
+        details["free_args_ratio"] = round(free_args_ratio, 4)
+        details["unique_vars_ratio"] = round(unique_vars_ratio, 4)
 
-        cond2 = -np.log(1 - free_args_ratio) < 0.693
-        cond3 = -np.log(1 - unique_vars_ratio) < 0.693
-        return cond1 and cond2 and cond3
+        if free_args_ratio >= 1 or unique_vars_ratio >= 1:
+            return (
+                False,
+                REJECT_INVALID_RATIOS,
+                (
+                    f"Invalid expression structure: free_args_ratio={free_args_ratio:.4f}, "
+                    f"unique_vars_ratio={unique_vars_ratio:.4f}."
+                ),
+                details,
+            )
+
+        if dup_size > threshold:
+            matched = eval_dict.get("matched_alpha")
+            matched_hint = f" (similar to existing factor: {matched})" if matched else ""
+            return (
+                False,
+                REJECT_TOO_SIMILAR,
+                (
+                    f"Expression is too similar to the factor zoo: duplicated subtree size "
+                    f"{dup_size} exceeds threshold {threshold}{matched_hint}."
+                ),
+                details,
+            )
+
+        if -np.log(1 - free_args_ratio) >= 0.693:
+            return (
+                False,
+                REJECT_TOO_MANY_LITERALS,
+                (
+                    f"Too many numeric literals in the expression "
+                    f"(literal node ratio {free_args_ratio:.2%}, max ~50%)."
+                ),
+                details,
+            )
+
+        if -np.log(1 - unique_vars_ratio) >= 0.693:
+            return (
+                False,
+                REJECT_INSUFFICIENT_VARIABLES,
+                (
+                    f"Not enough market-data variables in the expression "
+                    f"(unique variable ratio {unique_vars_ratio:.2%}, need >50%)."
+                ),
+                details,
+            )
+
+        return True, OK_CODE, "Expression is parsable and original enough to add.", details
+
+    def validate_expression(self, expression: str) -> FactorValidationResult:
+        """Validate *expression* and return a structured pass/fail with reason."""
+        expr = (expression or "").strip()
+        if not expr:
+            return FactorValidationResult(
+                acceptable=False,
+                code=REJECT_EMPTY_EXPRESSION,
+                message="Expression is empty.",
+                details=None,
+            )
+
+        ok, eval_dict, error_message = self.check_expression(expr)
+        if not ok or eval_dict is None:
+            code = REJECT_EVALUATION_FAILED if error_message == _STRUCTURAL_EVAL_MESSAGE else REJECT_PARSE_ERROR
+            return FactorValidationResult(
+                acceptable=False,
+                code=code,
+                message=error_message or "Expression validation failed.",
+                details=None,
+            )
+
+        acceptable, code, message, details = self.explain_acceptability(eval_dict)
+        return FactorValidationResult(
+            acceptable=acceptable,
+            code=code,
+            message=message,
+            details=details,
+        )
+
+    def is_expression_acceptable(self, eval_dict: dict) -> bool:
+        acceptable, _, _, _ = self.explain_acceptability(eval_dict)
+        if not acceptable:
+            logger.warning(f"Expression not acceptable: {eval_dict.get('expr')}")
+        return acceptable
 
     def list_factors(self) -> list[dict[str, str]]:
         if self.alphazoo.empty or "factor_name" not in self.alphazoo.columns:

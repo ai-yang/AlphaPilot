@@ -161,10 +161,12 @@ def import_to_zoo(
             print(f"[skip] duplicate: {norm_name}")
             continue
 
-        if validate and factor_system is not None and not factor_system.is_acceptable(expr):
-            stats["skipped_invalid"] += 1
-            print(f"[skip] not acceptable: {norm_name}")
-            continue
+        if validate and factor_system is not None:
+            validation = factor_system.validate_expression(expr)
+            if not validation.acceptable:
+                stats["skipped_invalid"] += 1
+                print(f"[skip] not acceptable: {norm_name} ({validation.code}: {validation.message})")
+                continue
 
         if dry_run:
             stats["added"] += 1

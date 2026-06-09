@@ -12,6 +12,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
+from alphapilot.systems.factor.types import FactorValidationResult
+
 
 class BaseFactorDatabase(ABC):
     """Store / dedup / query mined factor expressions."""
@@ -19,6 +21,10 @@ class BaseFactorDatabase(ABC):
     @abstractmethod
     def is_acceptable(self, expression: str) -> bool:
         """Whether *expression* is parsable and original enough to keep."""
+
+    @abstractmethod
+    def validate(self, expression: str) -> FactorValidationResult:
+        """Validate *expression* and return a structured result with rejection reason."""
 
     @abstractmethod
     def add(self, factor_name: str, factor_expression: str) -> bool:
@@ -58,14 +64,11 @@ class FileFactorDatabase(BaseFactorDatabase):
             )
         return self._regulator
 
+    def validate(self, expression: str) -> FactorValidationResult:
+        return self.regulator.validate_expression(expression)
+
     def is_acceptable(self, expression: str) -> bool:
-        reg = self.regulator
-        if not reg.is_parsable(expression):
-            return False
-        ok, eval_dict = reg.evaluate(expression)
-        if not ok or eval_dict is None:
-            return False
-        return reg.is_expression_acceptable(eval_dict)
+        return self.validate(expression).acceptable
 
     def add(self, factor_name: str, factor_expression: str) -> bool:
         return self.regulator.add_factor(factor_name, factor_expression)

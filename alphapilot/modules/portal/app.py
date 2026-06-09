@@ -9,7 +9,7 @@ from typing import Any
 
 import streamlit as st
 
-from alphapilot.modules.portal.i18n import init_lang, language_selector, t
+from alphapilot.modules.portal.i18n import format_factor_rejection, init_lang, language_selector, t
 
 
 init_lang()
@@ -299,21 +299,30 @@ def _render_factor_tab(engine: Any) -> None:
     c1, c2 = st.columns(2)
     if c1.button(t("check_expression")):
         try:
-            ok = factor_system.is_acceptable(expr)
-            if ok:
+            result = factor_system.validate_expression(expr)
+            if result.acceptable:
                 st.success(t("expression_acceptable"))
             else:
+                reason = format_factor_rejection(result.code, result.message, result.details)
                 st.error(t("expression_not_acceptable"))
+                st.caption(reason)
+            if result.details:
+                with st.expander(t("factor_validation_details")):
+                    st.json(result.details)
         except Exception as exc:  # noqa: BLE001
             st.error(t("check_failed", error=exc))
     if c2.button(t("add_to_factor_db")):
         try:
-            added = factor_system.database.add(factor_name.strip(), expr.strip())
-            factor_system.database.save()
-            if added:
+            result = factor_system.add_factor(factor_name.strip(), expr.strip())
+            if result.acceptable:
                 st.success(t("factor_added"))
+                st.rerun()
             else:
-                st.warning(t("factor_not_added"))
+                reason = format_factor_rejection(result.code, result.message, result.details)
+                st.warning(t("factor_not_added", reason=reason))
+                if result.details:
+                    with st.expander(t("factor_validation_details")):
+                        st.json(result.details)
         except Exception as exc:  # noqa: BLE001
             st.error(t("add_failed", error=exc))
 

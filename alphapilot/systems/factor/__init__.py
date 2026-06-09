@@ -1,6 +1,7 @@
 """Factor system: import factors, factor database, expression DSL."""
 
 from alphapilot.systems.factor.base import BaseFactorSystem
+from alphapilot.systems.factor.types import FactorValidationResult
 from alphapilot.systems.factor.database import (
     BaseFactorDatabase,
     FileFactorDatabase,
@@ -12,6 +13,7 @@ __all__ = [
     "BaseFactorDatabase",
     "BaseFactorSystem",
     "FactorSystem",
+    "FactorValidationResult",
     "FileFactorDatabase",
     "build_factor_database",
 ]

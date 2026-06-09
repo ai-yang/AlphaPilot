@@ -145,7 +145,7 @@ alphapilot qlib_yaml_validate \
 - 历史入口 `alphapilot/app/qlib_rd_loop/*` 已移除，不再保留兼容 shim
 - 数据准备逻辑已迁入 `alphapilot/systems/data/`（含 `prepare_cn.py`、`adjust_prices.py`、`qlib_convert.py`、`generate_h5.py`、`qlib_dump/` 等）；`alphapilot/app/data/` 兼容层已删除
 - `prepare_data` 统一由 `platform -> context.data() -> systems.data` 链路执行（单一调度入口）
-- `mine/backtest/strategy_backtest/qlib_yaml_generate/qlib_yaml_validate/prepare_data/portal/data_viz/backtest_viz` 等由内置模块贡献命令（modules-only）；`ui` / `backtest_ui` 仅保留弃用提示
+- `mine/backtest/strategy_backtest/qlib_yaml_generate/qlib_yaml_validate/factor_validate/factor_add/prepare_data/portal/data_viz/backtest_viz` 等由内置模块贡献命令（modules-only）；`ui` / `backtest_ui` 仅保留弃用提示
 - 回测产物解析收拢到 `alphapilot/systems/backtest/artifacts.py`；可视化 UI 在 `alphapilot/modules/backtest_viz/`（原 `app/backtest_viewer/` 已删除）
 - 策略复测编排收拢到 `alphapilot/systems/strategy/backtest.py`，经 `context.backtest()` 执行，**不再**经 `alpha_mining` 模块中转
 - 挖掘日志 UI（`alphapilot/log/ui/`）通过 `core.scenario.Scenario` 的 UI trait 分支渲染，**不再 import** `alpha_mining` 具体场景类
@@ -409,7 +409,7 @@ EMBEDDING_MAX_STR_NUM=10     # DashScope 等 embedding 接口的单次 batch 上
 alphapilot modules
 ```
 
-输出会列出当前内置模块与通过 `entry_points` 自动发现的第三方模块，以及每个模块暴露的命令（含 `qlib_yaml_generate` / `qlib_yaml_validate`）。新增插件后，这里和 `alphapilot portal` 页面都会自动出现。
+输出会列出当前内置模块与通过 `entry_points` 自动发现的第三方模块，以及每个模块暴露的命令（含 `qlib_yaml_generate` / `qlib_yaml_validate`、`factor_validate` / `factor_add`）。新增插件后，这里和 `alphapilot portal` 页面都会自动出现。
 
 ### 1. 因子挖掘（主流程）
 
@@ -464,7 +464,35 @@ alphapilot mine --direction "行为金融学假说" \
 python import_factors_from_log.py                  # 扫描整个 log/
 python import_factors_from_log.py --dry-run      # 仅预览
 python import_factors_from_log.py --log-dir log/<会话目录>
+python import_factors_from_log.py --validate     # 仅导入通过校验的表达式（跳过时会打印 code 与原因）
 ```
+
+**校验 / 添加单条因子表达式**（`alphapilot factor_*`，实现位于 `systems/factor/`，失败时返回具体原因而非仅 true/false）：
+
+```bash
+# 校验是否可加入因子库（失败时 exit 1，并打印 code / message / details）
+alphapilot factor_validate --expression="Ref(\$close, 1) / \$close - 1"
+
+# 示例：常量过多会被拒绝
+alphapilot factor_validate --expression="1 + 2 + 3"
+
+# 校验通过后写入 important_data/factor_zoo/factor_zoo.csv
+alphapilot factor_add --factor_name=my_momentum --expression="Ref(\$close, 1) / \$close - 1"
+```
+
+常见拒绝原因（`code`）：
+
+| code | 含义 |
+|------|------|
+| `parse_error` | 表达式语法无法解析 |
+| `too_similar` | 与因子库已有公式重复子树过大（原创性不足） |
+| `too_many_literals` | 数值常量占比过高 |
+| `insufficient_variables` | 行情变量（`$close` 等）多样性不足 |
+| `duplicate_name` / `duplicate_expression` | 添加时名称或公式已存在 |
+
+Portal「因子」标签页的「校验表达式」「添加到因子库」与上述 CLI 共用同一套逻辑；失败时会显示中文原因，并可展开查看 `details`（重复子树大小、匹配因子名等）。
+
+> **注意**：`factor_zoo.csv` 中含逗号的表达式须使用正确 CSV 引号（如 `Ref($close, 1)`）；通过 Portal 保存或 `pandas.to_csv` 会自动处理，手工编辑时请为含逗号字段加引号。
 
 **管理挖掘 log 会话（CLI，可选）**：
 
@@ -574,7 +602,7 @@ alphapilot portal --port 19901
 浏览器打开 `http://localhost:19901`，可在一个页面中访问：
 - Data/Factor/Strategy/Backtest 四大系统能力
 - **数据** 标签页：查看路径、加载股票池、运行数据操作，并提供**单股管理**（**删除/刷新/裁剪单只股票**，自动单股重 dump + 「重建 daily_pv h5」按钮）
-- **因子** 标签页：校验/添加表达式、导入导出、**删除单条因子**（`important_data/factor_zoo/factor_zoo.csv`）
+- **因子** 标签页：校验/添加表达式（**失败时显示具体原因**：语法、与库内过于相似、重名等）、导入导出、**删除单条因子**（`important_data/factor_zoo/factor_zoo.csv`）
 - **策略** 标签页：查看/保存策略参数、**删除整个策略资产文件夹**
 - **股票 K 线** 标签页（内嵌 `data_viz`）
 - **挖掘日志** 标签页（原 `alphapilot ui`：假说、因子代码、反馈、Qlib 报告图等；支持**删除当前 log 会话**）
@@ -628,7 +656,7 @@ alphapilot backtest_viz --port 19903
 | `pickle_cache/backtest/` | **`backtest` / `strategy_backtest`** 等一般回测缓存 | 改 yaml/因子后清此目录 |
 | `pickle_cache/`（旧版单目录） | 未设置 scope 时的回退路径 | 新项目建议用上面两个子目录 |
 | `important_data/strategy_zoo/` | `mine` 保存的策略资产与 `retests/` 复测记录 | Portal「策略」或 `delete_strategy` 可删；换策略或重导资产时再清理 |
-| `important_data/factor_zoo/` | 因子库 `factor_zoo.csv`（校验/去重参考库） | Portal「因子」或 `import_factors_from_log.py` 维护；可用 `delete_factor` 删单条 |
+| `important_data/factor_zoo/` | 因子库 `factor_zoo.csv`（校验/去重参考库） | Portal「因子」、`factor_validate` / `factor_add` 或 `import_factors_from_log.py` 维护 |
 | `important_data/factor_qlib_templates/` | 用户自定义 Qlib 模板（yaml + `read_exp_res.py`） | 修改回测区间、组合策略参数时编辑此目录 |
 | `log/` | 挖掘会话日志与 snapshot | Portal「挖掘日志」或 `delete_mine_log` 可删单会话；`clean_log_dirs.py` 可清理空目录/桩目录 |
 | `important_data/stock_lists/` | 股票池 CSV（`prepare_data` 默认列表等） | 换股票池后重新 `download` / `convert` / `h5`，并同步 yaml 中 `market` |
@@ -689,21 +717,23 @@ AlphaPilot/
 │   ├── kernel/                 # MainEngine / Context / 配置 / 插件发现
 │   ├── systems/                # 四大系统（data/factor/strategy/backtest）
 │   │   ├── data/               # 数据下载、复权、Qlib 转换、h5（prepare_data 实现）
-│   │   ├── factor/             # 因子库（factor_zoo）、表达式校验与导入
+│   │   ├── factor/             # 因子库（factor_zoo）、结构化表达式校验（FactorValidationResult）
 │   │   ├── backtest/           # 回测执行与产物（artifacts.py、results.py、qlib_yaml/）
 │   │   └── strategy/           # 策略资产存储（strategy_zoo）、复测编排（backtest.py）
 │   ├── adapters/               # LLM/数据源可插拔适配层（回测见 systems/backtest/）
-│   ├── modules/                # 功能模块（alpha_mining/portal/platform/data_viz/backtest_viz/strategy_backtest/qlib_yaml + 插件）
+│   ├── modules/                # 功能模块（alpha_mining/portal/platform/data_viz/backtest_viz/strategy_backtest/qlib_yaml/factor_cli + 插件）
 │   │   ├── alpha_mining/       # 因子挖掘（qlib 场景 + loops + conf + registry）
 │   │   ├── platform/           # prepare_data、单股数据管理、modules 命令；ui/backtest_ui 弃用提示
 │   │   ├── portal/             # 统一 Web 门户（alphapilot portal）
 │   │   ├── data_viz/           # 股票 K 线（alphapilot data_viz）
 │   │   ├── backtest_viz/       # 回测详情 UI（alphapilot backtest_viz）
 │   │   ├── strategy_backtest/  # 策略资产列表与复测 CLI
-│   │   └── qlib_yaml/          # Qlib qrun yaml 生成与校验（qlib_yaml_generate / qlib_yaml_validate）
+│   │   ├── qlib_yaml/          # Qlib qrun yaml 生成与校验（qlib_yaml_generate / qlib_yaml_validate）
+│   │   └── factor/             # 因子库 CLI（factor_validate / factor_add）
 │   └── log/ui/                 # 挖掘日志 panel（portal 嵌入；基于 Scenario trait，不依赖 alpha_mining）
+├── tests/                      # pytest（如 systems/factor/test_factor_validation.py）
 ├── .env.example             # 环境变量模板
-├── import_factors_from_log.py  # 从 log 提取因子公式写入因子库（去重）
+├── import_factors_from_log.py  # 从 log 提取因子公式写入因子库（去重；--validate 打印拒绝原因）
 ├── clean_log_dirs.py        # 清理 log 下空目录与失败桩目录
 ├── important_data/          # 用户数据（见 important_data/README.md；strategy_zoo 等已 gitignore）
 │   ├── strategy_zoo/        # mine 保存的策略与 retests/
@@ -715,6 +745,17 @@ AlphaPilot/
 
 ~/.qlib/qlib_data/cn_data/   # Qlib 行情数据（不在仓库内）
 ```
+
+---
+
+## 开发与测试
+
+```bash
+pip install -e .
+python -m pytest tests/systems/factor/test_factor_validation.py -v
+```
+
+当前包含因子表达式结构化校验（`FactorValidationResult`）、因子库添加拦截、Portal 文案格式化、CLI 模块等用例。
 
 ---
 

@@ -8,6 +8,7 @@ from pathlib import Path
 import streamlit as st
 
 from alphapilot.log.ui.panel import render_log_ui_panel
+from alphapilot.modules.portal.i18n import init_lang, language_selector, t
 
 
 def _parse_args() -> argparse.Namespace:
@@ -24,16 +25,21 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+init_lang()
+
 
 def main() -> None:
     args = _parse_args()
     log_dir = Path(args.log_dir)
     if not log_dir.exists():
-        st.error(f"Log dir `{log_dir}` does not exist!")
+        st.error(t("mine_log_missing_dir", path=log_dir))
         st.stop()
+
+    language_selector()
 
     render_log_ui_panel(
         log_dir=log_dir,
+        translate=t,
         use_sidebar=True,
         show_heading=False,
         key_prefix="standalone",

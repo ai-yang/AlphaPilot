@@ -98,10 +98,28 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "check_expression": "Check Expression",
         "expression_acceptable": "Expression acceptable.",
         "expression_not_acceptable": "Expression not acceptable.",
+        "factor_reject_parse_error": "Syntax error: {message}",
+        "factor_reject_evaluation_failed": "Structural evaluation failed: {message}",
+        "factor_reject_empty_expression": "Expression is empty.",
+        "factor_reject_too_similar": (
+            "Too similar to an existing factor (duplicated subtree size {duplicated_subtree_size}, "
+            "threshold {duplication_threshold}){matched_hint}."
+        ),
+        "factor_reject_too_many_literals": (
+            "Too many numeric literals (ratio {free_args_ratio:.1%}, max ~50%)."
+        ),
+        "factor_reject_insufficient_variables": (
+            "Not enough market-data variables (unique variable ratio {unique_vars_ratio:.1%}, need >50%)."
+        ),
+        "factor_reject_invalid_ratios": "Invalid expression structure (literal/variable ratios out of range).",
+        "factor_reject_missing_name": "Factor name is required.",
+        "factor_reject_duplicate_name": "Factor name '{factor_name}' already exists.",
+        "factor_reject_duplicate_expression": "Identical expression already exists (factor: {factor_name}).",
+        "factor_validation_details": "Validation details",
         "check_failed": "Check failed: {error}",
         "add_to_factor_db": "Add to Factor DB",
         "factor_added": "Factor added and saved.",
-        "factor_not_added": "Factor rejected/not added.",
+        "factor_not_added": "Cannot add factor: {reason}",
         "add_failed": "Add failed: {error}",
         "import_export_heading": "Import / Export",
         "import_kind": "Import Kind",
@@ -229,6 +247,100 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "dv_export_csv": "Export range as CSV",
         "dv_filters_expander": "K-line filters",
+        "ml_brand": "AlphaPilot",
+        "ml_toc_summary": "Summary",
+        "ml_toc_metrics": "Metrics",
+        "ml_toc_loops": "AlphaPilot Loops",
+        "ml_toc_idea": "Idea Agent",
+        "ml_toc_factor": "Factor Agent",
+        "ml_toc_eval": "Eval Agent",
+        "ml_control_panel": "Control Panel",
+        "ml_log_path": "Log Path",
+        "ml_manual_input": "Manual Input",
+        "ml_log_path_input": "log path",
+        "ml_select_from": "Select from `{path}`",
+        "ml_no_sessions": "No valid log sessions found.",
+        "ml_all_loops": "All Loops",
+        "ml_reset": "Reset",
+        "ml_next_loop": "Next Loop",
+        "ml_next_step": "Next Step",
+        "ml_config": "Config",
+        "ml_excluded_tags": "excluded log tags",
+        "ml_excluded_types": "excluded log types",
+        "ml_debug": "debug",
+        "ml_single_step": "Single Step Run",
+        "ml_entrance": "Entrance",
+        "ml_hypothesis_input": "Enter a hypothesis you want to verify",
+        "ml_start_mining": "Start Mining",
+        "ml_mining_in_progress": "Mining...",
+        "ml_stop_mining": "Stop Mining",
+        "ml_stop_sent": "Stop signal sent",
+        "ml_refresh_now": "Refresh Now",
+        "ml_debug_info": "Debug Info",
+        "ml_dbg_log_path": "log path",
+        "ml_dbg_excluded_tags": "excluded tags",
+        "ml_dbg_excluded_types": "excluded types",
+        "ml_dbg_message_id": "message id",
+        "ml_dbg_round": "round",
+        "ml_dbg_evolving_round": "evolving round",
+        "ml_unknown_scenario": "Unknown Scenario!",
+        "ml_loops_header": "AlphaPilot Loops",
+        "ml_loop_radio": "Loop",
+        "ml_disclaimer_title": "Disclaimer",
+        "ml_disclaimer_body": (
+            "This content is AI-generated and may not be fully accurate or up-to-date; "
+            "please verify with a professional for critical matters."
+        ),
+        "ml_tab_final_feedback": "Final Feedback",
+        "ml_tab_execution_feedback": "Execution Feedback",
+        "ml_tab_code_feedback": "Code Feedback",
+        "ml_tab_value_feedback": "Value Feedback",
+        "ml_tab_model_shape_feedback": "Model Shape Feedback",
+        "ml_hypothesis_proposes": "RD-Agent proposes the hypothesis",
+        "ml_because_reason": "because the reason",
+        "ml_based_observation": "based on the observation",
+        "ml_knowledge_gained": "Knowledge gained after practice",
+        "ml_baseline_alpha158": "Baseline: alpha158",
+        "ml_running_summary": "Running Summary",
+        "ml_metrics": "Metrics",
+        "ml_tabs_hint": (
+            "You can navigate through the tabs using ⬅️ ➡️ or by holding Shift and scrolling with the mouse wheel."
+        ),
+        "ml_factor_agent": "Factor Agent",
+        "ml_description": "Description",
+        "ml_expression": "Expression",
+        "ml_model_tasks": "Model Tasks",
+        "ml_model_type": "Model Type",
+        "ml_idea_agent": "Idea Agent",
+        "ml_hypothesis": "Hypothesis",
+        "ml_justification": "Justification",
+        "ml_knowledge": "Knowledge",
+        "ml_specification": "Specification",
+        "ml_eval_agent": "Eval Agent",
+        "ml_pnl_figure": "PnL Figure",
+        "ml_baseline": "Baseline",
+        "ml_runner_result_table": "Runner Result Backtesting Table",
+        "ml_category": "Category",
+        "ml_metric": "Metric",
+        "ml_value": "Value",
+        "ml_cat_without_cost": "Without Cost",
+        "ml_cat_with_cost": "With Cost",
+        "ml_cat_other": "Other Metrics",
+        "ml_hypothesis_feedback": "Hypothesis Feedback",
+        "ml_observations": "Observations",
+        "ml_hypothesis_evaluation": "Hypothesis Evaluation",
+        "ml_new_hypothesis": "New Hypothesis",
+        "ml_decision_reason": "Decision & Reason",
+        "ml_decision": "Decision",
+        "ml_reason": "Reason",
+        "ml_debugging": "Debugging",
+        "ml_development": "Development (evolving coder)",
+        "ml_evolving_status": "Evolving Status",
+        "ml_evolving_rounds": "Evolving Rounds",
+        "ml_workspace_path": "Workspace Path",
+        "ml_formulation": "Formulation",
+        "ml_variable": "Variable",
+        "ml_table_of_content": "Table of Content",
     },
     "zh": {
         "page_title": "AlphaPilot 网页门户",
@@ -319,10 +431,28 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "check_expression": "校验表达式",
         "expression_acceptable": "表达式可用。",
         "expression_not_acceptable": "表达式不可用。",
+        "factor_reject_parse_error": "语法错误：{message}",
+        "factor_reject_evaluation_failed": "结构评估失败：{message}",
+        "factor_reject_empty_expression": "表达式为空。",
+        "factor_reject_too_similar": (
+            "与因子库中已有因子过于相似（重复子树大小 {duplicated_subtree_size}，"
+            "阈值 {duplication_threshold}）{matched_hint}。"
+        ),
+        "factor_reject_too_many_literals": (
+            "数值常量占比过高（{free_args_ratio:.1%}，上限约 50%）。"
+        ),
+        "factor_reject_insufficient_variables": (
+            "行情变量多样性不足（唯一变量占比 {unique_vars_ratio:.1%}，需 >50%）。"
+        ),
+        "factor_reject_invalid_ratios": "表达式结构无效（字面量/变量比例异常）。",
+        "factor_reject_missing_name": "请填写因子名称。",
+        "factor_reject_duplicate_name": "因子名称「{factor_name}」已存在。",
+        "factor_reject_duplicate_expression": "相同表达式已存在（因子：{factor_name}）。",
+        "factor_validation_details": "校验详情",
         "check_failed": "校验失败：{error}",
         "add_to_factor_db": "添加到因子库",
         "factor_added": "因子已添加并保存。",
-        "factor_not_added": "因子被拒绝或未添加。",
+        "factor_not_added": "无法添加因子：{reason}",
         "add_failed": "添加失败：{error}",
         "import_export_heading": "导入 / 导出",
         "import_kind": "导入类型",
@@ -450,6 +580,98 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         ),
         "dv_export_csv": "导出当前区间 CSV",
         "dv_filters_expander": "K 线筛选条件",
+        "ml_brand": "AlphaPilot",
+        "ml_toc_summary": "摘要",
+        "ml_toc_metrics": "指标",
+        "ml_toc_loops": "AlphaPilot 循环",
+        "ml_toc_idea": "假说 Agent",
+        "ml_toc_factor": "因子 Agent",
+        "ml_toc_eval": "评估 Agent",
+        "ml_control_panel": "控制面板",
+        "ml_log_path": "日志路径",
+        "ml_manual_input": "手动输入",
+        "ml_log_path_input": "日志路径",
+        "ml_select_from": "从 `{path}` 选择",
+        "ml_no_sessions": "未找到有效日志会话。",
+        "ml_all_loops": "全部轮次",
+        "ml_reset": "重置",
+        "ml_next_loop": "下一轮",
+        "ml_next_step": "下一步",
+        "ml_config": "配置",
+        "ml_excluded_tags": "排除的日志标签",
+        "ml_excluded_types": "排除的日志类型",
+        "ml_debug": "调试",
+        "ml_single_step": "单步运行",
+        "ml_entrance": "入口",
+        "ml_hypothesis_input": "输入要验证的假说",
+        "ml_start_mining": "开始挖掘",
+        "ml_mining_in_progress": "挖掘中…",
+        "ml_stop_mining": "停止挖掘",
+        "ml_stop_sent": "已发送停止信号",
+        "ml_refresh_now": "立即刷新",
+        "ml_debug_info": "调试信息",
+        "ml_dbg_log_path": "日志路径",
+        "ml_dbg_excluded_tags": "排除标签",
+        "ml_dbg_excluded_types": "排除类型",
+        "ml_dbg_message_id": "消息数",
+        "ml_dbg_round": "轮次",
+        "ml_dbg_evolving_round": "演化轮次",
+        "ml_unknown_scenario": "未知场景！",
+        "ml_loops_header": "AlphaPilot 循环",
+        "ml_loop_radio": "轮次",
+        "ml_disclaimer_title": "免责声明",
+        "ml_disclaimer_body": (
+            "内容由 AI 生成，可能不完全准确或未及时更新；"
+            "重要事项请向专业人士核实。"
+        ),
+        "ml_tab_final_feedback": "最终反馈",
+        "ml_tab_execution_feedback": "执行反馈",
+        "ml_tab_code_feedback": "代码反馈",
+        "ml_tab_value_feedback": "数值反馈",
+        "ml_tab_model_shape_feedback": "模型结构反馈",
+        "ml_hypothesis_proposes": "RD-Agent 提出假说",
+        "ml_because_reason": "理由如下",
+        "ml_based_observation": "基于观察",
+        "ml_knowledge_gained": "实践后获得的知识",
+        "ml_baseline_alpha158": "基线：alpha158",
+        "ml_running_summary": "运行摘要",
+        "ml_metrics": "指标",
+        "ml_tabs_hint": "可用 ⬅️ ➡️ 切换标签页，或按住 Shift 并滚动鼠标滚轮。",
+        "ml_factor_agent": "因子 Agent",
+        "ml_description": "描述",
+        "ml_expression": "表达式",
+        "ml_model_tasks": "模型任务",
+        "ml_model_type": "模型类型",
+        "ml_idea_agent": "假说 Agent",
+        "ml_hypothesis": "假说",
+        "ml_justification": "依据",
+        "ml_knowledge": "知识",
+        "ml_specification": "规格说明",
+        "ml_eval_agent": "评估 Agent",
+        "ml_pnl_figure": "收益曲线",
+        "ml_baseline": "基线",
+        "ml_runner_result_table": "回测结果表",
+        "ml_category": "类别",
+        "ml_metric": "指标",
+        "ml_value": "数值",
+        "ml_cat_without_cost": "不含成本",
+        "ml_cat_with_cost": "含成本",
+        "ml_cat_other": "其他指标",
+        "ml_hypothesis_feedback": "假说反馈",
+        "ml_observations": "观察",
+        "ml_hypothesis_evaluation": "假说评估",
+        "ml_new_hypothesis": "新假说",
+        "ml_decision_reason": "决策与理由",
+        "ml_decision": "决策",
+        "ml_reason": "理由",
+        "ml_debugging": "调试",
+        "ml_development": "开发（演化编码）",
+        "ml_evolving_status": "演化状态",
+        "ml_evolving_rounds": "演化轮次",
+        "ml_workspace_path": "工作区路径",
+        "ml_formulation": "公式",
+        "ml_variable": "变量",
+        "ml_table_of_content": "目录",
     },
 }
 
@@ -467,6 +689,36 @@ def t(key: str, **kwargs: Any) -> str:
     lang = get_lang()
     text = TRANSLATIONS.get(lang, TRANSLATIONS["en"]).get(key) or TRANSLATIONS["en"][key]
     return text.format(**kwargs) if kwargs else text
+
+
+def format_factor_rejection(code: str, message: str, details: dict[str, Any] | None = None) -> str:
+    """Map a validation *code* to a user-facing portal message."""
+    key = f"factor_reject_{code}"
+    lang = get_lang()
+    template = TRANSLATIONS.get(lang, TRANSLATIONS["en"]).get(key)
+    if template is None:
+        return message
+
+    fmt_kwargs: dict[str, Any] = {"message": message}
+    if details:
+        fmt_kwargs.update(details)
+        matched = details.get("matched_alpha")
+        fmt_kwargs["matched_hint"] = (
+            f"（与已有因子「{matched}」相似）" if get_lang() == "zh" and matched
+            else f" (similar to '{matched}')" if matched
+            else ""
+        )
+        if "free_args_ratio" in details and isinstance(details["free_args_ratio"], (int, float)):
+            fmt_kwargs["free_args_ratio"] = float(details["free_args_ratio"])
+        if "unique_vars_ratio" in details and isinstance(details["unique_vars_ratio"], (int, float)):
+            fmt_kwargs["unique_vars_ratio"] = float(details["unique_vars_ratio"])
+    else:
+        fmt_kwargs["matched_hint"] = ""
+
+    try:
+        return template.format(**fmt_kwargs)
+    except (KeyError, ValueError):
+        return message
 
 
 def language_selector() -> None:

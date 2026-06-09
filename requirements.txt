@@ -11,7 +11,7 @@ rich
 scikit-learn==1.7.2
 xgboost==3.2.0
 catboost==1.2.10
-
+pytest
 numpy==2.2.6
 pandas==2.3.3
 pandarallel # parallelize pandas

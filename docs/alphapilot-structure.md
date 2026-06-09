@@ -46,7 +46,7 @@
 |----|------|------|
 | **内核 kernel** | `alphapilot/kernel/` | `MainEngine` 持有配置与系统/模块；`Context` 是模块访问系统的唯一入口；`AppConfig` 集中路径配置；`registry` 负责内置注册 + 入口点发现 |
 | **数据管理系统** | `alphapilot/systems/data/` | 股票数据下载、复权、Qlib 转换、h5 生成与存储（`prepare_data` 实现；`app/data` 已移除） |
-| **因子管理系统** | `alphapilot/systems/factor/` | 导入因子、因子库（`FactorDatabase` 包装 `FactorRegulator`）、表达式 DSL |
+| **因子管理系统** | `alphapilot/systems/factor/` | 导入因子、因子库（`FactorDatabase` 包装 `FactorRegulator`）、结构化表达式校验（`validate_expression` → `FactorValidationResult`）；CLI：`modules/factor/`（`factor_validate` / `factor_add`） |
 | **策略管理系统** | `alphapilot/systems/strategy/` | 策略资产落盘（`important_data/strategy_zoo/`）、`backtest_from_asset` 复测编排（经 `strategy/backtest.py` 委托 backtest 系统，不依赖 `alpha_mining` 模块） |
 | **策略复测模块** | `alphapilot/modules/strategy_backtest/` | CLI：`strategy_backtest` / `strategy_backtest_list` |
 | **交易回测系统** | `alphapilot/systems/backtest/` | 因子/模型回测（统一由 system 内部 qlib workspace 执行）、结果存取（`BacktestResultStore`） |

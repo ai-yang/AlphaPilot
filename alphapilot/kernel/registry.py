@@ -113,6 +113,10 @@ def _register_builtin_defaults() -> None:
         "qlib_yaml",
         "alphapilot.modules.qlib_yaml.module.QlibYamlModule",
     )
+    register_module(
+        "factor_cli",
+        "alphapilot.modules.factor.module.FactorModule",
+    )
 
 
 _register_builtin_defaults()
