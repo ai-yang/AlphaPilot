@@ -76,9 +76,8 @@ class DataConfig:
 
 @dataclass
 class BacktestConfig:
-    """Backtest engine selection + artifact roots."""
+    """Backtest artifact paths and runtime options (Qlib execution lives in systems/backtest)."""
 
-    engine: str = field(default_factory=lambda: _env_str("ALPHAPILOT_BACKTEST_ENGINE", "qlib"))
     use_local: bool = field(
         default_factory=lambda: os.getenv("USE_LOCAL", "True").lower() in ("true", "1")
     )
@@ -164,7 +163,7 @@ class AppConfig:
             f"  data.raw_data_dir={self.data.raw_data_dir}\n"
             f"  factor.zoo_dir={self.factor.zoo_dir}\n"
             f"  strategy.param_dir={self.strategy.param_dir}\n"
-            f"  backtest.engine={self.backtest.engine} use_local={self.backtest.use_local}\n"
+            f"  backtest.use_local={self.backtest.use_local}\n"
             f"  backtest.workspace_root={self.backtest.workspace_root}\n"
             f"  backtest.pickle_cache_dir_mine={self.backtest.pickle_cache_dir_mine}\n"
             f"  backtest.pickle_cache_dir_backtest={self.backtest.pickle_cache_dir_backtest}\n"

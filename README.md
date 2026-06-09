@@ -149,6 +149,7 @@ alphapilot qlib_yaml_validate \
 - 回测产物解析收拢到 `alphapilot/systems/backtest/artifacts.py`；可视化 UI 在 `alphapilot/modules/backtest_viz/`（原 `app/backtest_viewer/` 已删除）
 - 策略复测编排收拢到 `alphapilot/systems/strategy/backtest.py`，经 `context.backtest()` 执行，**不再**经 `alpha_mining` 模块中转
 - 挖掘日志 UI（`alphapilot/log/ui/`）通过 `core.scenario.Scenario` 的 UI trait 分支渲染，**不再 import** `alpha_mining` 具体场景类
+- adapter 层仅保留 **LLM + 数据源** 可插拔边界；已移除未接入主路径的 backtest engine adapter（`get_backtest_engine`），回测统一经 `systems/backtest/` 执行（详见 [alphapilot/adapters/README.md](alphapilot/adapters/README.md)）
 
 **数据系统代码位置（供二开参考）**
 
@@ -691,7 +692,7 @@ AlphaPilot/
 │   │   ├── factor/             # 因子库（factor_zoo）、表达式校验与导入
 │   │   ├── backtest/           # 回测执行与产物（artifacts.py、results.py、qlib_yaml/）
 │   │   └── strategy/           # 策略资产存储（strategy_zoo）、复测编排（backtest.py）
-│   ├── adapters/               # LLM/数据源等外部接口适配层
+│   ├── adapters/               # LLM/数据源可插拔适配层（回测见 systems/backtest/）
 │   ├── modules/                # 功能模块（alpha_mining/portal/platform/data_viz/backtest_viz/strategy_backtest/qlib_yaml + 插件）
 │   │   ├── alpha_mining/       # 因子挖掘（qlib 场景 + loops + conf + registry）
 │   │   ├── platform/           # prepare_data、单股数据管理、modules 命令；ui/backtest_ui 弃用提示

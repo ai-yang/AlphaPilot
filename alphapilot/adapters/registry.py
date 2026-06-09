@@ -1,7 +1,7 @@
 """Adapter registry + factory.
 
-Three independent registries are exposed for LLM, data source, and
-backtest engine adapters. Each registry supports:
+Two independent registries are exposed for LLM and data source adapters.
+Each registry supports:
 
 * ``register(name, cls)`` — explicit registration (or decorator usage).
 * ``get(name)`` — instantiate by name (or class path ``pkg.mod.Cls``).
@@ -19,7 +19,6 @@ from importlib import import_module
 from typing import Any, Generic, TypeVar
 
 from alphapilot.adapters.base import (
-    BaseBacktestEngine,
     BaseDataSourceAdapter,
     BaseLLMAdapter,
 )
@@ -122,7 +121,4 @@ LLM_REGISTRY: AdapterRegistry[BaseLLMAdapter] = AdapterRegistry(
 )
 DATA_SOURCE_REGISTRY: AdapterRegistry[BaseDataSourceAdapter] = AdapterRegistry(
     "data_source", BaseDataSourceAdapter
-)
-BACKTEST_REGISTRY: AdapterRegistry[BaseBacktestEngine] = AdapterRegistry(
-    "backtest", BaseBacktestEngine
 )

@@ -82,7 +82,7 @@ engine.get_module("alpha_mining")        # 因子挖掘模块
 - **框架层**：`core` + `components`
 - **业务场景**：`modules/alpha_mining/qlib`
 - **应用入口**：`app`
-- **基础设施**：`adapters`、`oai`、`log`、`utils`
+- **基础设施**：`adapters`（LLM + 数据源可插拔；回测引擎固定在 backtest system）、`oai`、`log`、`utils`
 
 ### 主流程示意
 
@@ -120,6 +120,17 @@ flowchart TB
 | `types.py` | typed DTO（`DataDownloadCommand` 等） |
 
 > 历史路径 `alphapilot/app/data/` 已删除。请统一从 `alphapilot.systems.data` 导入或经 `context.data()` 调用。
+
+### `adapters/` — 外部边界适配层
+
+| 路径 | 职责 |
+|------|------|
+| `base/` | `BaseLLMAdapter`、`BaseDataSourceAdapter` 及 DTO |
+| `builtin/` | 默认 `openai` LLM、`baostock_cn` 数据源 |
+| `registry.py` | `LLM_REGISTRY`、`DATA_SOURCE_REGISTRY` |
+| `__init__.py` | `get_llm()`、`get_data_source()` |
+
+回测**不**经 adapter。Qlib 执行链路内聚在 `systems/backtest/`（`QlibBacktestSystem`、`QlibFBWorkspace`、pipelines）。接入说明见 [adapters/README.md](../alphapilot/adapters/README.md)。
 
 ### `app/` — 命令行与应用入口
 
@@ -475,5 +486,6 @@ HypothesisExperiment2Feedback.generate_feedback() → HypothesisFeedback
 5. **策略资产复测**（`modules/strategy_backtest/` + `systems/strategy/backtest.py` → `context.backtest()`）：`strategy_backtest` / `strategy_backtest_list`  
 6. **挖掘日志 UI 解耦**（`log/ui/`）：通过 `core.scenario.Scenario` UI trait 渲染，不依赖 `alpha_mining` 具体场景类  
 7. **因子执行环境**：`FACTOR_CoSTEER_PYTHON_BIN` 默认当前解释器；失败 execute 不写入 pickle 缓存  
+8. **Adapter 层收敛**（`adapters/`）：移除未使用的 backtest engine adapter；仅保留 LLM + 数据源可插拔，回测固定在 `systems/backtest/`
 
 更完整的使用说明见项目根目录 [README.md](../README.md)。
