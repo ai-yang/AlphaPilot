@@ -282,7 +282,7 @@ alphapilot prepare_data convert \
 ```bash
 cd AlphaPilot
 
-# 1) 仅下载：除权行情（增量）+ 复权因子（每次更新行情后全量覆盖）
+# 1) 仅下载：除权行情（增量；已到 end_date 则零网络请求）+ 有缺口时窗口探测除权因子
 alphapilot prepare_data download --stock_csv important_data/stock_lists/main_stock_2026_4_27.csv --adjust_mode none
 
 # 2) 合成为前复权或后复权 CSV（供训练 / convert）

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Literal
@@ -97,6 +98,50 @@ def get_all_stocks_in_period(start_date: str, end_date: str) -> list[str]:
     return list(all_stocks)
 
 
+@dataclass
+class _DownloadStats:
+    skipped_up_to_date: int = 0
+    price_updated: int = 0
+    factor_probed: int = 0
+    factor_refreshed: int = 0
+    factor_skipped: int = 0
+    errors: int = 0
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    def incr(self, name: str, n: int = 1) -> None:
+        with self._lock:
+            setattr(self, name, getattr(self, name) + n)
+
+
+def _read_price_csv_last_date(csv_path: Path) -> datetime | None:
+    """Read the last trade date from a price CSV without loading the full file."""
+    if not csv_path.exists():
+        return None
+    try:
+        with csv_path.open("rb") as handle:
+            handle.seek(0, 2)
+            size = handle.tell()
+            if size == 0:
+                return None
+            read_size = min(size, 4096)
+            handle.seek(size - read_size)
+            tail_lines = handle.read().splitlines()
+    except OSError:
+        return None
+
+    for raw_line in reversed(tail_lines):
+        line = raw_line.decode("utf-8").strip()
+        if not line or line.startswith("date"):
+            continue
+        date_str = line.split(",", 1)[0]
+        parsed = pd.to_datetime(date_str, errors="coerce")
+        if pd.isna(parsed):
+            continue
+        return parsed.to_pydatetime()
+
+    return None
+
+
 def factor_covers_price_history(factor_df: pd.DataFrame, price_df: pd.DataFrame) -> bool:
     """Return True if factor history extends to (or before) the first price bar."""
     if factor_df.empty or price_df.empty or "dividOperateDate" not in factor_df.columns:
@@ -106,6 +151,92 @@ def factor_covers_price_history(factor_df: pd.DataFrame, price_df: pd.DataFrame)
     if pd.isna(min_price) or pd.isna(first_ex):
         return False
     return first_ex <= min_price + pd.Timedelta(days=5)
+
+
+def _factor_file_path(code: str, factor_dir: Path) -> Path:
+    return factor_dir / f"{code.replace('.', '')}.csv"
+
+
+def _load_local_factor_df(factor_file: Path) -> pd.DataFrame | None:
+    if not factor_file.exists():
+        return None
+    factor_df = pd.read_csv(factor_file)
+    if factor_df.empty:
+        return factor_df
+    if "dividOperateDate" in factor_df.columns:
+        factor_df["dividOperateDate"] = pd.to_datetime(
+            factor_df["dividOperateDate"], errors="coerce"
+        )
+    return factor_df
+
+
+def _has_adjust_event_in_period(code: str, start_date: str, end_date: str) -> bool:
+    """
+    Probe baostock for corporate-action events in ``[start_date, end_date]``.
+
+    Uses ``query_adjust_factor`` with a narrow date range; returns True when at
+    least one row exists (i.e. a 除权除息 occurred in the window).
+    """
+    with _BAOSTOCK_LOCK:
+        rs_adj = bs.query_adjust_factor(code, start_date=start_date, end_date=end_date)
+        if rs_adj.error_code != "0":
+            logger.warning(f"探测 {code} 除权事件失败: {rs_adj.error_msg}")
+            return True
+
+        while rs_adj.next():
+            return True
+
+    return False
+
+
+def _maybe_download_adjust_factors(
+    code: str,
+    end_date: str,
+    factor_dir: Path,
+    *,
+    incremental_start: str,
+    price_df: pd.DataFrame | None = None,
+    stats: _DownloadStats | None = None,
+) -> None:
+    """
+    Refresh adjust factors only when necessary.
+
+    - No local factor file / incomplete coverage -> full history download.
+    - Otherwise probe ``[incremental_start, end_date]`` (same window as new bars).
+    - When events exist in the probe window -> full history download.
+    """
+    factor_file = _factor_file_path(code, factor_dir)
+    local_factor = _load_local_factor_df(factor_file)
+
+    if local_factor is None or local_factor.empty:
+        _download_adjust_factors(code, end_date, factor_dir)
+        if stats is not None:
+            stats.incr("factor_refreshed")
+        return
+
+    if price_df is not None and not factor_covers_price_history(local_factor, price_df):
+        logger.info(f"{code} 本地复权因子未覆盖行情起点，全量刷新因子")
+        _download_adjust_factors(code, end_date, factor_dir)
+        if stats is not None:
+            stats.incr("factor_refreshed")
+        return
+
+    if incremental_start > end_date:
+        return
+
+    if stats is not None:
+        stats.incr("factor_probed")
+
+    if not _has_adjust_event_in_period(code, incremental_start, end_date):
+        logger.debug(f"{code} {incremental_start}~{end_date} 无除权操作，跳过因子下载")
+        if stats is not None:
+            stats.incr("factor_skipped")
+        return
+
+    logger.info(f"{code} {incremental_start}~{end_date} 有除权操作，全量刷新因子")
+    _download_adjust_factors(code, end_date, factor_dir)
+    if stats is not None:
+        stats.incr("factor_refreshed")
 
 
 def _download_adjust_factors(
@@ -118,8 +249,7 @@ def _download_adjust_factors(
 
     Called whenever bar data is updated (full or incremental) so factors stay consistent.
     """
-    code_clean = code.replace(".", "")
-    factor_file = factor_dir / f"{code_clean}.csv"
+    factor_file = _factor_file_path(code, factor_dir)
 
     with _BAOSTOCK_LOCK:
         rs_adj = bs.query_adjust_factor(
@@ -242,6 +372,8 @@ def download_stock_data(
     if lg.error_code != "0":
         raise RuntimeError(f"baostock 登录失败: {lg.error_msg}")
 
+    stats = _DownloadStats()
+
     try:
         fields = (
             "date,code,open,high,low,close,preclose,volume,amount,turn,"
@@ -252,21 +384,14 @@ def download_stock_data(
             code_clean = code.replace(".", "")
             output_file = output_path / f"{code_clean}.csv"
 
-            if output_file.exists():
-                existing_df = pd.read_csv(output_file)
-                if not existing_df.empty:
-                    existing_df["date"] = pd.to_datetime(existing_df["date"])
-                    last_date = existing_df["date"].max()
-                    last_date_str = last_date.strftime("%Y-%m-%d")
-                    if last_date_str >= end_date:
-                        if mode == "none" and factor_path is not None:
-                            _download_adjust_factors(code, end_date, factor_path)
-                        return
-                    code_download_start_date = (last_date + timedelta(days=1)).strftime("%Y-%m-%d")
-                else:
-                    code_download_start_date = start_date
+            last_date = _read_price_csv_last_date(output_file)
+            if last_date is not None:
+                last_date_str = last_date.strftime("%Y-%m-%d")
+                if last_date_str >= end_date:
+                    stats.incr("skipped_up_to_date")
+                    return
+                code_download_start_date = (last_date + timedelta(days=1)).strftime("%Y-%m-%d")
             else:
-                existing_df = None
                 code_download_start_date = start_date
 
             logger.info(
@@ -283,6 +408,7 @@ def download_stock_data(
                 )
                 if rs.error_code != "0":
                     logger.warning(f"获取 {code} 失败: {rs.error_msg}")
+                    stats.incr("errors")
                     return
 
                 data_list = []
@@ -299,7 +425,9 @@ def download_stock_data(
                 if col not in ("code", "date"):
                     new_df[col] = pd.to_numeric(new_df[col], errors="coerce")
 
-            if output_file.exists() and existing_df is not None:
+            if output_file.exists() and last_date is not None:
+                existing_df = pd.read_csv(output_file)
+                existing_df["date"] = pd.to_datetime(existing_df["date"])
                 combined_df = pd.concat([existing_df, new_df], ignore_index=True)
                 combined_df = combined_df.drop_duplicates(subset=["date", "code"])
                 combined_df["date"] = pd.to_datetime(combined_df["date"])
@@ -308,18 +436,32 @@ def download_stock_data(
                 combined_df = new_df
 
             combined_df.to_csv(output_file, index=False, encoding="utf-8")
+            stats.incr("price_updated")
 
-            # 除权模式：每只股票行情落盘后立即拉全历史因子，避免整批下完后才写因子、中断后因子全缺
             if mode == "none" and factor_path is not None:
-                _download_adjust_factors(code, end_date, factor_path)
+                _maybe_download_adjust_factors(
+                    code,
+                    end_date,
+                    factor_path,
+                    incremental_start=code_download_start_date,
+                    price_df=combined_df,
+                    stats=stats,
+                )
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [executor.submit(download_single_stock, code) for code in all_stocks]
             for _ in tqdm(as_completed(futures), total=len(futures), desc="下载进度"):
                 pass
 
-        if mode == "none" and factor_path is not None:
-            refresh_adjust_factors(all_stocks, end_date, factor_path, max_workers=1)
+        logger.info(
+            "下载统计: "
+            f"跳过(已最新)={stats.skipped_up_to_date}, "
+            f"补行情={stats.price_updated}, "
+            f"因子探测={stats.factor_probed}, "
+            f"因子全量刷新={stats.factor_refreshed}, "
+            f"因子跳过={stats.factor_skipped}, "
+            f"错误={stats.errors}"
+        )
     finally:
         bs.logout()
 
