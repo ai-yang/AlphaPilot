@@ -59,7 +59,7 @@ class PrepareDataCLI:
         qlib_dir: str = str(DEFAULT_QLIB_DIR),
         market: str | None = None,
         sync_instruments: bool = True,
-        max_workers: int = 2,
+        max_workers: int = 1,
         adjust_mode: str = "none",
         factor_dir: str | None = None,
     ) -> None:
@@ -344,7 +344,7 @@ class PrepareDataCLI:
         include_fields: str = DEFAULT_INCLUDE_FIELDS,
         region: str = "cn",
         sync_instruments: bool = True,
-        max_workers: int = 2,
+        max_workers: int = 1,
         dump_workers: int = 16,
         adjust_mode: str = "none",
         factor_dir: str | None = None,

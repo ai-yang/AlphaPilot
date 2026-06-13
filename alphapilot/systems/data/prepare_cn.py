@@ -29,7 +29,7 @@ DEFAULT_RAW_DIR = RAW_DIR_BY_MODE["backward"]
 DEFAULT_FACTOR_DIR = Path("~/.qlib/qlib_data/cn_data/adjust_factors")
 # 复权因子需从足够早的日期拉全历史，否则早期行情会错用「区间内首条除权」的因子
 FACTOR_HISTORY_START_DATE = "1990-01-01"
-DEFAULT_DOWNLOAD_WORKERS = 2
+DEFAULT_DOWNLOAD_WORKERS = 1
 DEFAULT_STOCK_CSV = default_stock_csv_path()
 
 # baostock 同一 login 会话下 API 须串行，多线程下载时用锁保护

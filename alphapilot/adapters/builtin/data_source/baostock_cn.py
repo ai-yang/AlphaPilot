@@ -31,7 +31,7 @@ class BaostockDataSourceAdapter(BaseDataSourceAdapter):
         all_market = options.pop(
             "all_market", request.symbols is None and stock_csv is None
         )
-        max_workers = options.pop("max_workers", 2)
+        max_workers = options.pop("max_workers", 1)
         factor_dir = options.pop("factor_dir", None)
 
         raw_dir = (
