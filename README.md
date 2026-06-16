@@ -37,7 +37,8 @@ AlphaPilot 通过三个 Agent 协作完成因子挖掘：
 ### 3. 数据准备命令（`alphapilot prepare_data`）
 
 - 内置原 qlib `dump_bin.py`、`future_calendar_collector.py`（无需 clone qlib 仓库）
-- 通过 baostock 下载行情：支持**直接下载前/后复权**（`--adjust_mode forward|backward`），或下载除权日线 + 复权因子后用 `apply_adjust` 本地合成，再 `convert` 为 Qlib 与 `daily_pv.h5`
+- 通过 baostock 下载行情：支持**直接下载前/后复权**（`--adjust_mode forward|backward`），或下载除权日线 + 复权因子后用 `apply_adjust` 本地合成，再 `convert` 为 Qlib 与 `daily_pv.h5`；CSV 与下载状态默认落在 `~/.qlib/qlib_data/cn_data/baostock/`
+- 可选 Tushare 数据源：`--action download --source tushare_cn` 下载除权日线 + `adj_factor`，默认保存到 `~/.qlib/qlib_data/cn_data/tushare/`（与 baostock 目录并列，互不覆盖）
 - 默认股票列表：`important_data/stock_lists/main_stock_2026_4_27.csv`（可用 `--stock_csv` 指定任意 CSV/TXT，例如同目录下的 `kechuang_stock.csv`）
 
 > 用户数据目录总览见 [important_data/README.md](important_data/README.md)（策略资产、**因子库**、Qlib 模板、股票池列表）。
@@ -55,6 +56,15 @@ alphapilot prepare_data download --stock_csv important_data/stock_lists/main_sto
 
 # 新写法（modules-only 语义更清晰）
 alphapilot prepare_data --action download --stock_csv important_data/stock_lists/main_stock_2026_4_27.csv
+```
+
+Tushare 数据源需使用显式 action 写法，并设置 `TUSHARE_TOKEN` 或传入 `--token`：
+
+```bash
+TUSHARE_TOKEN=你的token alphapilot prepare_data --action download \
+  --source tushare_cn \
+  --stock_csv important_data/stock_lists/main_stock_2026_4_27.csv \
+  --adjust_mode none
 ```
 
 ### 4. 回测与因子数据配置
@@ -97,6 +107,8 @@ alphapilot prepare_data --action download --stock_csv important_data/stock_lists
 | `QLIB_FACTOR_QLIB_CONFIG_NAME` | 上述目录中的 yaml 文件名（如 `conf_cn_combined_kdd_ver.yaml`） |
 
 `alphapilot prepare_data h5` 会从 Qlib 导出 `daily_pv.h5` 到 `git_ignore_folder/factor_implementation_source_data*`，供因子 Python 代码使用。
+
+模板 yaml 中的 `provider_uri` 须指向当前使用的 Qlib 二进制目录（baostock 默认 `~/.qlib/qlib_data/cn_data/baostock/qlib`）。若只改 `.env` 的 `ALPHAPILOT_QLIB_DATA_DIR` 而未改 yaml，部分 `qrun` 路径仍可能读到旧目录。
 
 可按需修改股票池（`market` / `instruments`）、训练/验证/测试区间、持仓数量等。
 
@@ -157,13 +169,15 @@ alphapilot qlib_yaml_validate \
 |------|------|------|
 | CLI 编排 | `systems/data/prepare_data.py` | `PrepareDataCLI`，对应 `alphapilot prepare_data` 各子命令 |
 | 下载 | `systems/data/prepare_cn.py` | baostock 下载、复权因子刷新 |
+| Tushare 下载 | `systems/data/prepare_tushare.py` | Tushare 日线 + `adj_factor` |
+| 路径约定 | `systems/data/data_paths.py` | `cn_data/baostock` 与 `cn_data/tushare` 目录布局、旧路径回退 |
 | 复权 | `systems/data/adjust_prices.py` | 除权 CSV 本地合成前/后复权 |
 | Qlib 转换 | `systems/data/qlib_convert.py` | CSV → Qlib 二进制 |
 | h5 导出 | `systems/data/generate_h5.py` | 生成 `daily_pv.h5` |
 | dump 工具 | `systems/data/qlib_dump/` | `dump_bin`、交易日历扩展 |
 | 单股管理 | `systems/data/manage.py` | 单只股票的删除 / 裁剪 / 单股重 dump（`delete_symbol`、`trim_symbol`、`resync_symbol_to_qlib`、instruments 增删改） |
 | 系统 API | `systems/data/service.py` | `QlibDataSystem` 与 typed DTO（`types.py`） |
-| 路径约定 | `kernel/paths.py` | `important_data_dir`、`strategy_zoo_dir`、`factor_zoo_dir`、`stock_lists_dir`、默认 `stock_csv`、旧路径 remap |
+| 路径约定 | `kernel/paths.py` | `important_data_dir`、`strategy_zoo_dir`、`factor_zoo_dir`、`stock_lists_dir`、默认 `stock_csv` |
 
 程序化调用示例：
 
@@ -256,17 +270,17 @@ Apple Silicon 上 `brew --prefix libomp` 一般为 `/opt/homebrew/opt/libomp`；
 ```bash
 cd AlphaPilot
 
-# 后复权（写入 ~/.qlib/qlib_data/cn_data/raw_data_back_adjust）
+# 后复权（写入 ~/.qlib/qlib_data/cn_data/baostock/raw_data_back_adjust）
 alphapilot prepare_data download \
   --stock_csv important_data/stock_lists/main_stock_2026_4_27.csv \
   --adjust_mode backward
 
-# 或前复权（写入 raw_data_forward_adjust）
+# 或前复权（写入 baostock/raw_data_forward_adjust）
 # alphapilot prepare_data download \
 #   --stock_csv important_data/stock_lists/main_stock_2026_4_27.csv \
 #   --adjust_mode forward
 
-# 转 Qlib + 日历 + h5（adjust_mode 与下载时一致）
+# 转 Qlib + 日历 + h5（adjust_mode 与下载时一致；Qlib 默认写入 baostock/qlib）
 alphapilot prepare_data convert \
   --stock_csv important_data/stock_lists/main_stock_2026_4_27.csv \
   --adjust_mode backward \
@@ -307,6 +321,44 @@ alphapilot prepare_data pipeline \
   --target_mode forward
 ```
 
+#### 可选：Tushare 数据源
+
+Tushare 第一版支持 A 股日线 + `adj_factor`，默认落盘到独立目录
+`~/.qlib/qlib_data/cn_data/tushare/`，避免覆盖 baostock 数据。Tushare 下载仅支持
+`--adjust_mode none`；如需前/后复权，请下载后复用本地 `apply_adjust`。
+
+```bash
+# 1) 下载 Tushare 除权日线 + adj_factor
+TUSHARE_TOKEN=你的token alphapilot prepare_data --action download \
+  --source tushare_cn \
+  --stock_csv important_data/stock_lists/main_stock_2026_4_27.csv \
+  --adjust_mode none
+
+# 2) 用 Tushare 目录合成前复权 CSV
+alphapilot prepare_data apply_adjust \
+  --adjust_mode forward \
+  --raw_dir ~/.qlib/qlib_data/cn_data/tushare/raw_data_no_adjust \
+  --factor_dir ~/.qlib/qlib_data/cn_data/tushare/adjust_factors \
+  --output_dir ~/.qlib/qlib_data/cn_data/tushare/raw_data_forward_adjust
+
+# 3) 转 Qlib；使用独立 qlib_dir，避免与 baostock 的 Qlib 数据混用
+alphapilot prepare_data convert \
+  --stock_csv important_data/stock_lists/main_stock_2026_4_27.csv \
+  --data_path ~/.qlib/qlib_data/cn_data/tushare/raw_data_forward_adjust \
+  --qlib_dir ~/.qlib/qlib_data/cn_data/tushare/qlib \
+  --market main_stock_2026_4_27 \
+  --adjust_mode forward
+
+# 4) 生成 h5（因子挖掘用；切换 Tushare 后须对应当前 qlib_dir）
+alphapilot prepare_data h5 \
+  --qlib_dir ~/.qlib/qlib_data/cn_data/tushare/qlib \
+  --market main_stock_2026_4_27
+```
+
+注意：当前默认 `pipeline` 仍走 baostock 流程；使用 Tushare 时请显式指定
+`--action download --source tushare_cn`，再分步执行 `apply_adjust`、`convert` 与 `h5`。
+Tushare 与 baostock 的 OHLC / 成交量单位不完全一致，**请勿混用同一 `qlib_dir`**。
+
 **指定股票列表**（路径任意；推荐放在 `important_data/stock_lists/`）
 
 ```bash
@@ -339,19 +391,59 @@ alphapilot prepare_data apply_adjust --adjust_mode forward
 alphapilot prepare_data convert --stock_csv my_stocks.csv --adjust_mode forward
 ```
 
-默认路径：
+默认路径（`~/.qlib/qlib_data/cn_data/` 下按数据源分目录）：
+
+```
+cn_data/
+├── baostock/
+│   ├── raw_data_no_adjust/       # 除权 CSV
+│   ├── raw_data_forward_adjust/  # 前复权 CSV
+│   ├── raw_data_back_adjust/     # 后复权 CSV
+│   ├── adjust_factors/           # 复权因子
+│   ├── download_state.csv        # 下载增量状态
+│   └── qlib/                     # convert 后的 Qlib 二进制（features / calendars / instruments）
+└── tushare/
+    └── （同上结构）
+```
 
 | 参数 | 默认值 |
 |------|--------|
 | `--stock_csv` | `important_data/stock_lists/main_stock_2026_4_27.csv` |
 | `--market` | 与 `stock_csv` 文件名相同 |
 | `download` 默认 `--adjust_mode` | `none`（除权）；设为 `forward` / `backward` 则直接下载已复权 CSV |
-| CSV 除权 | `~/.qlib/qlib_data/cn_data/raw_data_no_adjust` |
-| CSV 前复权 / 后复权 | `raw_data_forward_adjust` / `raw_data_back_adjust`（可直接 `download` 写入，或由 `apply_adjust` 生成） |
-| 复权因子 | `~/.qlib/qlib_data/cn_data/adjust_factors`（仅 `adjust_mode=none` 时下载） |
-| Qlib 数据 | `~/.qlib/qlib_data/cn_data` |
+| **baostock** CSV 除权 | `cn_data/baostock/raw_data_no_adjust` |
+| **baostock** CSV 前/后复权 | `cn_data/baostock/raw_data_forward_adjust` / `raw_data_back_adjust` |
+| **baostock** 复权因子 | `cn_data/baostock/adjust_factors` |
+| **baostock** 下载状态 | `cn_data/baostock/download_state.csv` |
+| **baostock** Qlib 二进制 | `cn_data/baostock/qlib` |
+| **tushare** 同上结构 | `cn_data/tushare/raw_data_*`、`adjust_factors`、`download_state.csv`、`qlib/` |
 
-如需指数成分股文件，仍可在 qlib 源码中运行 `cn_index/collector.py`（可选）；若使用自定义股票池，在 `~/.qlib/qlib_data/cn_data/instruments/` 下维护 `.txt`，并在 Qlib 模板 yaml 中设置 `market`（与 `convert` 时 `--market` 一致）。
+**从旧版目录迁移**（若 CSV / Qlib 仍在 `cn_data/` 根下而非 `baostock/`）：
+
+```bash
+BASE=~/.qlib/qlib_data/cn_data
+mkdir -p "$BASE/baostock"
+for d in raw_data_no_adjust raw_data_forward_adjust raw_data_back_adjust adjust_factors; do
+  [ -d "$BASE/$d" ] && mv "$BASE/$d" "$BASE/baostock/"
+done
+[ -f "$BASE/download_state.csv" ] && mv "$BASE/download_state.csv" "$BASE/baostock/"
+if [ -d "$BASE/features" ] || [ -d "$BASE/calendars" ]; then
+  mkdir -p "$BASE/baostock/qlib"
+  for d in features calendars instruments; do
+    [ -d "$BASE/$d" ] && mv "$BASE/$d" "$BASE/baostock/qlib/"
+  done
+fi
+```
+
+**回测用哪套数据？** Qlib 回测读取的是 `qlib/` 二进制目录，不是 CSV。默认（baostock）在 `.env` 中配置：
+
+```env
+ALPHAPILOT_QLIB_DATA_DIR=~/.qlib/qlib_data/cn_data/baostock/qlib
+```
+
+改用 Tushare 时改为 `.../tushare/qlib`，并重新 `convert` + `h5`。也可在 Qlib 模板 yaml 的 `provider_uri` 或 `strategy_backtest --qlib_data_dir` 中指定。
+
+如需指数成分股文件，仍可在 qlib 源码中运行 `cn_index/collector.py`（可选）；若使用自定义股票池，`convert` 会写入 `baostock/qlib/instruments/{market}.txt`（Tushare 则为 `tushare/qlib/instruments/`），请在 Qlib 模板 yaml 中把 `market` 设为与 `--market` 或 `stock_csv` 文件名一致。
 
 修改股票池或字段后，请按下方 [清理缓存](#5-清理缓存) 删除旧 h5 并重新运行 `alphapilot prepare_data h5`。
 
@@ -386,7 +478,14 @@ EMBEDDING_MAX_STR_NUM=10     # DashScope 等 embedding 接口的单次 batch 上
 # ALPHAPILOT_PICKLE_CACHE_DIR_MINE=pickle_cache/mine
 # ALPHAPILOT_PICKLE_CACHE_DIR_BACKTEST=pickle_cache/backtest
 
+# 可选：行情数据路径（默认解析到 cn_data/baostock/；见 §4 准备行情数据）
+# ALPHAPILOT_QLIB_DATA_DIR=~/.qlib/qlib_data/cn_data/baostock/qlib
+# ALPHAPILOT_RAW_DATA_DIR=~/.qlib/qlib_data/cn_data/baostock/raw_data_back_adjust
+# ALPHAPILOT_ADJUST_FACTOR_DIR=~/.qlib/qlib_data/cn_data/baostock/adjust_factors
+# TUSHARE_TOKEN=<your_tushare_pro_token>
+
 # 可选：Qlib 回测模板与 yaml（mine / backtest / strategy_backtest 共用 QLIB_FACTOR_ 前缀）
+# 模板内 provider_uri 建议与 ALPHAPILOT_QLIB_DATA_DIR 一致（如 .../baostock/qlib）
 # QLIB_FACTOR_QLIB_TEMPLATE_DIR=important_data/factor_qlib_templates
 # QLIB_FACTOR_QLIB_CONFIG_NAME=conf_cn_combined_kdd_ver.yaml
 
@@ -546,7 +645,7 @@ alphapilot strategy_backtest \
 | 参数 | 说明 |
 |------|------|
 | `--mode` | `retrain`：按资产内公式重算因子并重新训练回测；`reuse_model`：加载 `artifacts/fitted_model.pkl` 跳过训练，仍跑信号与组合回测；`both`：两种都跑 |
-| `--qlib_data_dir` | 可选，切换 Qlib 数据目录（不设则用默认 `~/.qlib/...`） |
+| `--qlib_data_dir` | 可选，切换 Qlib 数据目录（默认 `~/.qlib/qlib_data/cn_data/baostock/qlib`，Tushare 用 `.../tushare/qlib`） |
 | `--qlib_template_dir` / `--qlib_config_name` | 可选，覆盖模板目录与 yaml；未传时优先读策略 `metadata`，否则用 `.env` 的 `QLIB_FACTOR_*` |
 | `--use_local` | 与 `USE_LOCAL` 一致，是否本地执行 `qrun` |
 
@@ -580,7 +679,7 @@ alphapilot strategy_backtest \
 
 #### 4.0 股票数据 K 线可视化（`data_viz`）
 
-查看 `prepare_data` 下载到本地的 CSV 行情（默认在 `~/.qlib/qlib_data/cn_data/raw_data_*`）：
+查看 `prepare_data` 下载到本地的 CSV 行情（`baostock/` 与 `tushare/` 下各复权目录均可选）：
 
 ```bash
 alphapilot data_viz --port 19902
@@ -588,7 +687,7 @@ alphapilot data_viz --port 19902
 
 浏览器打开 `http://localhost:19902`，可：
 
-- 选择复权类型目录（除权 / 前复权 / 后复权）
+- 选择数据源与复权类型目录（baostock / tushare · 除权 / 前复权 / 后复权）
 - 选择股票代码，并筛选时间区间（近 1/3/6/12 月或自定义）
 - 查看 **K 线 + 成交量** 图；鼠标悬停显示开高低收、涨跌幅、成交额等
 - 导出当前区间 CSV
@@ -687,8 +786,9 @@ rm -rf ./git_ignore_folder/*
 rm -f alphapilot/modules/alpha_mining/qlib/experiment/factor_data_template/daily_pv_all.h5
 rm -f alphapilot/modules/alpha_mining/qlib/experiment/factor_data_template/daily_pv_debug.h5
 
-# 重新生成 h5（或在下次 alphapilot mine 时自动生成）
+# 重新生成 h5（或在下次 alphapilot mine 时自动生成；默认读 baostock/qlib）
 alphapilot prepare_data h5
+# 若使用 Tushare：alphapilot prepare_data h5 --qlib_dir ~/.qlib/qlib_data/cn_data/tushare/qlib --market <你的股票池名>
 ```
 
 **一键全量清理**（运行缓存 + h5 + 可选 LLM 缓存）：
@@ -703,6 +803,7 @@ rm -f alphapilot/modules/alpha_mining/qlib/experiment/factor_data_template/daily
 rm -f ./prompt_cache.db   # 未启用 LLM 缓存时可省略
 
 alphapilot prepare_data h5
+# 若使用 Tushare：同上，加 --qlib_dir ~/.qlib/qlib_data/cn_data/tushare/qlib --market <你的股票池名>
 ```
 
 清理完成后重新执行 `alphapilot mine` 或 `alphapilot backtest`。
@@ -743,7 +844,9 @@ AlphaPilot/
 └── git_ignore_folder/       # 运行产物（已 gitignore）
     └── RD-Agent_workspace/     # 每轮回测工作区
 
-~/.qlib/qlib_data/cn_data/   # Qlib 行情数据（不在仓库内）
+~/.qlib/qlib_data/cn_data/   # 行情数据根目录（不在仓库内）
+    ├── baostock/             # baostock CSV、download_state.csv、qlib 二进制
+    └── tushare/              # Tushare CSV、download_state.csv、qlib 二进制
 ```
 
 ---

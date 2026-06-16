@@ -1,4 +1,4 @@
-"""Built-in data source adapter that wraps the baostock A-share pipeline."""
+"""Built-in data source adapter for Tushare A-share daily data."""
 
 from __future__ import annotations
 
@@ -13,32 +13,33 @@ from alphapilot.adapters.base import (
 from alphapilot.adapters.registry import DATA_SOURCE_REGISTRY
 
 
-@DATA_SOURCE_REGISTRY.register("baostock_cn", is_default=True)
-class BaostockDataSourceAdapter(BaseDataSourceAdapter):
-    """Download A-share daily CSV via baostock."""
+@DATA_SOURCE_REGISTRY.register("tushare_cn")
+class TushareDataSourceAdapter(BaseDataSourceAdapter):
+    """Download A-share daily CSV via Tushare Pro."""
 
     def download(self, request: DataDownloadRequest) -> DataDownloadResult:
-        from alphapilot.systems.data.prepare_cn import (
+        from alphapilot.systems.data.prepare_tushare import (
             download_cn_data,
-            resolve_raw_dir,
+            resolve_tushare_raw_dir,
         )
 
         options: dict[str, Any] = dict(request.options)
-        adjust_mode = options.pop("adjust_mode", "backward")
+        adjust_mode = options.pop("adjust_mode", "none")
         stock_csv = options.pop("stock_csv", None)
         code_column = options.pop("code_column", None)
-        # Only fall back to whole-market when no explicit symbols/CSV were given.
+        data_dir = options.pop("data_dir", None)
         all_market = options.pop(
             "all_market", request.symbols is None and stock_csv is None
         )
         max_workers = options.pop("max_workers", 1)
         factor_dir = options.pop("factor_dir", None)
         download_state_path = options.pop("download_state_path", None)
+        token = options.pop("token", None)
 
         raw_dir = (
             Path(request.output_dir).expanduser()
             if request.output_dir is not None
-            else resolve_raw_dir(None, adjust_mode)
+            else resolve_tushare_raw_dir(data_dir, adjust_mode)
         )
 
         codes = download_cn_data(
@@ -53,14 +54,18 @@ class BaostockDataSourceAdapter(BaseDataSourceAdapter):
             factor_dir=factor_dir,
             symbols=request.symbols,
             download_state_path=download_state_path,
+            token=token,
         )
         return DataDownloadResult(
             output_dir=Path(raw_dir),
             symbols=codes,
-            extra={"adjust_mode": adjust_mode},
+            extra={
+                "adjust_mode": adjust_mode,
+                "factor_dir": str(factor_dir) if factor_dir is not None else None,
+            },
         )
 
     def default_output_dir(self) -> Path:
-        from alphapilot.systems.data.prepare_cn import default_raw_dir
+        from alphapilot.systems.data.prepare_tushare import default_tushare_raw_dir
 
-        return default_raw_dir("backward")
+        return default_tushare_raw_dir("none")

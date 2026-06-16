@@ -188,7 +188,7 @@ class QlibDataSystem(BaseDataSystem):
         dry_run: bool = False,
     ) -> dict[str, Any]:
         from alphapilot.systems.data import manage
-        from alphapilot.systems.data.prepare_cn import default_raw_dir
+        from alphapilot.systems.data.prepare_cn import existing_raw_dir
 
         report = manage.trim_symbol(
             symbol,
@@ -201,7 +201,7 @@ class QlibDataSystem(BaseDataSystem):
         if resync_qlib:
             report["resync"] = manage.resync_symbol_to_qlib(
                 symbol,
-                raw_dir=default_raw_dir(qlib_adjust_mode),
+                raw_dir=existing_raw_dir(qlib_adjust_mode),
                 qlib_dir=self._storage.qlib_data_dir,
                 op="trim",
                 dry_run=dry_run,
@@ -221,7 +221,7 @@ class QlibDataSystem(BaseDataSystem):
         **options: Any,
     ) -> dict[str, Any]:
         from alphapilot.systems.data import manage
-        from alphapilot.systems.data.prepare_cn import default_raw_dir
+        from alphapilot.systems.data.prepare_cn import existing_raw_dir
 
         modes = manage.resolve_adjust_modes(adjust_mode if adjust_mode is not None else "backward")
         downloads: dict[str, Any] = {}
@@ -237,7 +237,7 @@ class QlibDataSystem(BaseDataSystem):
         if resync_qlib:
             report["resync"] = manage.resync_symbol_to_qlib(
                 symbol,
-                raw_dir=default_raw_dir(qlib_adjust_mode),
+                raw_dir=existing_raw_dir(qlib_adjust_mode),
                 qlib_dir=self._storage.qlib_data_dir,
                 op="refresh",
             )

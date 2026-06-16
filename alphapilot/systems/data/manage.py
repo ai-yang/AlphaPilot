@@ -28,9 +28,10 @@ import pandas as pd
 from alphapilot.core.path_safety import ensure_child_path
 from alphapilot.log import logger
 from alphapilot.systems.data.prepare_cn import (
-    RAW_DIR_BY_MODE,
+    BAOSTOCK_RAW_DIR_BY_MODE,
+    existing_factor_dir,
+    existing_raw_dir,
     normalize_adjust_mode,
-    resolve_factor_dir,
 )
 from alphapilot.systems.data.qlib_convert import DEFAULT_INCLUDE_FIELDS
 from alphapilot.systems.data.stock_list import (
@@ -62,7 +63,7 @@ def _resolve_adjust_modes(value: str | Iterable[str] | None) -> list[str]:
     dedupes; any other value is normalized via :func:`normalize_adjust_mode`.
     """
     if value is None:
-        return list(RAW_DIR_BY_MODE)
+        return list(BAOSTOCK_RAW_DIR_BY_MODE)
     if isinstance(value, (list, tuple, set)):
         seen: set[str] = set()
         out: list[str] = []
@@ -74,7 +75,7 @@ def _resolve_adjust_modes(value: str | Iterable[str] | None) -> list[str]:
         return out
     text = str(value).strip().lower()
     if text in ("", "all"):
-        return list(RAW_DIR_BY_MODE)
+        return list(BAOSTOCK_RAW_DIR_BY_MODE)
     return [normalize_adjust_mode(text)]
 
 
@@ -83,7 +84,7 @@ resolve_adjust_modes = _resolve_adjust_modes
 
 
 def _raw_dir(mode: str) -> Path:
-    return RAW_DIR_BY_MODE[mode].expanduser()
+    return existing_raw_dir(mode)
 
 
 def _instruments_dir(qlib_dir: str | Path) -> Path:
@@ -242,7 +243,7 @@ def delete_symbol(
         _safe_unlink(root / f"{stem}.csv", root, report, dry_run=dry_run)
 
     if remove_factor:
-        fdir = resolve_factor_dir(factor_dir)
+        fdir = Path(factor_dir).expanduser() if factor_dir else existing_factor_dir()
         _safe_unlink(fdir / f"{stem}.csv", fdir, report, dry_run=dry_run)
 
     if remove_qlib_features:

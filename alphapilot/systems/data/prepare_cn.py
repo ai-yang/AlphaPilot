@@ -5,9 +5,9 @@ from __future__ import annotations
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any
 
 import baostock as bs
 import pandas as pd
@@ -16,17 +16,24 @@ from tqdm import tqdm
 
 from alphapilot.kernel.paths import default_stock_csv_path
 from alphapilot.log import logger
+from alphapilot.systems.data.download_state import (
+    DownloadStateStore,
+    resolve_download_state_path,
+)
+from alphapilot.systems.data.data_paths import (
+    AdjustMode,
+    BAOSTOCK_RAW_DIR_BY_MODE,
+    BAOSTOCK_SOURCE,
+    canonical_baostock_factor_dir,
+    canonical_baostock_raw_dir,
+    existing_baostock_factor_dir,
+    existing_baostock_raw_dir,
+)
 from alphapilot.systems.data.stock_list import load_stocks_from_file, normalize_to_baostock
 
-AdjustMode = Literal["none", "forward", "backward"]
-
-RAW_DIR_BY_MODE: dict[AdjustMode, Path] = {
-    "backward": Path("~/.qlib/qlib_data/cn_data/raw_data_back_adjust"),
-    "forward": Path("~/.qlib/qlib_data/cn_data/raw_data_forward_adjust"),
-    "none": Path("~/.qlib/qlib_data/cn_data/raw_data_no_adjust"),
-}
-DEFAULT_RAW_DIR = RAW_DIR_BY_MODE["backward"]
-DEFAULT_FACTOR_DIR = Path("~/.qlib/qlib_data/cn_data/adjust_factors")
+RAW_DIR_BY_MODE = BAOSTOCK_RAW_DIR_BY_MODE
+DEFAULT_RAW_DIR = canonical_baostock_raw_dir("backward")
+DEFAULT_FACTOR_DIR = canonical_baostock_factor_dir()
 # 复权因子需从足够早的日期拉全历史，否则早期行情会错用「区间内首条除权」的因子
 FACTOR_HISTORY_START_DATE = "1990-01-01"
 DEFAULT_DOWNLOAD_WORKERS = 1
@@ -65,7 +72,13 @@ def normalize_adjust_mode(adjust_mode: str) -> AdjustMode:
 
 
 def default_raw_dir(adjust_mode: str = "backward") -> Path:
-    return RAW_DIR_BY_MODE[normalize_adjust_mode(adjust_mode)].expanduser()
+    """Canonical baostock CSV directory (new downloads always write here)."""
+    return canonical_baostock_raw_dir(normalize_adjust_mode(adjust_mode))
+
+
+def existing_raw_dir(adjust_mode: str = "backward") -> Path:
+    """Resolve baostock CSV directory, including pre-unification legacy paths."""
+    return existing_baostock_raw_dir(normalize_adjust_mode(adjust_mode))
 
 
 def resolve_raw_dir(data_dir: str | Path | None, adjust_mode: str) -> Path:
@@ -76,8 +89,12 @@ def resolve_raw_dir(data_dir: str | Path | None, adjust_mode: str) -> Path:
 
 def resolve_factor_dir(factor_dir: str | Path | None) -> Path:
     if factor_dir is None:
-        return DEFAULT_FACTOR_DIR.expanduser()
+        return canonical_baostock_factor_dir()
     return Path(factor_dir).expanduser()
+
+
+def existing_factor_dir() -> Path:
+    return existing_baostock_factor_dir()
 
 
 def get_all_stocks_in_period(start_date: str, end_date: str) -> list[str]:
@@ -140,6 +157,43 @@ def _read_price_csv_last_date(csv_path: Path) -> datetime | None:
         return parsed.to_pydatetime()
 
     return None
+
+
+def _next_date_str(date_str: str) -> str:
+    return (pd.to_datetime(date_str) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+
+
+def _query_trade_dates(start_date: str, end_date: str) -> set[str] | None:
+    """Return trading dates in the window, or None when baostock probing fails."""
+    if start_date > end_date:
+        return set()
+
+    with _BAOSTOCK_LOCK:
+        rs = bs.query_trade_dates(start_date=start_date, end_date=end_date)
+        if rs.error_code != "0":
+            logger.warning(f"查询交易日失败: {rs.error_msg}，将回退为逐股票行情查询")
+            return None
+
+        rows = []
+        while rs.next():
+            rows.append(rs.get_row_data())
+
+    if not rows:
+        return set()
+
+    calendar = pd.DataFrame(rows, columns=rs.fields)
+    if "calendar_date" not in calendar.columns or "is_trading_day" not in calendar.columns:
+        logger.warning("交易日查询结果缺少必要字段，将回退为逐股票行情查询")
+        return None
+    calendar["is_trading_day"] = pd.to_numeric(calendar["is_trading_day"], errors="coerce").fillna(0)
+    return set(calendar.loc[calendar["is_trading_day"] == 1, "calendar_date"].astype(str))
+
+
+def _has_trading_day(trading_dates: set[str] | None, start_date: str, end_date: str) -> bool:
+    """Fail open when the calendar probe failed."""
+    if trading_dates is None:
+        return True
+    return any(start_date <= trade_date <= end_date for trade_date in trading_dates)
 
 
 def factor_covers_price_history(factor_df: pd.DataFrame, price_df: pd.DataFrame) -> bool:
@@ -341,6 +395,7 @@ def download_stock_data(
     adjust_mode: str = "backward",
     factor_dir: str | Path | None = None,
     symbols: list[str] | None = None,
+    download_state_path: str | Path | None = None,
 ) -> list[str]:
     """
     Download daily CSV files. Returns the list of baostock codes that were requested.
@@ -356,6 +411,9 @@ def download_stock_data(
     output_path = Path(output_dir).expanduser()
     output_path.mkdir(parents=True, exist_ok=True)
     factor_path = resolve_factor_dir(factor_dir) if mode == "none" else None
+    state_path = resolve_download_state_path(download_state_path, output_path)
+    state_store = DownloadStateStore(state_path)
+    source = BAOSTOCK_SOURCE
 
     if symbols:
         all_stocks = [c for c in (normalize_to_baostock(s) for s in symbols) if c]
@@ -368,13 +426,56 @@ def download_stock_data(
     else:
         all_stocks = get_all_stocks_in_period(start_date, end_date)
 
+    stats = _DownloadStats()
+    download_starts: dict[str, str | None] = {}
+    for code in all_stocks:
+        output_file = output_path / f"{code.replace('.', '')}.csv"
+        state = state_store.get(
+            source=source,
+            adjust_mode=mode,
+            code=code,
+            raw_dir=output_path,
+        )
+        if state is None:
+            last_date = _read_price_csv_last_date(output_file)
+            if last_date is not None:
+                last_date_str = last_date.strftime("%Y-%m-%d")
+                state = state_store.upsert(
+                    source=source,
+                    adjust_mode=mode,
+                    code=code,
+                    raw_dir=output_path,
+                    data_end_date=last_date_str,
+                    checked_until=last_date_str,
+                    last_status="bootstrap",
+                    last_error="",
+                )
+
+        checked_until = None
+        if state is not None:
+            checked_until = state.checked_until or state.data_end_date
+
+        if checked_until is not None:
+            if checked_until >= end_date:
+                stats.incr("skipped_up_to_date")
+                download_starts[code] = None
+            else:
+                download_starts[code] = _next_date_str(checked_until)
+        else:
+            download_starts[code] = start_date
+
     lg = bs.login()
     if lg.error_code != "0":
         raise RuntimeError(f"baostock 登录失败: {lg.error_msg}")
 
-    stats = _DownloadStats()
-
     try:
+        active_starts = [date for date in download_starts.values() if date is not None and date <= end_date]
+        trading_dates: set[str] | None = None
+        if active_starts:
+            min_start = min(active_starts)
+            trading_dates = _query_trade_dates(min_start, end_date)
+            logger.info(f"下载状态表: {state_path}")
+
         fields = (
             "date,code,open,high,low,close,preclose,volume,amount,turn,"
             "tradestatus,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM,isST"
@@ -383,16 +484,24 @@ def download_stock_data(
         def download_single_stock(code: str) -> None:
             code_clean = code.replace(".", "")
             output_file = output_path / f"{code_clean}.csv"
+            code_download_start_date = download_starts.get(code)
 
-            last_date = _read_price_csv_last_date(output_file)
-            if last_date is not None:
-                last_date_str = last_date.strftime("%Y-%m-%d")
-                if last_date_str >= end_date:
-                    stats.incr("skipped_up_to_date")
-                    return
-                code_download_start_date = (last_date + timedelta(days=1)).strftime("%Y-%m-%d")
-            else:
-                code_download_start_date = start_date
+            if code_download_start_date is None or code_download_start_date > end_date:
+                return
+
+            if not _has_trading_day(trading_dates, code_download_start_date, end_date):
+                state_store.upsert(
+                    source=source,
+                    adjust_mode=mode,
+                    code=code,
+                    raw_dir=output_path,
+                    checked_until=end_date,
+                    last_status="no_trading_days",
+                    last_error="",
+                    mark_success=True,
+                )
+                stats.incr("skipped_up_to_date")
+                return
 
             logger.info(
                 f"下载 {code} ({mode}) ... {code_download_start_date} ~ {end_date}"
@@ -408,6 +517,14 @@ def download_stock_data(
                 )
                 if rs.error_code != "0":
                     logger.warning(f"获取 {code} 失败: {rs.error_msg}")
+                    state_store.upsert(
+                        source=source,
+                        adjust_mode=mode,
+                        code=code,
+                        raw_dir=output_path,
+                        last_status="error",
+                        last_error=rs.error_msg,
+                    )
                     stats.incr("errors")
                     return
 
@@ -416,6 +533,16 @@ def download_stock_data(
                     data_list.append(rs.get_row_data())
 
             if not data_list:
+                state_store.upsert(
+                    source=source,
+                    adjust_mode=mode,
+                    code=code,
+                    raw_dir=output_path,
+                    checked_until=end_date,
+                    last_status="empty",
+                    last_error="",
+                    mark_success=True,
+                )
                 return
 
             new_df = pd.DataFrame(data_list, columns=rs.fields)
@@ -425,7 +552,7 @@ def download_stock_data(
                 if col not in ("code", "date"):
                     new_df[col] = pd.to_numeric(new_df[col], errors="coerce")
 
-            if output_file.exists() and last_date is not None:
+            if output_file.exists():
                 existing_df = pd.read_csv(output_file)
                 existing_df["date"] = pd.to_datetime(existing_df["date"])
                 combined_df = pd.concat([existing_df, new_df], ignore_index=True)
@@ -437,6 +564,18 @@ def download_stock_data(
 
             combined_df.to_csv(output_file, index=False, encoding="utf-8")
             stats.incr("price_updated")
+            data_end_date = pd.to_datetime(combined_df["date"], errors="coerce").max()
+            state_store.upsert(
+                source=source,
+                adjust_mode=mode,
+                code=code,
+                raw_dir=output_path,
+                data_end_date=data_end_date.strftime("%Y-%m-%d"),
+                checked_until=end_date,
+                last_status="updated",
+                last_error="",
+                mark_success=True,
+            )
 
             if mode == "none" and factor_path is not None:
                 _maybe_download_adjust_factors(
@@ -450,8 +589,8 @@ def download_stock_data(
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [executor.submit(download_single_stock, code) for code in all_stocks]
-            for _ in tqdm(as_completed(futures), total=len(futures), desc="下载进度"):
-                pass
+            for future in tqdm(as_completed(futures), total=len(futures), desc="下载进度"):
+                future.result()
 
         logger.info(
             "下载统计: "
@@ -463,6 +602,7 @@ def download_stock_data(
             f"错误={stats.errors}"
         )
     finally:
+        state_store.save()
         bs.logout()
 
     return all_stocks
@@ -479,6 +619,7 @@ def download_cn_data(
     adjust_mode: str = "backward",
     factor_dir: str | Path | None = None,
     symbols: list[str] | None = None,
+    download_state_path: str | Path | None = None,
 ) -> list[str]:
     if end_date is None:
         end_date = datetime.now().strftime("%Y-%m-%d")
@@ -500,6 +641,7 @@ def download_cn_data(
         adjust_mode=adjust_mode,
         factor_dir=factor_dir,
         symbols=symbols,
+        download_state_path=download_state_path,
     )
     logger.info("CSV 下载完成。")
     return codes

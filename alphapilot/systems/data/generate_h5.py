@@ -12,7 +12,9 @@ from alphapilot.log import logger
 from alphapilot.systems.data.prepare_cn import DEFAULT_STOCK_CSV
 from alphapilot.systems.data.stock_list import default_market_name
 
-DEFAULT_QLIB_DIR = Path("~/.qlib/qlib_data/cn_data")
+from alphapilot.systems.data.data_paths import existing_baostock_qlib_dir
+
+DEFAULT_QLIB_DIR = existing_baostock_qlib_dir()
 DEFAULT_OUTPUT_DIR = (
     Path(__file__).resolve().parents[2]
     / "modules"

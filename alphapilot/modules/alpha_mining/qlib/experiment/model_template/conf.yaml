@@ -1,5 +1,5 @@
 qlib_init:
-    provider_uri: "~/.qlib/qlib_data/cn_data"
+    provider_uri: "~/.qlib/qlib_data/cn_data/baostock/qlib"  # 默认 baostock；qrun 前由 ALPHAPILOT_QLIB_DATA_DIR 覆盖
     region: cn
 market: &market csi300
 benchmark: &benchmark SH000300

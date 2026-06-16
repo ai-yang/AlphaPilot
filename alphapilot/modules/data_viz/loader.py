@@ -9,6 +9,13 @@ from typing import Literal
 
 import pandas as pd
 
+from alphapilot.systems.data.data_paths import (
+    BAOSTOCK_RAW_DIR_BY_MODE,
+    TUSHARE_RAW_DIR_BY_MODE,
+    existing_baostock_raw_dir,
+    existing_tushare_raw_dir,
+)
+
 AdjustMode = Literal["none", "forward", "backward"]
 
 ADJUST_LABELS: dict[AdjustMode, str] = {
@@ -22,24 +29,35 @@ ADJUST_LABELS: dict[AdjustMode, str] = {
 class DataSourceInfo:
     """A browsable on-disk data directory."""
 
+    provider: str
     adjust_mode: AdjustMode
     path: Path
     label: str
 
 
 def list_data_sources() -> list[DataSourceInfo]:
-    """Return existing raw CSV roots (one per adjust mode that exists on disk)."""
-    from alphapilot.systems.data.prepare_cn import RAW_DIR_BY_MODE
-
+    """Return existing raw CSV roots for baostock and tushare."""
     sources: list[DataSourceInfo] = []
-    for mode, path in RAW_DIR_BY_MODE.items():
-        resolved = path.expanduser()
-        if resolved.is_dir():
+    for mode in BAOSTOCK_RAW_DIR_BY_MODE:
+        resolved = existing_baostock_raw_dir(mode)
+        if resolved.is_dir() and any(resolved.glob("*.csv")):
             sources.append(
                 DataSourceInfo(
+                    provider="baostock",
                     adjust_mode=mode,
                     path=resolved,
-                    label=ADJUST_LABELS[mode],
+                    label=f"baostock · {ADJUST_LABELS[mode]}",
+                )
+            )
+    for mode in TUSHARE_RAW_DIR_BY_MODE:
+        resolved = existing_tushare_raw_dir(mode)
+        if resolved.is_dir() and any(resolved.glob("*.csv")):
+            sources.append(
+                DataSourceInfo(
+                    provider="tushare",
+                    adjust_mode=mode,
+                    path=resolved,
+                    label=f"tushare · {ADJUST_LABELS[mode]}",
                 )
             )
     return sources

@@ -6,7 +6,7 @@ two external boundaries that previously bled into the business code:
 | Boundary       | Interface                | Default implementation                  |
 |----------------|--------------------------|-----------------------------------------|
 | LLM provider   | `BaseLLMAdapter`         | `openai` — wraps `APIBackend`           |
-| Data source    | `BaseDataSourceAdapter`  | `baostock_cn` — wraps `systems.data.prepare_cn` |
+| Data source    | `BaseDataSourceAdapter`  | `baostock_cn` — wraps `systems.data.prepare_cn`; optional `tushare_cn` |
 
 The defaults reuse the existing implementations verbatim, so no caller
 is forced to migrate. New code that wants to stay loosely coupled
@@ -34,6 +34,14 @@ text = llm.chat_text("Summarize TSMC Q1.")
 
 ds = get_data_source("baostock_cn")
 ds.download(DataDownloadRequest(start_date="2024-01-01"))
+
+tushare = get_data_source("tushare_cn")
+tushare.download(
+    DataDownloadRequest(
+        start_date="2024-01-01",
+        options={"stock_csv": "important_data/stock_lists/main_stock_2026_4_27.csv", "token": "..."},
+    )
+)
 ```
 
 ## Adding a new adapter

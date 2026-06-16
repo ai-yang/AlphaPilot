@@ -28,6 +28,14 @@ alphapilot strategy_backtest --strategy_name='...' --qlib_config_name=conf_cn_co
 
 未配置时，`mine` / `backtest` 默认仍使用内置 `factor_template/`。
 
+**`provider_uri`**：yaml 中须与当前 Qlib 二进制目录一致。迁移到分数据源目录后，baostock 推荐：
+
+```yaml
+provider_uri: "~/.qlib/qlib_data/cn_data/baostock/qlib"
+```
+
+（Tushare 用 `.../tushare/qlib`。可与 `.env` 的 `ALPHAPILOT_QLIB_DATA_DIR` 保持一致。）
+
 ## 用 `qlib_yaml_generate` 生成配置
 
 可用 CLI 从结构化参数 + 可选 LLM 自然语言描述生成新的 qrun YAML（不会直接让 LLM 写整份带锚点的 YAML，而是渲染内置 Jinja2 模板）：

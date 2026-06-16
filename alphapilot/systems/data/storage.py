@@ -36,6 +36,6 @@ class DataStorage:
 
     def raw_dir_for_mode(self, adjust_mode: str = "backward") -> Path:
         """Resolve the raw CSV dir for an adjust mode via the legacy helper."""
-        from alphapilot.systems.data.prepare_cn import default_raw_dir
+        from alphapilot.systems.data.prepare_cn import existing_raw_dir
 
-        return default_raw_dir(adjust_mode)
+        return existing_raw_dir(adjust_mode)

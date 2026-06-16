@@ -8,8 +8,13 @@ from alphapilot.systems.data.qlib_dump.dump_bin import DumpDataAll
 from alphapilot.systems.data.qlib_dump.future_calendar_collector import run as collect_future_calendar
 from alphapilot.log import logger
 
-DEFAULT_RAW_DIR = Path("~/.qlib/qlib_data/cn_data/raw_data_back_adjust")
-DEFAULT_QLIB_DIR = Path("~/.qlib/qlib_data/cn_data")
+from alphapilot.systems.data.data_paths import (
+    existing_baostock_qlib_dir,
+    existing_baostock_raw_dir,
+)
+
+DEFAULT_RAW_DIR = existing_baostock_raw_dir("backward")
+DEFAULT_QLIB_DIR = existing_baostock_qlib_dir()
 DEFAULT_INCLUDE_FIELDS = "open,high,low,close,preclose,volume,amount,turn,factor"
 
 

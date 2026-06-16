@@ -49,28 +49,32 @@ def _env_path_legacy(name: str, legacy_name: str, default: Path) -> Path:
     return Path(value).expanduser() if value else default
 
 
+from alphapilot.systems.data.data_paths import (
+    existing_baostock_factor_dir,
+    existing_baostock_qlib_dir,
+    existing_baostock_raw_dir,
+)
+
+
+def _default_qlib_data_dir() -> Path:
+    return _env_path("ALPHAPILOT_QLIB_DATA_DIR", existing_baostock_qlib_dir())
+
+
+def _default_raw_data_dir() -> Path:
+    return _env_path("ALPHAPILOT_RAW_DATA_DIR", existing_baostock_raw_dir("backward"))
+
+
+def _default_factor_dir() -> Path:
+    return _env_path("ALPHAPILOT_ADJUST_FACTOR_DIR", existing_baostock_factor_dir())
+
+
 @dataclass
 class DataConfig:
     """Locations for raw / converted / derived market data."""
 
-    qlib_data_dir: Path = field(
-        default_factory=lambda: _env_path(
-            "ALPHAPILOT_QLIB_DATA_DIR",
-            Path("~/.qlib/qlib_data/cn_data").expanduser(),
-        )
-    )
-    raw_data_dir: Path = field(
-        default_factory=lambda: _env_path(
-            "ALPHAPILOT_RAW_DATA_DIR",
-            Path("~/.qlib/qlib_data/cn_data/raw_data_back_adjust").expanduser(),
-        )
-    )
-    factor_dir: Path = field(
-        default_factory=lambda: _env_path(
-            "ALPHAPILOT_ADJUST_FACTOR_DIR",
-            Path("~/.qlib/qlib_data/cn_data/adjust_factors").expanduser(),
-        )
-    )
+    qlib_data_dir: Path = field(default_factory=_default_qlib_data_dir)
+    raw_data_dir: Path = field(default_factory=_default_raw_data_dir)
+    factor_dir: Path = field(default_factory=_default_factor_dir)
     region: str = field(default_factory=lambda: _env_str("ALPHAPILOT_REGION", "cn"))
 
 

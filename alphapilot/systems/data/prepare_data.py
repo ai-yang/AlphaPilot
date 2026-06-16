@@ -13,6 +13,8 @@ from alphapilot.systems.data.prepare_cn import (
     FACTOR_HISTORY_START_DATE,
     default_raw_dir,
     download_cn_data,
+    existing_factor_dir,
+    existing_raw_dir,
     factor_covers_price_history,
     normalize_adjust_mode,
     refresh_adjust_factors,
@@ -62,6 +64,7 @@ class PrepareDataCLI:
         max_workers: int = 1,
         adjust_mode: str = "none",
         factor_dir: str | None = None,
+        download_state_path: str | None = None,
     ) -> None:
         """
         下载行情 CSV（默认除权/不复权 + 复权因子），不转 Qlib、不生成 h5。
@@ -91,6 +94,7 @@ class PrepareDataCLI:
                 max_workers=max_workers,
                 adjust_mode=adjust_mode,
                 factor_dir=factor_dir,
+                download_state_path=download_state_path,
             )
         else:
             codes = download_cn_data(
@@ -103,6 +107,7 @@ class PrepareDataCLI:
                 max_workers=max_workers,
                 adjust_mode=adjust_mode,
                 factor_dir=factor_dir,
+                download_state_path=download_state_path,
             )
 
         if sync_instruments and not all_market:
@@ -139,7 +144,7 @@ class PrepareDataCLI:
         若早期后复权价格仍等于除权价，请先运行本命令再 apply_adjust。
         """
         end = end_date or datetime.now().strftime("%Y-%m-%d")
-        raw_path = Path(raw_dir).expanduser() if raw_dir else default_raw_dir("none")
+        raw_path = Path(raw_dir).expanduser() if raw_dir else existing_raw_dir("none")
         factor_path = resolve_factor_dir(factor_dir)
 
         if all_market:
@@ -200,8 +205,8 @@ class PrepareDataCLI:
         import pandas as pd
 
         mode = normalize_adjust_mode(adjust_mode)
-        raw_path = Path(raw_dir).expanduser() if raw_dir else default_raw_dir("none")
-        factor_path = resolve_factor_dir(factor_dir)
+        raw_path = Path(raw_dir).expanduser() if raw_dir else existing_raw_dir("none")
+        factor_path = Path(factor_dir).expanduser() if factor_dir else existing_factor_dir()
         out_path = (
             Path(output_dir).expanduser()
             if output_dir
@@ -348,6 +353,7 @@ class PrepareDataCLI:
         dump_workers: int = 16,
         adjust_mode: str = "none",
         factor_dir: str | None = None,
+        download_state_path: str | None = None,
         target_mode: str = "forward",
         apply_adjust_after_download: bool = True,
     ) -> None:
@@ -370,6 +376,7 @@ class PrepareDataCLI:
             max_workers=max_workers,
             adjust_mode=adjust_mode,
             factor_dir=factor_dir,
+            download_state_path=download_state_path,
         )
         convert_mode = adjust_mode
         convert_path = data_dir
