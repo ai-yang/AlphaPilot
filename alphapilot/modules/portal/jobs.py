@@ -1,0 +1,335 @@
+"""Persistent background jobs for long-running portal actions."""
+
+from __future__ import annotations
+
+import contextlib
+import dataclasses
+import json
+import multiprocessing
+import os
+import signal
+import sys
+import time
+import traceback
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable
+
+JobKind = str
+JobStatus = str
+
+VALID_KINDS = {"mine", "factor_backtest", "strategy_backtest"}
+TERMINAL_STATUSES = {"succeeded", "failed", "cancelled", "lost"}
+
+
+def default_job_root() -> Path:
+    """Return the persistent portal job directory."""
+    configured = os.getenv("ALPHAPILOT_PORTAL_JOB_ROOT")
+    if configured:
+        return Path(configured).expanduser()
+    return Path.cwd() / "git_ignore_folder" / "portal_jobs"
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _job_path(job_dir: Path) -> Path:
+    return job_dir / "job.json"
+
+
+def _result_path(job_dir: Path) -> Path:
+    return job_dir / "result.json"
+
+
+def _log_path(job_dir: Path) -> Path:
+    return job_dir / "run.log"
+
+
+def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    tmp.replace(path)
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _patch_job(job_dir: Path, changes: dict[str, Any]) -> dict[str, Any]:
+    path = _job_path(job_dir)
+    payload = _read_json(path)
+    payload.update(changes)
+    _atomic_write_json(path, payload)
+    return payload
+
+
+def _jsonable(value: Any) -> Any:
+    if dataclasses.is_dataclass(value):
+        return _jsonable(dataclasses.asdict(value))
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_jsonable(v) for v in value]
+    try:
+        json.dumps(value)
+        return value
+    except TypeError:
+        return repr(value)
+
+
+def _result_summary(result: Any) -> str:
+    if result is None:
+        return "completed"
+    if isinstance(result, list):
+        return f"list[{len(result)}]"
+    if isinstance(result, dict):
+        keys = ", ".join(list(result.keys())[:8])
+        return f"dict({keys})"
+    text = repr(result)
+    return text if len(text) <= 500 else text[:497] + "..."
+
+
+def _pid_exists(pid: int | None) -> bool:
+    if not pid:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _new_job_id(kind: JobKind) -> str:
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"{stamp}_{kind}_{uuid.uuid4().hex[:8]}"
+
+
+def _run_target(kind: JobKind, kwargs: dict[str, Any]) -> Any:
+    from alphapilot.kernel import build_engine
+
+    engine = build_engine(discover=True)
+    if kind == "mine":
+        return engine.get_module("alpha_mining").run_mining(**kwargs)
+    if kind == "factor_backtest":
+        return engine.get_module("alpha_mining").run_backtest(**kwargs)
+    if kind == "strategy_backtest":
+        return engine.get_module("strategy_backtest").strategy_backtest(**kwargs)
+    raise ValueError(f"Unsupported portal job kind: {kind!r}")
+
+
+def _job_worker(job_dir_raw: str, kind: JobKind, kwargs: dict[str, Any]) -> None:
+    job_dir = Path(job_dir_raw)
+    job_id = job_dir.name
+    log_file = _log_path(job_dir)
+    os.environ["ALPHAPILOT_PORTAL_JOB_ID"] = job_id
+    os.environ.setdefault("ALPHAPILOT_PORTAL_JOB_DIR", str(job_dir))
+
+    if kind == "strategy_backtest" and not kwargs.get("run_tag"):
+        kwargs = dict(kwargs)
+        kwargs["run_tag"] = f"portal_{job_id}"
+
+    with log_file.open("a", encoding="utf-8", buffering=1) as stream:
+        with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
+            print(f"[portal-job] job_id={job_id} kind={kind} pid={os.getpid()}")
+            print(f"[portal-job] kwargs={json.dumps(_jsonable(kwargs), ensure_ascii=False)}")
+            _patch_job(
+                job_dir,
+                {
+                    "pid": os.getpid(),
+                    "status": "running",
+                    "started_at": utc_now(),
+                    "params": _jsonable(kwargs),
+                },
+            )
+            try:
+                result = _run_target(kind, kwargs)
+                result_payload = _jsonable(result)
+                _atomic_write_json(_result_path(job_dir), {"result": result_payload})
+                _patch_job(
+                    job_dir,
+                    {
+                        "status": "succeeded",
+                        "finished_at": utc_now(),
+                        "returncode": 0,
+                        "error": None,
+                        "result_summary": _result_summary(result),
+                    },
+                )
+                print("[portal-job] succeeded")
+            except BaseException as exc:  # noqa: BLE001
+                traceback.print_exc()
+                _patch_job(
+                    job_dir,
+                    {
+                        "status": "failed",
+                        "finished_at": utc_now(),
+                        "returncode": 1,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    },
+                )
+                raise
+
+
+ProcessFactory = Callable[[Callable[..., None], tuple[Any, ...]], Any]
+
+
+def start_job(
+    kind: JobKind,
+    kwargs: dict[str, Any],
+    *,
+    job_root: Path | str | None = None,
+    process_factory: ProcessFactory | None = None,
+) -> dict[str, Any]:
+    """Create a persistent job and start its worker process."""
+    if kind not in VALID_KINDS:
+        raise ValueError(f"Unsupported portal job kind: {kind!r}")
+
+    root = Path(job_root) if job_root is not None else default_job_root()
+    root.mkdir(parents=True, exist_ok=True)
+    job_id = _new_job_id(kind)
+    job_dir = root / job_id
+    job_dir.mkdir(parents=False, exist_ok=False)
+
+    payload = {
+        "job_id": job_id,
+        "kind": kind,
+        "status": "running",
+        "pid": None,
+        "params": _jsonable(kwargs),
+        "job_dir": str(job_dir),
+        "log_path": str(_log_path(job_dir)),
+        "result_path": str(_result_path(job_dir)),
+        "created_at": utc_now(),
+        "started_at": None,
+        "finished_at": None,
+        "returncode": None,
+        "error": None,
+        "result_summary": None,
+    }
+    _atomic_write_json(_job_path(job_dir), payload)
+    _log_path(job_dir).touch()
+
+    args = (str(job_dir), kind, dict(kwargs))
+    if process_factory is None:
+        ctx = multiprocessing.get_context("spawn")
+        process = ctx.Process(target=_job_worker, args=args, daemon=False)
+    else:
+        process = process_factory(_job_worker, args)
+    try:
+        process.start()
+    except Exception as exc:
+        _patch_job(
+            job_dir,
+            {
+                "status": "failed",
+                "finished_at": utc_now(),
+                "returncode": None,
+                "error": f"Failed to start worker: {type(exc).__name__}: {exc}",
+            },
+        )
+        raise
+    return _patch_job(job_dir, {"pid": getattr(process, "pid", None)})
+
+
+def _refresh_job(job: dict[str, Any]) -> dict[str, Any]:
+    if job.get("status") != "running":
+        return job
+    pid = job.get("pid")
+    try:
+        pid_int = int(pid) if pid is not None else None
+    except (TypeError, ValueError):
+        pid_int = None
+    if not pid_int:
+        return job
+    if _pid_exists(pid_int):
+        return job
+
+    job_dir = Path(job["job_dir"])
+    latest = _read_json(_job_path(job_dir))
+    if latest.get("status") in TERMINAL_STATUSES:
+        return latest
+    latest.update(
+        {
+            "status": "lost",
+            "finished_at": utc_now(),
+            "returncode": None,
+            "error": "Worker process is no longer running and did not write a terminal status.",
+        }
+    )
+    _atomic_write_json(_job_path(job_dir), latest)
+    return latest
+
+
+def list_jobs(*, job_root: Path | str | None = None, refresh: bool = True) -> list[dict[str, Any]]:
+    root = Path(job_root) if job_root is not None else default_job_root()
+    if not root.is_dir():
+        return []
+    jobs: list[dict[str, Any]] = []
+    for path in root.glob("*/job.json"):
+        try:
+            job = _read_json(path)
+            if refresh:
+                job = _refresh_job(job)
+            jobs.append(job)
+        except Exception:  # noqa: BLE001
+            continue
+    return sorted(jobs, key=lambda item: item.get("created_at") or "", reverse=True)
+
+
+def get_job(job_id: str, *, job_root: Path | str | None = None) -> dict[str, Any]:
+    root = Path(job_root) if job_root is not None else default_job_root()
+    job = _read_json(root / job_id / "job.json")
+    return _refresh_job(job)
+
+
+def read_log_tail(job_id: str, *, job_root: Path | str | None = None, max_chars: int = 12000) -> str:
+    job = get_job(job_id, job_root=job_root)
+    path = Path(job["log_path"])
+    if not path.exists():
+        return ""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    return text[-max_chars:]
+
+
+def read_result(job_id: str, *, job_root: Path | str | None = None) -> dict[str, Any] | None:
+    job = get_job(job_id, job_root=job_root)
+    path = Path(job["result_path"])
+    if not path.exists():
+        return None
+    return _read_json(path)
+
+
+def cancel_job(job_id: str, *, job_root: Path | str | None = None) -> dict[str, Any]:
+    job = get_job(job_id, job_root=job_root)
+    if job.get("status") in TERMINAL_STATUSES:
+        return job
+
+    pid = job.get("pid")
+    pid_int = int(pid) if pid is not None else None
+    if pid_int and _pid_exists(pid_int):
+        os.kill(pid_int, signal.SIGTERM)
+        time.sleep(0.2)
+
+    job_dir = Path(job["job_dir"])
+    return _patch_job(
+        job_dir,
+        {
+            "status": "cancelled",
+            "finished_at": utc_now(),
+            "returncode": -signal.SIGTERM,
+            "error": "Cancelled from portal.",
+        },
+    )
+
+
+if __name__ == "__main__":
+    # Useful for ad-hoc worker debugging without importing Streamlit.
+    _, job_dir_arg, kind_arg, kwargs_arg = sys.argv
+    _job_worker(job_dir_arg, kind_arg, json.loads(kwargs_arg))

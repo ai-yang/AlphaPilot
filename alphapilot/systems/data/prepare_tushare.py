@@ -63,6 +63,11 @@ FACTOR_COLUMNS = [
     "foreAdjustFactor",
     "backAdjustFactor",
 ]
+_TUSHARE_ADJ_BY_MODE = {
+    "none": None,
+    "forward": "qfq",
+    "backward": "hfq",
+}
 
 # Tushare ``daily_basic`` (每日指标) is gated behind the 2000-point tier. Its
 # fields map onto the price-CSV columns ``pro.daily`` cannot fill, which the
@@ -400,6 +405,38 @@ def _get_all_tushare_stocks(client: Any) -> list[str]:
     return list(dict.fromkeys(codes))
 
 
+def _query_daily_bars(
+    client: Any,
+    ts_code: str,
+    start_date: str,
+    end_date: str,
+    mode: AdjustMode,
+) -> pd.DataFrame:
+    """Query Tushare daily bars, using pro_bar for adjusted downloads."""
+    if mode == "none":
+        return client.daily(
+            ts_code=ts_code,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+    adj = _TUSHARE_ADJ_BY_MODE[mode]
+    try:
+        import tushare as ts
+    except ImportError as exc:
+        raise ImportError("未安装 tushare，无法调用 pro_bar 下载复权行情。") from exc
+
+    return ts.pro_bar(
+        ts_code=ts_code,
+        api=client,
+        start_date=start_date,
+        end_date=end_date,
+        adj=adj,
+        freq="D",
+        asset="E",
+    )
+
+
 def download_tushare_data(
     start_date: str,
     end_date: str,
@@ -420,8 +457,8 @@ def download_tushare_data(
     Download Tushare daily bars into AlphaPilot-compatible per-symbol CSV files.
 
     ``adjust_mode=none`` writes unadjusted daily bars and Tushare ``adj_factor``
-    rows. Generate forward/backward adjusted data by running the existing
-    ``apply_adjust`` step over the Tushare raw/factor directories.
+    rows. ``forward`` / ``backward`` write adjusted bars directly via Tushare
+    ``pro_bar`` (qfq / hfq), matching the baostock download semantics.
 
     ``include_daily_basic=True`` additionally pulls Tushare ``daily_basic``
     (每日指标, requires the 2000-point tier) and fills the ``turn`` / ``peTTM`` /
@@ -430,15 +467,11 @@ def download_tushare_data(
     price/factor data are still written.
     """
     mode = normalize_adjust_mode(adjust_mode)
-    if mode != "none":
-        raise ValueError(
-            "Tushare 下载第一版仅支持 adjust_mode=none。"
-            "请先下载除权行情和 adj_factor，再运行 apply_adjust 生成复权数据。"
-        )
     output_path = Path(output_dir).expanduser()
     output_path.mkdir(parents=True, exist_ok=True)
-    factor_path = resolve_tushare_factor_dir(factor_dir)
-    factor_path.mkdir(parents=True, exist_ok=True)
+    factor_path = resolve_tushare_factor_dir(factor_dir) if mode == "none" else None
+    if factor_path is not None:
+        factor_path.mkdir(parents=True, exist_ok=True)
     state_path = resolve_download_state_path(download_state_path, output_path)
     state_store = DownloadStateStore(state_path)
     pro = client or _get_tushare_client(token)
@@ -510,7 +543,7 @@ def download_tushare_data(
                 return
 
             output_file = output_path / f"{_csv_stem(code)}.csv"
-            factor_file = factor_path / f"{_csv_stem(code)}.csv"
+            factor_file = factor_path / f"{_csv_stem(code)}.csv" if factor_path else None
 
             if not _has_trading_day(trading_dates, start, end_date):
                 state_store.upsert(
@@ -528,15 +561,21 @@ def download_tushare_data(
 
             ts_code = baostock_to_tushare(code)
             try:
-                daily_df = pro.daily(
+                daily_df = _query_daily_bars(
+                    pro,
                     ts_code=ts_code,
                     start_date=_to_tushare_date(start),
                     end_date=_to_tushare_date(end_date),
+                    mode=mode,
                 )
-                adj_df = pro.adj_factor(
-                    ts_code=ts_code,
-                    start_date=_to_tushare_date(start_date),
-                    end_date=_to_tushare_date(end_date),
+                adj_df = (
+                    pro.adj_factor(
+                        ts_code=ts_code,
+                        start_date=_to_tushare_date(start_date),
+                        end_date=_to_tushare_date(end_date),
+                    )
+                    if mode == "none"
+                    else None
                 )
             except Exception as exc:  # noqa: BLE001 - record API failures per symbol
                 logger.warning(f"Tushare 获取 {code} 失败: {exc}")
@@ -566,10 +605,11 @@ def download_tushare_data(
                 stats.incr("empty")
                 return
 
-            new_factor_df = _normalize_factor_frame(adj_df, code)
-            combined_factor_df = _merge_factor_csv(factor_file, new_factor_df)
-            combined_factor_df.to_csv(factor_file, index=False, encoding="utf-8")
-            stats.incr("factor_updated")
+            if mode == "none" and factor_file is not None:
+                new_factor_df = _normalize_factor_frame(adj_df, code)
+                combined_factor_df = _merge_factor_csv(factor_file, new_factor_df)
+                combined_factor_df.to_csv(factor_file, index=False, encoding="utf-8")
+                stats.incr("factor_updated")
 
             combined_df = _merge_price_csv(output_file, new_df)
 
@@ -657,12 +697,15 @@ def download_cn_data(
     """Tushare-flavoured CN data downloader with the same shape as prepare_cn."""
     if end_date is None:
         end_date = datetime.now().strftime("%Y-%m-%d")
-    raw_dir = resolve_tushare_raw_dir(data_dir, adjust_mode)
     mode = normalize_adjust_mode(adjust_mode)
+    raw_dir = resolve_tushare_raw_dir(data_dir, mode)
     logger.info(
         f"开始下载 Tushare A 股数据 ({mode}): {start_date} ~ {end_date} -> {raw_dir}"
     )
-    logger.info(f"Tushare 复权因子目录: {resolve_tushare_factor_dir(factor_dir)}")
+    if mode != "none":
+        logger.info(f"Tushare 复权模式: {_TUSHARE_ADJ_BY_MODE[mode]} (pro_bar)")
+    else:
+        logger.info(f"Tushare 复权因子目录: {resolve_tushare_factor_dir(factor_dir)}")
     if include_daily_basic:
         logger.info("已启用 daily_basic（每日指标，需 2000 积分）: 将填充 turn/peTTM/pbMRQ/psTTM")
     codes = download_tushare_data(
@@ -673,7 +716,7 @@ def download_cn_data(
         code_column=code_column,
         all_market=all_market,
         max_workers=max_workers,
-        adjust_mode=adjust_mode,
+        adjust_mode=mode,
         factor_dir=factor_dir,
         symbols=symbols,
         download_state_path=download_state_path,

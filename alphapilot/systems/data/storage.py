@@ -12,8 +12,12 @@ previously hardcoded ``~/.qlib/...`` locations all flow from
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from alphapilot.kernel.config import DataConfig
+if TYPE_CHECKING:
+    # Only needed for type hints; importing at runtime would re-enter
+    # ``kernel.config`` while it is still initializing (circular import).
+    from alphapilot.kernel.config import DataConfig
 
 
 class DataStorage:

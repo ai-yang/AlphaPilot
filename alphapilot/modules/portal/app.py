@@ -46,6 +46,18 @@ def _safe_metric(fn: Callable[[], Any], default: Any = "—") -> Any:
         return default
 
 
+def _nonempty_kwargs(raw: dict[str, Any]) -> dict[str, Any]:
+    """Drop blank optional form fields while preserving falsey booleans/zeroes."""
+    out: dict[str, Any] = {}
+    for key, value in raw.items():
+        if isinstance(value, str):
+            if value.strip():
+                out[key] = value.strip()
+        elif value is not None:
+            out[key] = value
+    return out
+
+
 def _recent_mining_sessions(log_dir: Path | str, limit: int = 5) -> list[str]:
     """Most-recent mining session folder names under *log_dir* (by mtime)."""
     root = Path(log_dir)
@@ -111,25 +123,86 @@ def _render_data_tab(engine: Any) -> None:
             st.error(t("universe_failed", error=exc))
 
     st.markdown(f"#### {t('data_ops_heading')}")
-    action = st.selectbox(t("data_action"), ["pipeline", "download", "convert", "build_h5"], key="data_action")
+    action = st.selectbox(
+        t("data_action"),
+        ["pipeline", "download", "apply_adjust", "convert", "build_h5"],
+        key="data_action",
+    )
 
-    # Source selection only applies to download (pipeline/convert run on baostock).
+    # Pipeline/convert still use the data system defaults; download/apply_adjust are source-aware.
     is_download = action == "download"
+    is_apply_adjust = action == "apply_adjust"
     source = "baostock_cn"
-    if is_download:
-        source = st.selectbox(t("data_source"), ["baostock_cn", "tushare_cn"], key="data_dl_source")
-    is_tushare = is_download and source == "tushare_cn"
+    if is_download or is_apply_adjust:
+        source_key = "data_dl_source" if is_download else "data_apply_source"
+        source = st.selectbox(t("data_source"), ["baostock_cn", "tushare_cn"], key=source_key)
+    is_tushare = source == "tushare_cn"
 
-    start_date = st.text_input(t("start_date"), "2005-01-01")
-    end_date = st.text_input(t("end_date"), "")
-    stock_csv = st.text_input(t("stock_csv"), str(default_stock_csv_path()))
+    start_date = end_date = ""
+    if action in ("pipeline", "download"):
+        start_date = st.text_input(t("start_date"), "2005-01-01")
+        end_date = st.text_input(t("end_date"), "")
+    elif action == "build_h5":
+        start_date = st.text_input(t("start_date"), "2005-01-01")
 
-    # Tushare only supports unadjusted download; lock adjust_mode to avoid a ValueError.
-    if is_tushare:
-        adjust_mode = "none"
-        st.info(t("tushare_adjust_note"))
+    stock_csv = ""
+    if action in ("pipeline", "download", "convert"):
+        stock_csv = st.text_input(t("stock_csv"), str(default_stock_csv_path()))
+
+    apply_raw_dir = apply_factor_dir = apply_output_dir = ""
+    apply_default_raw_dir = apply_default_factor_dir = apply_default_output_dir = ""
+    refresh_factors_if_needed = False
+    if is_apply_adjust:
+        from alphapilot.systems.data.data_paths import (
+            canonical_baostock_raw_dir,
+            canonical_tushare_factor_dir,
+            canonical_tushare_raw_dir,
+            existing_baostock_factor_dir,
+            existing_baostock_raw_dir,
+        )
+
+        st.info(t("apply_adjust_note"))
+        adjust_mode = st.selectbox(
+            t("apply_adjust_target_mode"),
+            ["forward", "backward"],
+            index=0,
+            key="data_apply_adjust_mode",
+        )
+        if is_tushare:
+            apply_default_raw_dir = str(canonical_tushare_raw_dir("none"))
+            apply_default_factor_dir = str(canonical_tushare_factor_dir())
+            apply_default_output_dir = str(canonical_tushare_raw_dir(adjust_mode))
+            st.info(t("apply_adjust_tushare_note"))
+        else:
+            apply_default_raw_dir = str(existing_baostock_raw_dir("none"))
+            apply_default_factor_dir = str(existing_baostock_factor_dir())
+            apply_default_output_dir = str(canonical_baostock_raw_dir(adjust_mode))
+        with st.expander(t("apply_adjust_custom_params")):
+            apply_raw_dir = st.text_input(
+                t("apply_adjust_raw_dir"),
+                apply_default_raw_dir,
+                key=f"data_apply_raw_dir_{source}",
+            )
+            apply_factor_dir = st.text_input(
+                t("apply_adjust_factor_dir"),
+                apply_default_factor_dir,
+                key=f"data_apply_factor_dir_{source}",
+            )
+            apply_output_dir = st.text_input(
+                t("apply_adjust_output_dir"),
+                apply_default_output_dir,
+                key=f"data_apply_output_dir_{source}_{adjust_mode}",
+            )
+            if not is_tushare:
+                refresh_factors_if_needed = st.checkbox(
+                    t("apply_adjust_refresh_factors"),
+                    value=False,
+                    key="data_apply_refresh_factors",
+                )
     else:
         adjust_mode = st.selectbox(t("adjust_mode"), ["backward", "forward", "none"], index=0)
+        if is_tushare:
+            st.info(t("tushare_adjust_note"))
 
     output_dir = factor_dir = code_column = token = ""
     all_market = include_daily_basic = False
@@ -144,7 +217,7 @@ def _render_data_tab(engine: Any) -> None:
                 include_daily_basic = st.checkbox(
                     t("include_daily_basic"), value=False, key="data_dl_daily_basic"
                 )
-    if is_tushare:
+    if is_download and is_tushare:
         st.warning(t("tushare_manage_boundary"))
 
     if st.button(t("run_data_action")):
@@ -154,6 +227,13 @@ def _render_data_tab(engine: Any) -> None:
             if action == "build_h5":
                 if start_date.strip():
                     kwargs["start_date"] = start_date.strip()
+            elif action == "apply_adjust":
+                kwargs["adjust_mode"] = adjust_mode
+                kwargs["raw_dir"] = apply_raw_dir.strip() or apply_default_raw_dir
+                kwargs["factor_dir"] = apply_factor_dir.strip() or apply_default_factor_dir
+                kwargs["output_dir"] = apply_output_dir.strip() or apply_default_output_dir
+                if refresh_factors_if_needed and not is_tushare:
+                    kwargs["refresh_factors_if_needed"] = True
             else:
                 if end_date.strip():
                     kwargs["end_date"] = end_date.strip()
@@ -280,6 +360,24 @@ def _render_stock_manage(data_system: Any) -> None:
             st.success(t("stock_refreshed", name=symbol))
         except Exception as exc:  # noqa: BLE001
             st.error(t("stock_refresh_failed", error=exc))
+
+    # --- Apply adjust (unadjusted + factors -> forward/backward CSV) ---
+    st.markdown(f"##### {t('stock_apply_adjust_heading')}")
+    st.caption(t("stock_apply_adjust_caption"))
+    apply_target = st.selectbox(
+        t("stock_apply_adjust_target"),
+        ["forward", "backward"],
+        index=0,
+        key="portal_stock_apply_target",
+    )
+    if st.button(t("stock_apply_adjust_btn"), key="portal_stock_apply_btn"):
+        try:
+            report = data_system.apply_adjust_symbol(symbol, target_mode=apply_target)
+            st.cache_data.clear()
+            st.success(t("stock_apply_adjusted", name=symbol, mode=apply_target))
+            st.json(report)
+        except Exception as exc:  # noqa: BLE001
+            st.error(t("stock_apply_adjust_failed", error=exc))
 
     # --- Trim ---
     st.markdown(f"##### {t('stock_trim_heading')}")
@@ -506,9 +604,118 @@ def _render_module_hub(engine: Any) -> None:
             st.error(t("command_failed", error=exc))
 
 
+def _render_portal_jobs_panel(key_prefix: str) -> None:
+    from alphapilot.modules.portal import jobs as portal_jobs
+
+    st.markdown(f"#### {t('jobs_heading')}")
+    st.caption(t("jobs_caption"))
+    cols = st.columns([1, 1, 2])
+    if cols[0].button(t("jobs_refresh"), key=f"{key_prefix}_jobs_refresh"):
+        st.rerun()
+    cols[1].text_input(
+        t("jobs_root"),
+        value=str(portal_jobs.default_job_root()),
+        disabled=True,
+        key=f"{key_prefix}_jobs_root",
+    )
+
+    jobs = portal_jobs.list_jobs()
+    if not jobs:
+        st.info(t("jobs_empty"))
+        return
+
+    rows = [
+        {
+            "job_id": job.get("job_id"),
+            "kind": job.get("kind"),
+            "status": job.get("status"),
+            "pid": job.get("pid"),
+            "started_at": job.get("started_at") or job.get("created_at"),
+            "finished_at": job.get("finished_at"),
+            "summary": job.get("result_summary") or job.get("error") or "",
+        }
+        for job in jobs
+    ]
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+
+    selected_id = st.selectbox(
+        t("jobs_select"),
+        [job["job_id"] for job in jobs],
+        format_func=lambda job_id: _format_job_label(next(j for j in jobs if j["job_id"] == job_id)),
+        key=f"{key_prefix}_jobs_select",
+    )
+    selected = next(job for job in jobs if job["job_id"] == selected_id)
+    st.json(selected, expanded=False)
+    if selected.get("status") == "succeeded":
+        st.success(t("jobs_finished_hint"))
+    elif selected.get("status") in {"failed", "lost"}:
+        st.error(t("jobs_failed_hint"))
+
+    if selected.get("status") == "running":
+        if st.button(t("jobs_cancel"), key=f"{key_prefix}_jobs_cancel_{selected_id}"):
+            try:
+                portal_jobs.cancel_job(selected_id)
+                st.warning(t("jobs_cancelled", job_id=selected_id))
+                st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                st.error(t("jobs_cancel_failed", error=exc))
+
+    log_tail = portal_jobs.read_log_tail(selected_id)
+    with st.expander(t("jobs_log_tail"), expanded=True):
+        st.code(log_tail or t("jobs_log_empty"), language=None)
+
+    result = portal_jobs.read_result(selected_id)
+    if result is not None:
+        with st.expander(t("jobs_result"), expanded=False):
+            st.json(result)
+
+
+def _format_job_label(job: dict[str, Any]) -> str:
+    return f"{job.get('job_id')} [{job.get('kind')} / {job.get('status')}]"
+
+
+def _render_mine_launcher() -> None:
+    from alphapilot.modules.portal import jobs as portal_jobs
+
+    st.markdown(f"#### {t('mine_start_heading')}")
+    st.info(t("jobs_resource_warning"))
+    with st.form("portal_mine_start_form"):
+        c1, c2 = st.columns(2)
+        step_n = c1.number_input(t("mine_step_n"), min_value=1, max_value=1000, value=1, step=1)
+        scenario = c2.text_input(t("mine_scenario"), value="alpha_factor_mining")
+        direction = st.text_area(t("mine_direction"), value="", height=90)
+        with st.expander(t("advanced_options"), expanded=False):
+            path = st.text_input(t("mine_resume_path"), value="")
+            qlib_config_name = st.text_input(t("qlib_config_name"), value="", key="mine_qlib_config")
+            qlib_template_dir = st.text_input(t("qlib_template_dir"), value="", key="mine_qlib_template")
+        submitted = st.form_submit_button(t("mine_start_btn"), type="primary")
+
+    if submitted:
+        kwargs = _nonempty_kwargs(
+            {
+                "step_n": int(step_n),
+                "scenario": scenario,
+                "direction": direction,
+                "path": path,
+                "qlib_config_name": qlib_config_name,
+                "qlib_template_dir": qlib_template_dir,
+            }
+        )
+        try:
+            job = portal_jobs.start_job("mine", kwargs)
+            st.success(t("job_started", job_id=job["job_id"]))
+            st.rerun()
+        except Exception as exc:  # noqa: BLE001
+            st.error(t("job_start_failed", error=exc))
+
+
 def _render_mine_log_tab(engine: Any) -> None:
     from alphapilot.log.ui.panel import render_log_ui_panel
 
+    _render_mine_launcher()
+    st.divider()
+    _render_portal_jobs_panel("portal_mine")
+    st.divider()
     mining_module = engine.get_module("alpha_mining")
     render_log_ui_panel(
         log_dir=engine.config.log_dir,
@@ -531,9 +738,89 @@ def _render_data_viz_tab() -> None:
     )
 
 
+def _render_backtest_launcher(engine: Any) -> None:
+    from alphapilot.modules.portal import jobs as portal_jobs
+
+    st.markdown(f"#### {t('bt_start_heading')}")
+    st.info(t("jobs_resource_warning"))
+    factor_tab, strategy_tab = st.tabs([t("bt_start_factor_csv"), t("bt_start_strategy_asset")])
+
+    with factor_tab:
+        with st.form("portal_factor_backtest_form"):
+            factor_path = st.text_input(t("factor_path"), value="")
+            c1, c2 = st.columns(2)
+            scenario = c1.text_input(t("bt_scenario"), value="factor_backtest", key="factor_bt_scenario")
+            qlib_config_name = c2.text_input(t("qlib_config_name"), value="", key="factor_bt_qlib_config")
+            qlib_template_dir = st.text_input(t("qlib_template_dir"), value="", key="factor_bt_qlib_template")
+            submitted = st.form_submit_button(t("bt_start_factor_btn"), type="primary")
+        if submitted:
+            if not factor_path.strip():
+                st.warning(t("factor_path_required"))
+            else:
+                kwargs = _nonempty_kwargs(
+                    {
+                        "factor_path": factor_path,
+                        "scenario": scenario,
+                        "qlib_config_name": qlib_config_name,
+                        "qlib_template_dir": qlib_template_dir,
+                    }
+                )
+                try:
+                    job = portal_jobs.start_job("factor_backtest", kwargs)
+                    st.success(t("job_started", job_id=job["job_id"]))
+                    st.rerun()
+                except Exception as exc:  # noqa: BLE001
+                    st.error(t("job_start_failed", error=exc))
+
+    with strategy_tab:
+        strategies = _safe_metric(
+            lambda: engine.get_system("strategy").param_database.list_strategies(),
+            default=[],
+        )
+        with st.form("portal_strategy_backtest_form"):
+            if isinstance(strategies, list) and strategies:
+                strategy_name = st.selectbox(t("strategy_name"), strategies, key="bt_strategy_name_select")
+            else:
+                strategy_name = st.text_input(t("strategy_name"), value="", key="bt_strategy_name_text")
+                st.caption(t("no_stored_params"))
+            c1, c2 = st.columns(2)
+            mode = c1.selectbox(t("bt_strategy_mode"), ["both", "retrain", "reuse_model"], index=0)
+            scenario = c2.text_input(t("bt_scenario"), value="factor_backtest", key="strategy_bt_scenario")
+            qlib_data_dir = st.text_input(t("qlib_data_dir"), value="", key="strategy_bt_qlib_data")
+            qlib_config_name = st.text_input(t("qlib_config_name"), value="", key="strategy_bt_qlib_config")
+            qlib_template_dir = st.text_input(t("qlib_template_dir"), value="", key="strategy_bt_qlib_template")
+            run_tag = st.text_input(t("bt_run_tag"), value="", key="strategy_bt_run_tag")
+            submitted = st.form_submit_button(t("bt_start_strategy_btn"), type="primary")
+        if submitted:
+            if not str(strategy_name).strip():
+                st.warning(t("strategy_name_required"))
+            else:
+                kwargs = _nonempty_kwargs(
+                    {
+                        "strategy_name": strategy_name,
+                        "mode": mode,
+                        "scenario": scenario,
+                        "qlib_data_dir": qlib_data_dir,
+                        "qlib_config_name": qlib_config_name,
+                        "qlib_template_dir": qlib_template_dir,
+                        "run_tag": run_tag,
+                    }
+                )
+                try:
+                    job = portal_jobs.start_job("strategy_backtest", kwargs)
+                    st.success(t("job_started", job_id=job["job_id"]))
+                    st.rerun()
+                except Exception as exc:  # noqa: BLE001
+                    st.error(t("job_start_failed", error=exc))
+
+
 def _render_backtest_tab(engine: Any) -> None:
     st.subheader(t("backtest_subheader"))
-    tab_list, tab_detail = st.tabs([t("bt_tab_runs"), t("bt_tab_detail")])
+    tab_start, tab_list, tab_detail = st.tabs([t("bt_tab_start"), t("bt_tab_runs"), t("bt_tab_detail")])
+    with tab_start:
+        _render_backtest_launcher(engine)
+        st.divider()
+        _render_portal_jobs_panel("portal_bt")
     with tab_list:
         backtest_system = engine.get_system("backtest")
         st.text_input(

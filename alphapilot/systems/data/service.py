@@ -63,6 +63,10 @@ class QlibDataSystem(BaseDataSystem):
         )
         return source.download(request)
 
+    def apply_adjust(self, **options: Any) -> Any:
+        """Synthesize forward/backward CSVs from unadjusted bars + adjust factors."""
+        return self.run_action("apply_adjust", **options)
+
     def convert(self, **options: Any) -> Any:
         if "command" in options and isinstance(options["command"], DataConvertCommand):
             command = options.pop("command")
@@ -174,6 +178,27 @@ class QlibDataSystem(BaseDataSystem):
         )
         self._warn_h5_stale(report)
         return report
+
+    def apply_adjust_symbol(
+        self,
+        symbol: str,
+        *,
+        target_mode: str = "forward",
+        raw_dir: str | None = None,
+        factor_dir: str | None = None,
+        output_dir: str | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        from alphapilot.systems.data import manage
+
+        return manage.apply_adjust_symbol(
+            symbol,
+            target_mode=target_mode,
+            raw_dir=raw_dir,
+            factor_dir=factor_dir,
+            output_dir=output_dir,
+            dry_run=dry_run,
+        )
 
     def trim_symbol(
         self,

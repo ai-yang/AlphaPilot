@@ -260,11 +260,63 @@ def delete_symbol(
     if remove_from_instruments:
         report["instruments_updated"] = strip_instrument(qlib_dir, qlib_id, dry_run=dry_run)
 
-    logger.info(
-        f"删除股票 {code} ({stem}){' [dry-run]' if dry_run else ''}: "
+    logger.info(f"删除股票 {code} ({stem}){' [dry-run]' if dry_run else ''}: "
         f"删除 {len(report['deleted'])} 项，缺失 {len(report['missing'])} 项，"
         f"instruments 更新 {report['instruments_updated']}"
     )
+    return report
+
+
+# ---------------------------------------------------------------------------
+# Apply adjust (unadjusted CSV + factor -> forward/backward CSV)
+# ---------------------------------------------------------------------------
+
+
+def apply_adjust_symbol(
+    symbol: str,
+    *,
+    target_mode: str = "forward",
+    raw_dir: str | Path | None = None,
+    factor_dir: str | Path | None = None,
+    output_dir: str | Path | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Synthesize one stock's forward/backward CSV from unadjusted bars + factors."""
+    from alphapilot.systems.data.adjust_prices import apply_adjust_to_frame
+
+    code, stem, _ = _resolve_codes(symbol)
+    mode = normalize_adjust_mode(target_mode)
+    if mode == "none":
+        raise ValueError("target_mode 须为 forward 或 backward")
+
+    raw_root = Path(raw_dir).expanduser() if raw_dir else _raw_dir("none")
+    factor_root = Path(factor_dir).expanduser() if factor_dir else existing_factor_dir()
+    out_root = Path(output_dir).expanduser() if output_dir else _raw_dir(mode)
+    csv = raw_root / f"{stem}.csv"
+    factor_csv = factor_root / f"{stem}.csv"
+
+    if not csv.is_file():
+        raise FileNotFoundError(f"未找到除权 CSV: {csv}")
+    if not factor_csv.is_file():
+        raise FileNotFoundError(f"未找到复权因子 CSV: {factor_csv}")
+
+    price_df = pd.read_csv(csv)
+    factor_df = pd.read_csv(factor_csv)
+    adjusted = apply_adjust_to_frame(price_df, factor_df, mode, symbol=stem)
+    out_path = out_root / f"{stem}.csv"
+
+    report: dict[str, Any] = {
+        "symbol": code,
+        "stem": stem,
+        "target_mode": mode,
+        "rows": len(adjusted),
+        "output": str(out_path),
+        "dry_run": dry_run,
+    }
+    if not dry_run:
+        out_root.mkdir(parents=True, exist_ok=True)
+        adjusted.to_csv(out_path, index=False, encoding="utf-8")
+        logger.info(f"单股复权 {code} ({stem}) -> {mode}: {out_path} ({len(adjusted)} 行)")
     return report
 
 
