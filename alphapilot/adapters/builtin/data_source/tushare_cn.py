@@ -35,6 +35,7 @@ class TushareDataSourceAdapter(BaseDataSourceAdapter):
         factor_dir = options.pop("factor_dir", None)
         download_state_path = options.pop("download_state_path", None)
         token = options.pop("token", None)
+        include_daily_basic = bool(options.pop("include_daily_basic", False))
 
         raw_dir = (
             Path(request.output_dir).expanduser()
@@ -55,6 +56,7 @@ class TushareDataSourceAdapter(BaseDataSourceAdapter):
             symbols=request.symbols,
             download_state_path=download_state_path,
             token=token,
+            include_daily_basic=include_daily_basic,
         )
         return DataDownloadResult(
             output_dir=Path(raw_dir),

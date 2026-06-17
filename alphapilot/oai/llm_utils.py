@@ -65,7 +65,7 @@ def md5_hash(input_string: str) -> str:
 try:
     from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 except ImportError:
-    logger.warning("azure.identity is not installed.")
+    pass
 
 try:
     import openai
@@ -75,7 +75,7 @@ except ImportError:
 try:
     from llama import Llama
 except ImportError:
-    logger.warning("llama is not installed.")
+    pass
 
 
 class ConvManager:

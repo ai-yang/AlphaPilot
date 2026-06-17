@@ -49,22 +49,21 @@ def _env_path_legacy(name: str, legacy_name: str, default: Path) -> Path:
     return Path(value).expanduser() if value else default
 
 
-from alphapilot.systems.data.data_paths import (
-    existing_baostock_factor_dir,
-    existing_baostock_qlib_dir,
-    existing_baostock_raw_dir,
-)
-
-
 def _default_qlib_data_dir() -> Path:
+    from alphapilot.systems.data.data_paths import existing_baostock_qlib_dir
+
     return _env_path("ALPHAPILOT_QLIB_DATA_DIR", existing_baostock_qlib_dir())
 
 
 def _default_raw_data_dir() -> Path:
+    from alphapilot.systems.data.data_paths import existing_baostock_raw_dir
+
     return _env_path("ALPHAPILOT_RAW_DATA_DIR", existing_baostock_raw_dir("backward"))
 
 
 def _default_factor_dir() -> Path:
+    from alphapilot.systems.data.data_paths import existing_baostock_factor_dir
+
     return _env_path("ALPHAPILOT_ADJUST_FACTOR_DIR", existing_baostock_factor_dir())
 
 

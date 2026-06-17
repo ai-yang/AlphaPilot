@@ -64,12 +64,25 @@ FACTOR_COLUMNS = [
     "backAdjustFactor",
 ]
 
+# Tushare ``daily_basic`` (每日指标) is gated behind the 2000-point tier. Its
+# fields map onto the price-CSV columns ``pro.daily`` cannot fill, which the
+# baostock schema already reserves (left as NA when daily_basic is disabled).
+DAILY_BASIC_COLUMN_MAP: dict[str, str] = {
+    "turnover_rate": "turn",
+    "pe_ttm": "peTTM",
+    "pb": "pbMRQ",
+    "ps_ttm": "psTTM",
+}
+DAILY_BASIC_FIELDS = "ts_code,trade_date," + ",".join(DAILY_BASIC_COLUMN_MAP)
+
 
 @dataclass
 class _TushareDownloadStats:
     skipped_up_to_date: int = 0
     price_updated: int = 0
     factor_updated: int = 0
+    basic_updated: int = 0
+    basic_failed: int = 0
     skipped_no_trading_days: int = 0
     empty: int = 0
     errors: int = 0
@@ -284,6 +297,47 @@ def _normalize_factor_frame(df: pd.DataFrame, code: str) -> pd.DataFrame:
     return out[FACTOR_COLUMNS]
 
 
+def _normalize_daily_basic_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """Map Tushare ``daily_basic`` rows to price-CSV columns, keyed by ``date``."""
+    columns = ["date", *DAILY_BASIC_COLUMN_MAP.values()]
+    if df is None or df.empty:
+        return pd.DataFrame(columns=columns)
+
+    out = pd.DataFrame()
+    out["date"] = pd.to_datetime(
+        df["trade_date"].astype(str),
+        format="%Y%m%d",
+        errors="coerce",
+    )
+    for src, dst in DAILY_BASIC_COLUMN_MAP.items():
+        out[dst] = pd.to_numeric(df.get(src), errors="coerce")
+    out = out.dropna(subset=["date"])
+    if out.empty:
+        return pd.DataFrame(columns=columns)
+    out["date"] = out["date"].dt.strftime("%Y-%m-%d")
+    out = out.drop_duplicates(subset=["date"], keep="last")
+    return out[columns]
+
+
+def _apply_daily_basic(price_df: pd.DataFrame, basic_df: pd.DataFrame) -> pd.DataFrame:
+    """Fill ``turn``/``peTTM``/``pbMRQ``/``psTTM`` in *price_df* from daily_basic.
+
+    Values are merged by ``date``; existing non-null values are kept where the
+    daily_basic frame has no row for that date (so a narrower fetch never wipes
+    previously-saved indicators).
+    """
+    if basic_df is None or basic_df.empty:
+        return price_df
+    indexed = basic_df.set_index("date")
+    for dst in DAILY_BASIC_COLUMN_MAP.values():
+        if dst not in indexed.columns:
+            continue
+        mapped = price_df["date"].map(indexed[dst])
+        existing = pd.to_numeric(price_df.get(dst), errors="coerce")
+        price_df[dst] = mapped.combine_first(existing)
+    return price_df
+
+
 def _merge_price_csv(output_file: Path, new_df: pd.DataFrame) -> pd.DataFrame:
     if output_file.exists():
         existing_df = pd.read_csv(output_file)
@@ -359,6 +413,7 @@ def download_tushare_data(
     symbols: list[str] | None = None,
     download_state_path: str | Path | None = None,
     token: str | None = None,
+    include_daily_basic: bool = False,
     client: Any | None = None,
 ) -> list[str]:
     """
@@ -367,6 +422,12 @@ def download_tushare_data(
     ``adjust_mode=none`` writes unadjusted daily bars and Tushare ``adj_factor``
     rows. Generate forward/backward adjusted data by running the existing
     ``apply_adjust`` step over the Tushare raw/factor directories.
+
+    ``include_daily_basic=True`` additionally pulls Tushare ``daily_basic``
+    (每日指标, requires the 2000-point tier) and fills the ``turn`` / ``peTTM`` /
+    ``pbMRQ`` / ``psTTM`` columns in the same per-symbol price CSV. Accounts
+    without enough points degrade gracefully: a warning is logged per symbol and
+    price/factor data are still written.
     """
     mode = normalize_adjust_mode(adjust_mode)
     if mode != "none":
@@ -511,6 +572,31 @@ def download_tushare_data(
             stats.incr("factor_updated")
 
             combined_df = _merge_price_csv(output_file, new_df)
+
+            if include_daily_basic:
+                # daily_basic needs the 2000-point tier; fetch it separately so a
+                # permission/quota error never aborts the price+factor download.
+                # Pulled over the full [start_date, end_date] window (like
+                # adj_factor) so existing rows get backfilled in incremental runs.
+                try:
+                    basic_df = pro.daily_basic(
+                        ts_code=ts_code,
+                        start_date=_to_tushare_date(start_date),
+                        end_date=_to_tushare_date(end_date),
+                        fields=DAILY_BASIC_FIELDS,
+                    )
+                except Exception as exc:  # noqa: BLE001 - degrade without points
+                    logger.warning(
+                        f"Tushare daily_basic 获取 {code} 失败（需 2000 积分）: {exc}"
+                    )
+                    basic_df = None
+                    stats.incr("basic_failed")
+
+                normalized_basic = _normalize_daily_basic_frame(basic_df)
+                if not normalized_basic.empty:
+                    combined_df = _apply_daily_basic(combined_df, normalized_basic)
+                    stats.incr("basic_updated")
+
             combined_df.to_csv(output_file, index=False, encoding="utf-8")
             stats.incr("price_updated")
             data_end_date = pd.to_datetime(combined_df["date"], errors="coerce").max()
@@ -531,12 +617,18 @@ def download_tushare_data(
             for future in tqdm(as_completed(futures), total=len(futures), desc="Tushare下载"):
                 future.result()
 
+        basic_summary = (
+            f"每日指标更新={stats.basic_updated}, 每日指标失败={stats.basic_failed}, "
+            if include_daily_basic
+            else ""
+        )
         logger.info(
             "Tushare 下载统计: "
             f"跳过(已最新)={stats.skipped_up_to_date}, "
             f"跳过(无交易日)={stats.skipped_no_trading_days}, "
             f"补行情={stats.price_updated}, "
             f"因子更新={stats.factor_updated}, "
+            f"{basic_summary}"
             f"空结果={stats.empty}, "
             f"错误={stats.errors}"
         )
@@ -559,6 +651,7 @@ def download_cn_data(
     symbols: list[str] | None = None,
     download_state_path: str | Path | None = None,
     token: str | None = None,
+    include_daily_basic: bool = False,
     client: Any | None = None,
 ) -> list[str]:
     """Tushare-flavoured CN data downloader with the same shape as prepare_cn."""
@@ -570,6 +663,8 @@ def download_cn_data(
         f"开始下载 Tushare A 股数据 ({mode}): {start_date} ~ {end_date} -> {raw_dir}"
     )
     logger.info(f"Tushare 复权因子目录: {resolve_tushare_factor_dir(factor_dir)}")
+    if include_daily_basic:
+        logger.info("已启用 daily_basic（每日指标，需 2000 积分）: 将填充 turn/peTTM/pbMRQ/psTTM")
     codes = download_tushare_data(
         start_date=start_date,
         end_date=end_date,
@@ -583,6 +678,7 @@ def download_cn_data(
         symbols=symbols,
         download_state_path=download_state_path,
         token=token,
+        include_daily_basic=include_daily_basic,
         client=client,
     )
     logger.info("Tushare CSV 下载完成。")

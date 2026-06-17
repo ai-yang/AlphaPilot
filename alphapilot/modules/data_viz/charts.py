@@ -27,27 +27,27 @@ def build_candlestick_figure(df: pd.DataFrame, *, title: str = "") -> go.Figure:
         row_heights=row_heights,
     )
 
-    hover_parts = [
-        "日期: %{x|%Y-%m-%d}",
-        "开盘: %{open:.4f}",
-        "最高: %{high:.4f}",
-        "最低: %{low:.4f}",
-        "收盘: %{close:.4f}",
-    ]
-    extra_series: list[pd.Series] = []
-    if "pctChg" in plot_df.columns:
-        extra_series.append(plot_df["pctChg"].fillna(0))
-        hover_parts.append(f"涨跌幅: %{{customdata[{len(extra_series) - 1}]:.2f}}%")
-    if "amount" in plot_df.columns:
-        extra_series.append(plot_df["amount"].fillna(0))
-        hover_parts.append(f"成交额: %{{customdata[{len(extra_series) - 1}]:,.0f}}")
-    if "turn" in plot_df.columns:
-        extra_series.append(plot_df["turn"].fillna(0))
-        hover_parts.append(f"换手率: %{{customdata[{len(extra_series) - 1}]:.2f}}%")
-
-    customdata = (
-        pd.concat(extra_series, axis=1).values if extra_series else None
-    )
+    hover_text = []
+    for row in plot_df.itertuples(index=False):
+        row_data = row._asdict()
+        date_text = pd.to_datetime(row_data["date"]).strftime("%Y-%m-%d")
+        parts = [
+            f"日期: {date_text}",
+            f"开盘: {row_data['open']:.4f}",
+            f"最高: {row_data['high']:.4f}",
+            f"最低: {row_data['low']:.4f}",
+            f"收盘: {row_data['close']:.4f}",
+        ]
+        if "pctChg" in plot_df.columns:
+            value = row_data.get("pctChg", 0)
+            parts.append(f"涨跌幅: {0 if pd.isna(value) else value:.2f}%")
+        if "amount" in plot_df.columns:
+            value = row_data.get("amount", 0)
+            parts.append(f"成交额: {0 if pd.isna(value) else value:,.0f}")
+        if "turn" in plot_df.columns:
+            value = row_data.get("turn", 0)
+            parts.append(f"换手率: {0 if pd.isna(value) else value:.2f}%")
+        hover_text.append("<br>".join(parts))
 
     fig.add_trace(
         go.Candlestick(
@@ -61,8 +61,8 @@ def build_candlestick_figure(df: pd.DataFrame, *, title: str = "") -> go.Figure:
             decreasing_line_color="#22c55e",
             increasing_fillcolor="#ef4444",
             decreasing_fillcolor="#22c55e",
-            customdata=customdata,
-            hovertemplate="<br>".join(hover_parts) + "<extra></extra>",
+            text=hover_text,
+            hoverinfo="text",
         ),
         row=1,
         col=1,
@@ -87,15 +87,50 @@ def build_candlestick_figure(df: pd.DataFrame, *, title: str = "") -> go.Figure:
         )
 
     fig.update_layout(
-        title=title or "K线图",
+        title=dict(
+            text=title or "K线图",
+            x=0.01,
+            y=0.99,
+            xanchor="left",
+            yanchor="top",
+            font=dict(size=14),
+        ),
         xaxis_rangeslider_visible=False,
         height=720 if has_volume else 560,
-        margin=dict(l=50, r=30, t=50, b=40),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
-        hovermode="x unified",
+        margin=dict(l=50, r=30, t=82, b=40),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.04,
+            xanchor="right",
+            x=1,
+        ),
+        hovermode="x",
+        hoverlabel=dict(
+            align="left",
+            bgcolor="rgba(17, 24, 39, 0.92)",
+            bordercolor="rgba(148, 163, 184, 0.75)",
+            font=dict(color="white", size=12),
+        ),
     )
-    fig.update_xaxes(type="date", row=rows, col=1)
-    fig.update_yaxes(title_text="价格", row=1, col=1)
+    fig.update_xaxes(type="date")
+    fig.update_xaxes(
+        showspikes=True,
+        spikemode="across",
+        spikesnap="cursor",
+        spikecolor="#94a3b8",
+        spikethickness=1,
+    )
+    fig.update_yaxes(
+        title_text="价格",
+        showspikes=True,
+        spikemode="across",
+        spikesnap="cursor",
+        spikecolor="#94a3b8",
+        spikethickness=1,
+        row=1,
+        col=1,
+    )
     if has_volume:
         fig.update_yaxes(title_text="成交量", row=2, col=1)
 

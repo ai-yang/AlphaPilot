@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import streamlit as st
 
@@ -38,27 +38,22 @@ def _safe_json_load(raw: str) -> dict[str, Any]:
     return value
 
 
-def _show_header(engine: Any) -> None:
-    st.title(t("header_title"))
-    st.caption(t("header_caption"))
-    c1, c2, c3 = st.columns(3)
-    c1.metric(t("metric_systems"), len(engine.systems))
-    c2.metric(t("metric_modules"), len(engine.modules))
-    c3.metric(t("metric_module_commands"), len(engine.collect_commands()))
+def _safe_metric(fn: Callable[[], Any], default: Any = "—") -> Any:
+    """Compute a dashboard metric, degrading to *default* on any error."""
+    try:
+        return fn()
+    except Exception:  # noqa: BLE001
+        return default
 
 
-def _show_sidebar(engine: Any) -> None:
-    language_selector()
-    st.sidebar.divider()
-    st.sidebar.header(t("sidebar_runtime"))
-    st.sidebar.code(engine.config.summary(), language=None)
-    if st.sidebar.button(t("sidebar_reload")):
-        st.cache_resource.clear()
-        st.rerun()
-    st.sidebar.divider()
-    st.sidebar.subheader(t("sidebar_loaded_modules"))
-    for name, module in engine.modules.items():
-        st.sidebar.write(t("sidebar_module_entry", name=name, count=len(module.commands())))
+def _recent_mining_sessions(log_dir: Path | str, limit: int = 5) -> list[str]:
+    """Most-recent mining session folder names under *log_dir* (by mtime)."""
+    root = Path(log_dir)
+    if not root.is_dir():
+        return []
+    dirs = [p for p in root.iterdir() if p.is_dir()]
+    dirs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    return [p.name for p in dirs[:limit]]
 
 
 def _render_overview(engine: Any) -> None:
@@ -99,6 +94,7 @@ def _render_data_tab(engine: Any) -> None:
     st.subheader(t("data_subheader"))
     data_system = engine.get_system("data")
     cfg = engine.config.data
+    from alphapilot.kernel.paths import default_stock_csv_path
 
     c1, c2, c3 = st.columns(3)
     c1.text_input(t("qlib_data_dir"), str(cfg.qlib_data_dir), disabled=True)
@@ -116,21 +112,79 @@ def _render_data_tab(engine: Any) -> None:
 
     st.markdown(f"#### {t('data_ops_heading')}")
     action = st.selectbox(t("data_action"), ["pipeline", "download", "convert", "build_h5"], key="data_action")
+
+    # Source selection only applies to download (pipeline/convert run on baostock).
+    is_download = action == "download"
+    source = "baostock_cn"
+    if is_download:
+        source = st.selectbox(t("data_source"), ["baostock_cn", "tushare_cn"], key="data_dl_source")
+    is_tushare = is_download and source == "tushare_cn"
+
     start_date = st.text_input(t("start_date"), "2005-01-01")
     end_date = st.text_input(t("end_date"), "")
-    stock_csv = st.text_input(t("stock_csv"), "")
-    adjust_mode = st.selectbox(t("adjust_mode"), ["backward", "forward"], index=0)
+    stock_csv = st.text_input(t("stock_csv"), str(default_stock_csv_path()))
+
+    # Tushare only supports unadjusted download; lock adjust_mode to avoid a ValueError.
+    if is_tushare:
+        adjust_mode = "none"
+        st.info(t("tushare_adjust_note"))
+    else:
+        adjust_mode = st.selectbox(t("adjust_mode"), ["backward", "forward", "none"], index=0)
+
+    output_dir = factor_dir = code_column = token = ""
+    all_market = include_daily_basic = False
+    if is_download:
+        with st.expander(t("download_custom_params")):
+            output_dir = st.text_input(t("download_output_dir"), "", key="data_dl_output_dir")
+            factor_dir = st.text_input(t("download_factor_dir"), "", key="data_dl_factor_dir")
+            code_column = st.text_input(t("download_code_column"), "", key="data_dl_code_column")
+            all_market = st.checkbox(t("download_all_market"), value=False, key="data_dl_all_market")
+            if is_tushare:
+                token = st.text_input(t("tushare_token"), "", type="password", key="data_dl_token")
+                include_daily_basic = st.checkbox(
+                    t("include_daily_basic"), value=False, key="data_dl_daily_basic"
+                )
+    if is_tushare:
+        st.warning(t("tushare_manage_boundary"))
+
     if st.button(t("run_data_action")):
         try:
             kwargs: dict[str, Any] = {}
-            if end_date.strip():
-                kwargs["end_date"] = end_date.strip()
-            if stock_csv.strip():
-                kwargs["stock_csv"] = stock_csv.strip()
+
+            if action == "build_h5":
+                if start_date.strip():
+                    kwargs["start_date"] = start_date.strip()
+            else:
+                if end_date.strip():
+                    kwargs["end_date"] = end_date.strip()
+                if stock_csv.strip() and not all_market:
+                    kwargs["stock_csv"] = stock_csv.strip()
+
             if action in ("pipeline", "convert"):
                 kwargs["adjust_mode"] = adjust_mode
             if action in ("pipeline", "download"):
                 kwargs["start_date"] = start_date.strip()
+
+            if is_download:
+                if not all_market and not stock_csv.strip():
+                    st.warning(t("download_requires_stock_csv"))
+                    return
+                kwargs["adjust_mode"] = adjust_mode
+                kwargs["source"] = source
+                if output_dir.strip():
+                    kwargs["output_dir"] = output_dir.strip()
+                if factor_dir.strip():
+                    kwargs["factor_dir"] = factor_dir.strip()
+                if code_column.strip():
+                    kwargs["code_column"] = code_column.strip()
+                if all_market:
+                    kwargs["all_market"] = True
+                if is_tushare:
+                    if token.strip():
+                        kwargs["token"] = token.strip()
+                    if include_daily_basic:
+                        kwargs["include_daily_basic"] = True
+
             result = getattr(data_system, action)(**kwargs)
             st.success(t("data_action_finished", action=action))
             st.write(result)
@@ -161,6 +215,7 @@ def _render_h5_rebuild(data_system: Any) -> None:
 def _render_stock_manage(data_system: Any) -> None:
     """Single-stock delete / refresh / trim controls in the Data tab."""
     st.markdown(f"#### {t('stock_manage_heading')}")
+    st.info(t("stock_manage_baostock_only"))
     st.caption(t("stock_manage_caption"))
     try:
         by_mode = data_system.list_symbols()
@@ -528,40 +583,157 @@ def _render_backtest_tab(engine: Any) -> None:
         )
 
 
-def main() -> None:
-    with st.spinner(t("loading_engine")):
-        engine = _load_engine()
-    _show_header(engine)
-    _show_sidebar(engine)
-
-    tab_overview, tab_data, tab_data_viz, tab_mine_log, tab_factor, tab_strategy, tab_backtest, tab_module = st.tabs(
-        [
-            t("tab_overview"),
-            t("tab_data"),
-            t("tab_data_viz"),
-            t("tab_mine_log"),
-            t("tab_factor"),
-            t("tab_strategy"),
-            t("tab_backtest"),
-            t("tab_modules"),
-        ]
-    )
-    with tab_overview:
-        _render_overview(engine)
-    with tab_data:
-        _render_data_tab(engine)
-    with tab_data_viz:
-        _render_data_viz_tab()
-    with tab_mine_log:
-        _render_mine_log_tab(engine)
+def _render_library(engine: Any) -> None:
+    """Factor + strategy asset management under one page."""
+    tab_factor, tab_strategy = st.tabs([t("lib_tab_factor"), t("lib_tab_strategy")])
     with tab_factor:
         _render_factor_tab(engine)
     with tab_strategy:
         _render_strategy_tab(engine)
-    with tab_backtest:
-        _render_backtest_tab(engine)
-    with tab_module:
-        _render_module_hub(engine)
+
+
+def _render_market_data(engine: Any) -> None:
+    """Data download / management + K-line viewer under one page."""
+    tab_manage, tab_kline = st.tabs([t("market_tab_manage"), t("market_tab_kline")])
+    with tab_manage:
+        _render_data_tab(engine)
+    with tab_kline:
+        _render_data_viz_tab()
+
+
+def _render_advanced(engine: Any) -> None:
+    """Developer surfaces: runtime info, system/module overview, command runner."""
+    st.subheader(t("advanced_subheader"))
+    st.caption(t("advanced_caption"))
+    c1, c2, c3 = st.columns(3)
+    c1.metric(t("metric_systems"), len(engine.systems))
+    c2.metric(t("metric_modules"), len(engine.modules))
+    c3.metric(t("metric_module_commands"), len(engine.collect_commands()))
+    with st.expander(t("sidebar_runtime"), expanded=False):
+        st.code(engine.config.summary(), language=None)
+        if st.button(t("sidebar_reload"), key="advanced_reload"):
+            st.cache_resource.clear()
+            st.rerun()
+    st.divider()
+    _render_overview(engine)
+    st.divider()
+    _render_module_hub(engine)
+
+
+def _render_home(engine: Any) -> None:
+    """Trader-facing landing page: status at a glance + quick actions."""
+    pages = st.session_state.get("_nav_pages", {})
+    st.title(t("header_title"))
+    st.caption(t("home_caption"))
+
+    data_system = engine.get_system("data")
+    factor_system = engine.get_system("factor")
+    strategy_system = engine.get_system("strategy")
+    backtest_system = engine.get_system("backtest")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric(
+        t("home_metric_symbols"),
+        _safe_metric(lambda: len({s for syms in data_system.list_symbols().values() for s in syms})),
+    )
+    c2.metric(t("home_metric_factors"), _safe_metric(lambda: len(factor_system.list_factors())))
+    c3.metric(
+        t("home_metric_strategies"),
+        _safe_metric(lambda: len(strategy_system.param_database.list_strategies())),
+    )
+    runs = _safe_metric(lambda: list(backtest_system.results.list_runs()), default=[])
+    c4.metric(t("home_metric_backtests"), len(runs) if isinstance(runs, list) else "—")
+    if isinstance(runs, list) and runs:
+        try:
+            latest = max(runs, key=lambda p: p.stat().st_mtime).name
+            st.caption(t("home_latest_backtest", name=latest))
+        except Exception:  # noqa: BLE001
+            pass
+
+    st.divider()
+    st.markdown(f"#### 🔬 {t('home_recent_mining')}")
+    sessions = _recent_mining_sessions(engine.config.log_dir)
+    if sessions:
+        for name in sessions:
+            st.write(f"- `{name}`")
+    else:
+        st.info(t("home_no_mining"))
+    if pages.get("mining") and st.button(
+        f"🔬 {t('home_go_mining')}", type="primary", use_container_width=True, key="home_go_mining"
+    ):
+        st.switch_page(pages["mining"])
+
+    st.divider()
+    st.markdown(f"#### {t('home_quick_actions')}")
+    q1, q2, q3 = st.columns(3)
+    if pages.get("market") and q1.button(
+        f"📈 {t('home_go_data')}", use_container_width=True, key="home_go_data"
+    ):
+        st.switch_page(pages["market"])
+    if pages.get("backtest") and q2.button(
+        f"📊 {t('home_go_backtest')}", use_container_width=True, key="home_go_backtest"
+    ):
+        st.switch_page(pages["backtest"])
+    if pages.get("library") and q3.button(
+        f"📚 {t('home_go_library')}", use_container_width=True, key="home_go_library"
+    ):
+        st.switch_page(pages["library"])
+
+
+def _page_home() -> None:
+    _render_home(_load_engine())
+
+
+def _page_mining() -> None:
+    _render_mine_log_tab(_load_engine())
+
+
+def _page_backtest() -> None:
+    _render_backtest_tab(_load_engine())
+
+
+def _page_library() -> None:
+    _render_library(_load_engine())
+
+
+def _page_market() -> None:
+    _render_market_data(_load_engine())
+
+
+def _page_advanced() -> None:
+    _render_advanced(_load_engine())
+
+
+def main() -> None:
+    with st.spinner(t("loading_engine")):
+        _load_engine()
+    language_selector()
+
+    home_page = st.Page(_page_home, title=t("page_home"), icon="🏠", default=True)
+    mining_page = st.Page(_page_mining, title=t("page_mining"), icon="🔬")
+    backtest_page = st.Page(_page_backtest, title=t("page_backtest"), icon="📊")
+    library_page = st.Page(_page_library, title=t("page_library"), icon="📚")
+    market_page = st.Page(_page_market, title=t("page_market"), icon="📈")
+    advanced_page = st.Page(_page_advanced, title=t("page_advanced"), icon="⚙️")
+
+    # Stash page handles before nav.run() so the Home page can st.switch_page() to them.
+    st.session_state["_nav_pages"] = {
+        "home": home_page,
+        "mining": mining_page,
+        "backtest": backtest_page,
+        "library": library_page,
+        "market": market_page,
+        "advanced": advanced_page,
+    }
+
+    st.navigation(
+        {
+            t("nav_group_overview"): [home_page],
+            t("nav_group_data"): [market_page],
+            t("nav_group_research"): [mining_page, backtest_page, library_page],
+            t("nav_group_system"): [advanced_page],
+        }
+    ).run()
 
 
 if __name__ == "__main__":

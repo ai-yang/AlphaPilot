@@ -334,6 +334,14 @@ TUSHARE_TOKEN=你的token alphapilot prepare_data --action download \
   --stock_csv important_data/stock_lists/main_stock_2026_4_27.csv \
   --adjust_mode none
 
+# 1b) 会员可选：附带每日指标（daily_basic，需 Tushare 2000 积分）
+#     额外填充 turn/peTTM/pbMRQ/psTTM 到同一份行情 CSV
+TUSHARE_TOKEN=你的token alphapilot prepare_data --action download \
+  --source tushare_cn \
+  --stock_csv important_data/stock_lists/main_stock_2026_4_27.csv \
+  --adjust_mode none \
+  --include_daily_basic True
+
 # 2) 用 Tushare 目录合成前复权 CSV
 alphapilot prepare_data apply_adjust \
   --adjust_mode forward \
@@ -358,6 +366,22 @@ alphapilot prepare_data h5 \
 注意：当前默认 `pipeline` 仍走 baostock 流程；使用 Tushare 时请显式指定
 `--action download --source tushare_cn`，再分步执行 `apply_adjust`、`convert` 与 `h5`。
 Tushare 与 baostock 的 OHLC / 成交量单位不完全一致，**请勿混用同一 `qlib_dir`**。
+
+**`--include_daily_basic`（每日指标，需 2000 积分）**：`pro.daily()` 不返回换手率与估值，
+默认这些列留空（`NA`）。开启后会额外调用 `daily_basic` 并按交易日合并进**同一份** Tushare 行情
+CSV，填充以下列（与 baostock 同名，下游 `apply_adjust` / `convert` 无需改动）：
+
+| 行情 CSV 列 | Tushare `daily_basic` 字段 |
+|-------------|----------------------------|
+| `turn`      | `turnover_rate`（换手率） |
+| `peTTM`     | `pe_ttm` |
+| `pbMRQ`     | `pb` |
+| `psTTM`     | `ps_ttm` |
+
+- 积分不足/限流时**优雅降级**：仅打印告警并把该列留空，**不影响**行情与复权因子下载（统计行会显示「每日指标失败」计数）。
+- `daily_basic` 按 `[start_date, end_date]` 全窗口拉取，增量补行情时会顺带回填历史行；但若本地行情已是最新（零网络请求被整只跳过），不会单独触发回填——此时请清掉该股 CSV 或 `download_state` 后重下以补齐。
+- `pcfNcfTTM` / `isST` 不在 `daily_basic` 中，仍保持 `NA`。
+- 仅 Tushare 支持此参数；baostock 的 K 线接口已自带这些字段，传入会被忽略。
 
 **指定股票列表**（路径任意；推荐放在 `important_data/stock_lists/`）
 
@@ -672,8 +696,8 @@ alphapilot strategy_backtest \
 | `alphapilot portal` | **推荐** | 一站式 Web 门户：数据/因子/策略/回测、**挖掘日志**、**回测详情**、K 线、模块命令等 |
 | `alphapilot data_viz` | 可选独立 | 查看已下载股票 CSV：**K 线图**（门户「股票 K 线」标签已内嵌，通常无需单独启动） |
 | `alphapilot backtest_viz` | 可选独立 | 查看回测 workspace 产物（门户「回测 → 回测详情」已内嵌，通常无需单独启动） |
-| `alphapilot ui` | **已弃用** | 打印重定向提示 → 请使用 portal「挖掘日志」标签 |
-| `alphapilot backtest_ui` | **已弃用** | 打印重定向提示 → 请使用 portal「回测 → 回测详情」或 `backtest_viz` |
+| `alphapilot ui` | **已弃用** | 打印重定向提示 → 请使用 portal「因子挖掘」页 |
+| `alphapilot backtest_ui` | **已弃用** | 打印重定向提示 → 请使用 portal「回测分析 → 回测详情」或 `backtest_viz` |
 
 > 说明：CLI 入口已改为 **modules-only** 分发；新增第三方模块后会自动出现在 `alphapilot modules` 与 `alphapilot portal` 页面中。
 
@@ -698,21 +722,23 @@ alphapilot data_viz --port 19902
 alphapilot portal --port 19901
 ```
 
-浏览器打开 `http://localhost:19901`，可在一个页面中访问：
-- Data/Factor/Strategy/Backtest 四大系统能力
-- **数据** 标签页：查看路径、加载股票池、运行数据操作，并提供**单股管理**（**删除/刷新/裁剪单只股票**，自动单股重 dump + 「重建 daily_pv h5」按钮）
-- **因子** 标签页：校验/添加表达式（**失败时显示具体原因**：语法、与库内过于相似、重名等）、导入导出、**删除单条因子**（`important_data/factor_zoo/factor_zoo.csv`）
-- **策略** 标签页：查看/保存策略参数、**删除整个策略资产文件夹**
-- **股票 K 线** 标签页（内嵌 `data_viz`）
-- **挖掘日志** 标签页（原 `alphapilot ui`：假说、因子代码、反馈、Qlib 报告图等；支持**删除当前 log 会话**）
-- **回测** 标签页含两个子页：**运行列表**（可**删除 workspace**）+ **回测详情**（内嵌 `backtest_viz`，原 `alphapilot backtest_ui`）
-- 模块动态列表与 JSON 命令调度
+浏览器打开 `http://localhost:19901`。门户已按**交易者工作流**重组为**左侧分组导航**（不再是开发者风格的「系统/模块/命令」概览页）：
+
+- **🏠 首页**：关键状态一览（本地股票数、因子库/策略数量、回测记录数及最近一次回测）、**最近挖掘会话**列表，以及一键直达常用任务的快捷按钮（**因子挖掘**置顶）。
+- **研究** 分组
+  - **🔬 因子挖掘**：输入市场假说、Start/Stop 挖掘（需后端服务可用）、查看每轮假说/因子代码/反馈与 Qlib 报告图；支持**删除当前 log 会话**。
+  - **📊 回测分析**：**运行列表**（可**删除 workspace**）+ **回测详情**（内嵌 `backtest_viz`：收益曲线、持仓、成交）。
+  - **📚 因子 / 策略库**：因子校验/添加（**失败时显示具体原因**：语法、与库内过于相似、重名等）、导入导出、删除单条因子；策略参数查看/保存/导出、删除整个策略资产。
+- **数据** 分组
+  - **📈 行情数据**：**下载 / 管理** 子页（按数据源 baostock/tushare 下载、自定义下载参数、**单股删除/刷新/裁剪** + 「重建 daily_pv h5」）+ **K 线** 子页（内嵌 `data_viz`）。
+- **系统** 分组
+  - **⚙️ 高级**：原「概览」与「模块命令台」（系统/模块清单、JSON 命令调度）、运行时配置与「重新加载引擎」——日常交易无需使用，已默认收纳于此。
 
 门户使用 `.env` 中的 `ALPHAPILOT_LOG_DIR`、`ALPHAPILOT_WORKSPACE_ROOT`、`ALPHAPILOT_FACTOR_ZOO_DIR`、`ALPHAPILOT_STRATEGY_PARAM_DIR` 等作为默认路径。
 
-#### 4.2 挖掘日志（portal「挖掘日志」标签，原 `alphapilot ui`）
+#### 4.2 挖掘日志（portal「因子挖掘」页，原 `alphapilot ui`）
 
-用于监控 `alphapilot mine` 的完整迭代过程。在 portal 的「挖掘日志」标签中：
+用于监控 `alphapilot mine` 的完整迭代过程。在 portal 的「因子挖掘」页中：
 - 选择 `log/` 下的会话目录并刷新
 - 查看每轮假说、因子表达式、代码演化、回测反馈与指标图表
 - 支持 Start/Stop Mining API（若后端服务可用）
@@ -720,7 +746,7 @@ alphapilot portal --port 19901
 
 > `alphapilot ui` 已弃用，执行后仅打印 portal 重定向提示。
 
-#### 4.3 回测详情（portal「回测 → 回测详情」，原 `alphapilot backtest_ui`）
+#### 4.3 回测详情（portal「回测分析 → 回测详情」，原 `alphapilot backtest_ui`）
 
 在 portal「回测」标签的「运行列表」子页可列出并**删除**含 `ret.pkl` 的 workspace；「回测详情」子页中选择 `git_ignore_folder/RD-Agent_workspace` 下的工作区，查看收益曲线、持仓、成交等。下拉列表会尽量显示 **`log/` 里对应的会话文件夹名**。数据由 backtest system 的 `BacktestResultStore` 加载，底层解析在 `systems/backtest/artifacts.py`。
 
