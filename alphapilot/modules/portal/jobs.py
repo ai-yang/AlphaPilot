@@ -7,6 +7,7 @@ import dataclasses
 import json
 import multiprocessing
 import os
+import shutil
 import signal
 import sys
 import time
@@ -28,7 +29,10 @@ ALPHAFORGE_JOBS: dict[str, tuple[str, str]] = {
     "mine_dso": ("alphaforge_search", "mine_dso"),
 }
 
-VALID_KINDS = {"mine", "factor_backtest", "strategy_backtest", *ALPHAFORGE_JOBS}
+VALID_KINDS = {"mine", "factor_backtest", "strategy_backtest", "data", *ALPHAFORGE_JOBS}
+
+# Data-system actions runnable as a ``data`` job; ``kwargs["action"]`` selects one.
+DATA_ACTIONS = ("pipeline", "download", "apply_adjust", "convert", "build_h5")
 TERMINAL_STATUSES = {"succeeded", "failed", "cancelled", "lost"}
 
 
@@ -138,6 +142,12 @@ def _run_target(kind: JobKind, kwargs: dict[str, Any]) -> Any:
         return engine.get_module("alpha_mining").run_backtest(**kwargs)
     if kind == "strategy_backtest":
         return engine.get_module("strategy_backtest").strategy_backtest(**kwargs)
+    if kind == "data":
+        call_kwargs = dict(kwargs)
+        action = call_kwargs.pop("action", "pipeline")
+        if action not in DATA_ACTIONS:
+            raise ValueError(f"Unsupported data action: {action!r} (expected one of {DATA_ACTIONS})")
+        return getattr(engine.get_system("data"), action)(**call_kwargs)
     if kind in ALPHAFORGE_JOBS:
         module_name, command = ALPHAFORGE_JOBS[kind]
         return getattr(engine.get_module(module_name), command)(**kwargs)
@@ -347,6 +357,60 @@ def cancel_job(job_id: str, *, job_root: Path | str | None = None) -> dict[str, 
             "error": "Cancelled from portal.",
         },
     )
+
+
+def delete_job(
+    job_id: str,
+    *,
+    job_root: Path | str | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Delete a job's directory (metadata, log, result).
+
+    A still-running job is refused unless *force* is set, in which case its worker
+    is sent SIGTERM first. Returns ``{"job_id", "status", "deleted"}``.
+    """
+    root = Path(job_root) if job_root is not None else default_job_root()
+    job_dir = root / job_id
+    if not job_dir.is_dir():
+        raise FileNotFoundError(f"Job not found: {job_id}")
+
+    job = _refresh_job(_read_json(_job_path(job_dir)))
+    status = job.get("status")
+    if status == "running":
+        if not force:
+            raise RuntimeError(
+                f"Job {job_id} is still running; cancel it before deleting (or pass force=True)."
+            )
+        pid = job.get("pid")
+        try:
+            pid_int = int(pid) if pid is not None else None
+        except (TypeError, ValueError):
+            pid_int = None
+        if pid_int and _pid_exists(pid_int):
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.kill(pid_int, signal.SIGTERM)
+                time.sleep(0.2)
+
+    shutil.rmtree(job_dir, ignore_errors=True)
+    return {"job_id": job_id, "status": status, "deleted": not job_dir.exists()}
+
+
+def clear_finished_jobs(*, job_root: Path | str | None = None) -> int:
+    """Delete every job in a terminal status. Returns the number removed."""
+    removed = 0
+    for job in list_jobs(job_root=job_root, refresh=True):
+        if job.get("status") not in TERMINAL_STATUSES:
+            continue
+        job_id = job.get("job_id")
+        if not job_id:
+            continue
+        try:
+            if delete_job(job_id, job_root=job_root).get("deleted"):
+                removed += 1
+        except Exception:  # noqa: BLE001
+            continue
+    return removed
 
 
 if __name__ == "__main__":

@@ -738,7 +738,11 @@ def _render_portal_jobs_panel(key_prefix: str) -> None:
     cols = st.columns([1, 1, 2])
     if cols[0].button(t("jobs_refresh"), key=f"{key_prefix}_jobs_refresh"):
         st.rerun()
-    cols[1].text_input(
+    if cols[1].button(t("jobs_clear_finished"), key=f"{key_prefix}_jobs_clear_finished"):
+        removed = portal_jobs.clear_finished_jobs()
+        st.success(t("jobs_cleared", n=removed))
+        st.rerun()
+    cols[2].text_input(
         t("jobs_root"),
         value=str(portal_jobs.default_job_root()),
         disabled=True,
@@ -777,7 +781,8 @@ def _render_portal_jobs_panel(key_prefix: str) -> None:
     elif selected.get("status") in {"failed", "lost"}:
         st.error(t("jobs_failed_hint"))
 
-    if selected.get("status") == "running":
+    is_running = selected.get("status") == "running"
+    if is_running:
         if st.button(t("jobs_cancel"), key=f"{key_prefix}_jobs_cancel_{selected_id}"):
             try:
                 portal_jobs.cancel_job(selected_id)
@@ -785,6 +790,30 @@ def _render_portal_jobs_panel(key_prefix: str) -> None:
                 st.rerun()
             except Exception as exc:  # noqa: BLE001
                 st.error(t("jobs_cancel_failed", error=exc))
+
+    del_cols = st.columns([2, 1], vertical_alignment="bottom")
+    confirm_delete = del_cols[0].checkbox(
+        t("jobs_delete_confirm"),
+        key=f"{key_prefix}_jobs_delete_confirm_{selected_id}",
+        disabled=is_running,
+    )
+    if del_cols[1].button(
+        t("jobs_delete"),
+        key=f"{key_prefix}_jobs_delete_{selected_id}",
+        disabled=is_running,
+        width="stretch",
+    ):
+        if not confirm_delete:
+            st.warning(t("jobs_delete_confirm"))
+        else:
+            try:
+                portal_jobs.delete_job(selected_id)
+                st.success(t("jobs_deleted", job_id=selected_id))
+                st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                st.error(t("jobs_delete_failed", error=exc))
+    if is_running:
+        st.caption(t("jobs_delete_running_hint"))
 
     log_tail = portal_jobs.read_log_tail(selected_id)
     with st.expander(t("jobs_log_tail"), expanded=True):
@@ -1167,6 +1196,172 @@ def _render_advanced(engine: Any) -> None:
     _render_module_hub(engine)
 
 
+def _render_schedule_form(sched: Any) -> None:
+    """Create-schedule form: friendly per-kind fields + advanced JSON override."""
+    import json as _json
+    from datetime import time as _dt_time
+
+    from alphapilot.modules.portal import jobs as portal_jobs
+
+    name = st.text_input(t("sched_name"), key="sched_new_name")
+    kind = st.selectbox(
+        t("sched_kind"),
+        list(sched.SCHEDULE_KINDS),
+        format_func=lambda k: t(f"sched_kind_{k}"),
+        key="sched_new_kind",
+    )
+    tcol1, tcol2 = st.columns([1, 1], vertical_alignment="bottom")
+    run_time = tcol1.time_input(t("sched_time"), value=_dt_time(7, 30), key="sched_new_time")
+    enabled = tcol2.checkbox(t("sched_enabled"), value=True, key="sched_new_enabled")
+
+    kwargs: dict[str, Any] = {}
+    if kind == "data":
+        kwargs["action"] = st.selectbox(
+            t("sched_data_action"), list(portal_jobs.DATA_ACTIONS), key="sched_new_data_action"
+        )
+        kwargs["source"] = st.selectbox(
+            t("data_source"), ["baostock_cn", "tushare_cn"], key="sched_new_data_source"
+        )
+        dcol1, dcol2 = st.columns(2)
+        start_date = dcol1.text_input(t("sched_start_date"), key="sched_new_start")
+        end_date = dcol2.text_input(t("sched_end_date"), key="sched_new_end")
+        stock_csv = st.text_input(t("sched_stock_csv"), key="sched_new_csv")
+        token = st.text_input(t("tushare_token"), "", type="password", key="sched_new_token")
+        if start_date.strip():
+            kwargs["start_date"] = start_date.strip()
+        if end_date.strip():
+            kwargs["end_date"] = end_date.strip()
+        if stock_csv.strip():
+            kwargs["stock_csv"] = stock_csv.strip()
+        if token.strip():
+            kwargs["token"] = token.strip()
+    elif kind == "mine":
+        steps = st.number_input(t("sched_step_n"), min_value=0, value=0, step=1, key="sched_new_mine_step")
+        if int(steps) > 0:
+            kwargs["step_n"] = int(steps)
+        scenario = st.text_input(t("sched_scenario"), value="alpha_factor_mining", key="sched_new_mine_scn")
+        if scenario.strip():
+            kwargs["scenario"] = scenario.strip()
+        tmpl = st.text_input(t("sched_qlib_template_dir"), key="sched_new_mine_tmpl")
+        if tmpl.strip():
+            kwargs["qlib_template_dir"] = tmpl.strip()
+    elif kind == "factor_backtest":
+        steps = st.number_input(t("sched_step_n"), min_value=0, value=0, step=1, key="sched_new_bt_step")
+        if int(steps) > 0:
+            kwargs["step_n"] = int(steps)
+        factor_path = st.text_input(t("sched_factor_path"), key="sched_new_bt_fp")
+        if factor_path.strip():
+            kwargs["factor_path"] = factor_path.strip()
+        tmpl = st.text_input(t("sched_qlib_template_dir"), key="sched_new_bt_tmpl")
+        if tmpl.strip():
+            kwargs["qlib_template_dir"] = tmpl.strip()
+
+    advanced = st.text_area(
+        t("sched_advanced_kwargs"), value="", key="sched_new_adv", help=t("sched_advanced_help")
+    )
+    if advanced.strip():
+        try:
+            extra = _json.loads(advanced)
+        except Exception:  # noqa: BLE001
+            st.warning(t("sched_advanced_invalid"))
+            return
+        if not isinstance(extra, dict):
+            st.warning(t("sched_advanced_invalid"))
+            return
+        kwargs.update(extra)
+
+    if st.button(t("sched_create_btn"), key="sched_new_submit", type="primary"):
+        if not name.strip():
+            st.warning(t("sched_name_required"))
+            return
+        try:
+            sched.create_schedule(
+                name=name.strip(),
+                kind=kind,
+                time=run_time.strftime("%H:%M"),
+                kwargs=kwargs,
+                enabled=enabled,
+            )
+            st.success(t("sched_created", name=name.strip()))
+            st.rerun()
+        except Exception as exc:  # noqa: BLE001
+            st.error(t("sched_create_failed", error=exc))
+
+
+def _render_schedule_row(sched: Any, s: dict[str, Any]) -> None:
+    sid = s["schedule_id"]
+    with st.container(border=True):
+        cols = st.columns([3, 1, 1, 1], vertical_alignment="center")
+        next_run = sched.next_run_at(s).strftime("%Y-%m-%d %H:%M") if s.get("enabled") else "—"
+        cols[0].markdown(
+            f"**{s.get('name')}** · `{t('sched_kind_' + s['kind'])}` · ⏰ {s.get('time')}\n\n"
+            f"{t('sched_next_run')}: {next_run} · {t('sched_last_run')}: {s.get('last_run_date') or '—'}"
+        )
+        new_enabled = cols[1].toggle(
+            t("sched_enabled"), value=bool(s.get("enabled")), key=f"sched_en_{sid}"
+        )
+        if new_enabled != bool(s.get("enabled")):
+            sched.set_enabled(sid, new_enabled)
+            st.rerun()
+        if cols[2].button(t("sched_run_now"), key=f"sched_run_{sid}", width="stretch"):
+            try:
+                job = sched.run_now(sid)
+                st.success(t("sched_ran_now", job_id=job.get("job_id")))
+                st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                st.error(t("sched_run_failed", error=exc))
+        if cols[3].button(t("sched_delete"), key=f"sched_del_{sid}", width="stretch"):
+            st.session_state[f"sched_confirm_{sid}"] = True
+        if st.session_state.get(f"sched_confirm_{sid}"):
+            dc1, dc2 = st.columns([3, 1], vertical_alignment="center")
+            dc1.warning(t("sched_delete_confirm"))
+            if dc2.button(t("sched_delete_yes"), key=f"sched_delyes_{sid}", width="stretch"):
+                try:
+                    sched.delete_schedule(sid)
+                finally:
+                    st.session_state.pop(f"sched_confirm_{sid}", None)
+                st.rerun()
+        with st.expander(t("sched_params"), expanded=False):
+            st.json(s.get("kwargs") or {})
+
+
+def _render_scheduler_page() -> None:
+    """Daily scheduler: manage the daemon and the saved task schedules."""
+    from alphapilot.modules.portal import schedules as sched
+
+    st.header(f"⏰ {t('sched_title')}")
+    st.caption(t("sched_caption"))
+
+    status = sched.daemon_status()
+    with st.container(border=True):
+        c1, c2, c3 = st.columns([2, 1, 1], vertical_alignment="center")
+        if status["running"] and not status["stale"]:
+            c1.success(t("sched_daemon_running", pid=status["pid"], hb=status["heartbeat_at"]))
+        elif status["running"] and status["stale"]:
+            c1.warning(t("sched_daemon_stale", pid=status["pid"]))
+        else:
+            c1.error(t("sched_daemon_stopped"))
+        running_ok = bool(status["running"]) and not status["stale"]
+        if c2.button(t("sched_daemon_start"), key="sched_daemon_start", disabled=running_ok, width="stretch"):
+            sched.start_daemon()
+            st.rerun()
+        if c3.button(t("sched_daemon_stop"), key="sched_daemon_stop", disabled=not status["running"], width="stretch"):
+            sched.stop_daemon()
+            st.rerun()
+        st.caption(t("sched_daemon_hint"))
+
+    with st.expander(f"➕ {t('sched_create')}", expanded=False):
+        _render_schedule_form(sched)
+
+    st.markdown(f"#### {t('sched_list_heading')}")
+    rows = sched.list_schedules()
+    if not rows:
+        st.info(t("sched_empty"))
+        return
+    for s in rows:
+        _render_schedule_row(sched, s)
+
+
 def _render_home(engine: Any) -> None:
     """Trader-facing landing page: status at a glance + quick actions."""
     pages = st.session_state.get("_nav_pages", {})
@@ -1251,6 +1446,10 @@ def _page_advanced() -> None:
     _render_advanced(_load_engine())
 
 
+def _page_scheduler() -> None:
+    _render_scheduler_page()
+
+
 def main() -> None:
     with st.spinner(t("loading_engine")):
         _load_engine()
@@ -1261,6 +1460,7 @@ def main() -> None:
     backtest_page = st.Page(_page_backtest, title=t("page_backtest"), icon="📊")
     library_page = st.Page(_page_library, title=t("page_library"), icon="📚")
     market_page = st.Page(_page_market, title=t("page_market"), icon="📈")
+    scheduler_page = st.Page(_page_scheduler, title=t("page_scheduler"), icon="⏰")
     advanced_page = st.Page(_page_advanced, title=t("page_advanced"), icon="⚙️")
 
     # Stash page handles before nav.run() so the Home page can st.switch_page() to them.
@@ -1270,6 +1470,7 @@ def main() -> None:
         "backtest": backtest_page,
         "library": library_page,
         "market": market_page,
+        "scheduler": scheduler_page,
         "advanced": advanced_page,
     }
 
@@ -1278,6 +1479,7 @@ def main() -> None:
             t("nav_group_overview"): [home_page],
             t("nav_group_data"): [market_page],
             t("nav_group_research"): [mining_page, backtest_page, library_page],
+            t("nav_group_automation"): [scheduler_page],
             t("nav_group_system"): [advanced_page],
         }
     ).run()

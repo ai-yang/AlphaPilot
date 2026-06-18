@@ -6,6 +6,7 @@ public
 release-notes.md
 /tests
 /AlphaForge
+/openclaw
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

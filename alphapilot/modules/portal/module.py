@@ -32,5 +32,11 @@ class PortalModule(BaseModule):
             ]
             subprocess.run(cmds, check=False)
 
+    def scheduler(self, interval: int = 30) -> None:
+        """Run the daily task scheduler daemon (auto-fires saved data/mine/backtest schedules)."""
+        from alphapilot.modules.portal.schedules import run_scheduler_loop
+
+        run_scheduler_loop(interval=interval)
+
     def commands(self) -> dict[str, Callable[..., Any]]:
-        return {"portal": self.portal}
+        return {"portal": self.portal, "scheduler": self.scheduler}
