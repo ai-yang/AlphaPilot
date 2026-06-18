@@ -344,7 +344,7 @@ class PrepareDataCLI:
         start_date: str = "2016-12-31",
         end_date: str | None = None,
         data_dir: str | None = None,
-        qlib_dir: str = str(DEFAULT_QLIB_DIR),
+        qlib_dir: str | None = None,
         market: str | None = None,
         include_fields: str = DEFAULT_INCLUDE_FIELDS,
         region: str = "cn",
@@ -356,54 +356,106 @@ class PrepareDataCLI:
         download_state_path: str | None = None,
         target_mode: str = "forward",
         apply_adjust_after_download: bool = True,
+        source: str = "baostock_cn",
+        token: str | None = None,
     ) -> None:
         """
-        全流程: download -> (可选 apply_adjust) -> convert。
+        全流程: download -> (可选 apply_adjust) -> convert，支持 baostock / tushare。
 
-        默认先下除权数据，再合成前复权 CSV，最后转 Qlib。
+        默认先下除权数据，再按 ``target_mode`` 合成前复权(默认)或后复权 CSV，最后转 Qlib。
+        Tushare 仅支持除权下载，``source=tushare_cn`` 时强制 ``adjust_mode=none``，
+        最终复权由 ``target_mode`` 决定，且各目录默认落在 ``cn_data/tushare/`` 下。
         """
+        is_tushare = source == "tushare_cn"  # adapter registry name
         pool = _resolve_market(stock_csv if not all_market else None, market, all_market)
-        self.download(
-            stock_csv=stock_csv,
-            code_column=code_column,
-            all_market=all_market,
-            start_date=start_date,
-            end_date=end_date,
-            data_dir=data_dir,
-            qlib_dir=qlib_dir,
-            market=pool,
-            sync_instruments=sync_instruments,
-            max_workers=max_workers,
-            adjust_mode=adjust_mode,
-            factor_dir=factor_dir,
-            download_state_path=download_state_path,
-        )
+        end = end_date or datetime.now().strftime("%Y-%m-%d")
+
+        if is_tushare:
+            from alphapilot.systems.data import prepare_tushare
+            from alphapilot.systems.data.data_paths import (
+                canonical_tushare_factor_dir,
+                canonical_tushare_qlib_dir,
+                canonical_tushare_raw_dir,
+            )
+
+            if normalize_adjust_mode(adjust_mode) != "none":
+                logger.warning("Tushare 仅支持除权下载，已将 adjust_mode 调整为 none。")
+            adjust_mode = "none"
+            raw_none_dir = Path(data_dir).expanduser() if data_dir else canonical_tushare_raw_dir("none")
+            factor_path = Path(factor_dir).expanduser() if factor_dir else canonical_tushare_factor_dir()
+            resolved_qlib = qlib_dir or str(canonical_tushare_qlib_dir())
+            codes = prepare_tushare.download_cn_data(
+                start_date=start_date,
+                end_date=end,
+                data_dir=raw_none_dir,
+                stock_csv=None if all_market else stock_csv,
+                code_column=code_column,
+                all_market=all_market,
+                adjust_mode="none",
+                factor_dir=factor_path,
+                download_state_path=download_state_path,
+                token=token,
+            )
+            if sync_instruments and not all_market:
+                write_qlib_instruments(
+                    codes, resolved_qlib, pool,
+                    start_date=start_date, end_date=end, data_dir=raw_none_dir,
+                )
+        else:
+            resolved_qlib = qlib_dir or str(DEFAULT_QLIB_DIR)
+            self.download(
+                stock_csv=stock_csv,
+                code_column=code_column,
+                all_market=all_market,
+                start_date=start_date,
+                end_date=end,
+                data_dir=data_dir,
+                qlib_dir=resolved_qlib,
+                market=pool,
+                sync_instruments=sync_instruments,
+                max_workers=max_workers,
+                adjust_mode=adjust_mode,
+                factor_dir=factor_dir,
+                download_state_path=download_state_path,
+            )
+
         convert_mode = adjust_mode
         convert_path = data_dir
-        if adjust_mode == "none" and apply_adjust_after_download:
-            self.apply_adjust(
-                target_mode=target_mode,
-                raw_dir=data_dir or str(default_raw_dir("none")),
-                factor_dir=factor_dir,
-            )
+        if normalize_adjust_mode(adjust_mode) == "none" and apply_adjust_after_download:
+            if is_tushare:
+                out_dir = canonical_tushare_raw_dir(normalize_adjust_mode(target_mode))
+                self.apply_adjust(
+                    target_mode=target_mode,
+                    raw_dir=str(raw_none_dir),
+                    factor_dir=str(factor_path),
+                    output_dir=str(out_dir),
+                )
+                convert_path = str(out_dir)
+            else:
+                self.apply_adjust(
+                    target_mode=target_mode,
+                    raw_dir=data_dir or str(default_raw_dir("none")),
+                    factor_dir=factor_dir,
+                )
+                convert_path = None
             convert_mode = target_mode
-            convert_path = None
+
         self.convert(
             stock_csv=stock_csv,
             code_column=code_column,
             all_market=all_market,
             data_path=convert_path,
             adjust_mode=convert_mode,
-            qlib_dir=qlib_dir,
+            qlib_dir=resolved_qlib,
             include_fields=include_fields,
             region=region,
             market=pool,
             start_date=start_date,
-            end_date=end_date,
+            end_date=end,
             sync_instruments=False,
             max_workers=dump_workers,
         )
-        logger.info(f"全流程完成。market={pool!r}，请确认 conf.yaml 一致。")
+        logger.info(f"全流程完成。source={source} market={pool!r}，请确认 conf.yaml 一致。")
 
 
 def main():

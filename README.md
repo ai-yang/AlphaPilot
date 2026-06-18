@@ -363,8 +363,20 @@ alphapilot prepare_data h5 \
   --market main_stock_2026_4_27
 ```
 
-注意：当前默认 `pipeline` 仍走 baostock 流程；使用 Tushare 时请显式指定
-`--action download --source tushare_cn`，再分步执行 `apply_adjust`、`convert` 与 `h5`。
+`pipeline` 现已支持数据源参数：传 `--source tushare_cn` 即可一键跑通
+Tushare 全流程（下除权 + `adj_factor` → 本地 `apply_adjust` → `convert`，各目录默认落在
+`cn_data/tushare/` 下）。Tushare 仅支持除权下载，因此 `source=tushare_cn` 时强制
+`adjust_mode=none`，最终复权由 `--target_mode forward|backward` 决定：
+
+```bash
+TUSHARE_TOKEN=你的token alphapilot prepare_data --action pipeline \
+  --source tushare_cn \
+  --stock_csv important_data/stock_lists/main_stock_2026_4_27.csv \
+  --target_mode forward
+```
+
+baostock 流程不变：`--source` 省略即默认 baostock，`adjust_mode=none` 时同样可用
+`--target_mode` 选择前/后复权，或直接 `--adjust_mode forward|backward` 下载已复权数据。
 Tushare 与 baostock 的 OHLC / 成交量单位不完全一致，**请勿混用同一 `qlib_dir`**。
 
 **`--include_daily_basic`（每日指标，需 2000 积分）**：`pro.daily()` 不返回换手率与估值，

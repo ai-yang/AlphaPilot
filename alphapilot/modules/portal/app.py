@@ -4,12 +4,24 @@ from __future__ import annotations
 
 import inspect
 import json
+import logging
 from pathlib import Path
 from typing import Any, Callable
 
 import streamlit as st
 
 from alphapilot.modules.portal.i18n import format_factor_rejection, init_lang, language_selector, t
+
+
+# Heavy data ops (convert / build_h5) spawn worker processes & threads (dump_bin's
+# ProcessPoolExecutor, qlib's parallel loading) that run outside Streamlit's
+# ScriptRunContext. Their "missing ScriptRunContext" / "session_state does not
+# function" warnings are benign but flood the console — silence just those loggers.
+for _noisy_logger in (
+    "streamlit.runtime.scriptrunner_utils.script_run_context",
+    "streamlit.runtime.state.session_state_proxy",
+):
+    logging.getLogger(_noisy_logger).setLevel(logging.ERROR)
 
 
 init_lang()
@@ -129,12 +141,19 @@ def _render_data_tab(engine: Any) -> None:
         key="data_action",
     )
 
-    # Pipeline/convert still use the data system defaults; download/apply_adjust are source-aware.
+    # download / apply_adjust / pipeline are source-aware; convert/build_h5 use defaults.
     is_download = action == "download"
     is_apply_adjust = action == "apply_adjust"
+    is_pipeline = action == "pipeline"
     source = "baostock_cn"
-    if is_download or is_apply_adjust:
-        source_key = "data_dl_source" if is_download else "data_apply_source"
+    if is_download or is_apply_adjust or is_pipeline:
+        source_key = (
+            "data_dl_source"
+            if is_download
+            else "data_apply_source"
+            if is_apply_adjust
+            else "data_pipeline_source"
+        )
         source = st.selectbox(t("data_source"), ["baostock_cn", "tushare_cn"], key=source_key)
     is_tushare = source == "tushare_cn"
 
@@ -152,6 +171,9 @@ def _render_data_tab(engine: Any) -> None:
     apply_raw_dir = apply_factor_dir = apply_output_dir = ""
     apply_default_raw_dir = apply_default_factor_dir = apply_default_output_dir = ""
     refresh_factors_if_needed = False
+    target_mode = "forward"
+    show_target_mode = False
+    pipeline_token = ""
     if is_apply_adjust:
         from alphapilot.systems.data.data_paths import (
             canonical_baostock_raw_dir,
@@ -199,6 +221,24 @@ def _render_data_tab(engine: Any) -> None:
                     value=False,
                     key="data_apply_refresh_factors",
                 )
+    elif is_pipeline:
+        # Pipeline = download -> (apply_adjust) -> convert. Tushare can only download
+        # 除权(none), so the final 前/后复权 is chosen via target_mode.
+        if is_tushare:
+            adjust_mode = "none"
+            st.info(t("tushare_adjust_note"))
+            show_target_mode = True
+        else:
+            adjust_mode = st.selectbox(
+                t("adjust_mode"), ["none", "forward", "backward"], index=0, key="data_pipeline_adjust_mode"
+            )
+            show_target_mode = adjust_mode == "none"
+        if show_target_mode:
+            target_mode = st.selectbox(
+                t("pipeline_target_mode"), ["forward", "backward"], index=0, key="data_pipeline_target_mode"
+            )
+        if is_tushare:
+            pipeline_token = st.text_input(t("tushare_token"), "", type="password", key="data_pipeline_token")
     else:
         adjust_mode = st.selectbox(t("adjust_mode"), ["backward", "forward", "none"], index=0)
         if is_tushare:
@@ -244,6 +284,15 @@ def _render_data_tab(engine: Any) -> None:
                 kwargs["adjust_mode"] = adjust_mode
             if action in ("pipeline", "download"):
                 kwargs["start_date"] = start_date.strip()
+
+            if is_pipeline:
+                kwargs["source"] = source
+                if show_target_mode:
+                    kwargs["target_mode"] = target_mode
+                if is_tushare:
+                    kwargs["adjust_mode"] = "none"
+                    if pipeline_token.strip():
+                        kwargs["token"] = pipeline_token.strip()
 
             if is_download:
                 if not all_market and not stock_csv.strip():
