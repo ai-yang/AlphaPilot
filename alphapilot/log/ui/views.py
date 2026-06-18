@@ -362,7 +362,7 @@ def metrics_window(
     # 使用卡片容器显示图表
     # st.markdown('<div class="metric-card">', unsafe_allow_html=True)
     # st.markdown('<div class="metric-title">Performance Metrics', unsafe_allow_html=True)
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+    st.plotly_chart(fig, width="stretch", config={'displayModeBar': False})
     # st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -460,7 +460,7 @@ def research_window(sess: LogSession, round: int, translate: TranslateFn | None 
         if scenario_is_mining(sess.scenario):
             if pim := sess.msgs[round]["r.extract_factors_and_implement.load_pdf_screenshot"]:
                 for i in range(min(2, len(pim))):
-                    st.image(pim[i].content, use_container_width=True)
+                    st.image(pim[i].content, width="stretch")
 
             if hg := sess.msgs[round]["r.hypothesis generation"]:
                 h: Hypothesis = hg[0].content

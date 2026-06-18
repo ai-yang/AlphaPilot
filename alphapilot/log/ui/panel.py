@@ -8,7 +8,6 @@ from typing import Any
 
 DeleteSessionFn = Callable[[str], bool]
 
-import requests
 import streamlit as st
 
 from alphapilot.log.ui.i18n import TranslateFn, msg
@@ -124,20 +123,20 @@ def _render_controls(
         with c1:
             if st.button(
                 f":green[**{msg(translate, 'ml_all_loops')}**]",
-                use_container_width=True,
+                width="stretch",
                 key=f"{key_prefix}_all_loops",
             ):
                 _refresh(same_trace=True)
             if st.button(
                 f"**{msg(translate, 'ml_reset')}**",
-                use_container_width=True,
+                width="stretch",
                 key=f"{key_prefix}_reset",
             ):
                 _refresh(same_trace=True)
         with c2:
             if st.button(
                 f":green[{msg(translate, 'ml_next_loop')}]",
-                use_container_width=True,
+                width="stretch",
                 key=f"{key_prefix}_next_loop",
             ):
                 if sess.fs is None:
@@ -145,14 +144,14 @@ def _render_controls(
                 get_msgs_until(sess, lambda m: "ef.feedback" in m.tag)
             if st.button(
                 msg(translate, "ml_next_step"),
-                use_container_width=True,
+                width="stretch",
                 key=f"{key_prefix}_next_step",
             ):
                 if sess.fs is None:
                     _refresh(same_trace=True, load_all_msgs=False)
                 get_msgs_until(sess, lambda m: "d.evolving feedback" in m.tag)
 
-        with st.popover(f":orange[**{msg(translate, 'ml_config')}⚙️**]", use_container_width=True):
+        with st.popover(f":orange[**{msg(translate, 'ml_config')}⚙️**]", width="stretch"):
             st.multiselect(
                 msg(translate, "ml_excluded_tags"),
                 ["llm_messages"],
@@ -169,69 +168,10 @@ def _render_controls(
             effective_debug = st.toggle(msg(translate, "ml_debug"), value=False, key=f"{key_prefix}_debug_toggle")
             if effective_debug and st.button(
                 msg(translate, "ml_single_step"),
-                use_container_width=True,
+                width="stretch",
                 key=f"{key_prefix}_single_step",
             ):
                 get_msgs_until(sess)
-
-        st.subheader(f":blue[{msg(translate, 'ml_entrance')}]", divider="blue")
-        user_hypothesis = st.text_input(
-            f"🔍 **{msg(translate, 'ml_hypothesis_input')}**",
-            value=sess.user_direction,
-            placeholder="...",
-            key=f"{key_prefix}_hypothesis",
-        )
-
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            start_label = (
-                msg(translate, "ml_mining_in_progress")
-                if sess.current_task
-                else msg(translate, "ml_start_mining")
-            )
-            start_clicked = st.button(
-                f"🚀 {start_label}" if not sess.current_task else f"⏳ {start_label}",
-                disabled=sess.current_task is not None,
-                use_container_width=True,
-                key=f"{key_prefix}_start",
-            )
-        with col2:
-            stop_clicked = st.button(
-                f"⏹ {msg(translate, 'ml_stop_mining')}",
-                disabled=sess.current_task is None,
-                use_container_width=True,
-                key=f"{key_prefix}_stop",
-            )
-
-        if start_clicked and user_hypothesis:
-            response = requests.post(
-                f"{sess.api_base}/api/tasks",
-                json={"direction": user_hypothesis},
-                timeout=30,
-            )
-            if response.status_code == 200:
-                sess.current_task = response.json()["task_id"]
-                sess.user_direction = user_hypothesis
-            _refresh(same_trace=True)
-            st.rerun()
-
-        if stop_clicked and sess.current_task:
-            response = requests.post(
-                f"{sess.api_base}/api/tasks/{sess.current_task}/stop",
-                timeout=30,
-            )
-            if response.status_code == 200:
-                st.success(msg(translate, "ml_stop_sent"))
-                sess.current_task = None
-            st.rerun()
-
-        if sess.current_task and st.button(
-            f"🔄 {msg(translate, 'ml_refresh_now')}",
-            use_container_width=True,
-            key=f"{key_prefix}_refresh_now",
-        ):
-            _refresh(same_trace=True)
-            st.rerun()
 
     return effective_debug
 

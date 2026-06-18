@@ -192,15 +192,15 @@ def render_backtest_panel(
     for col, (label, val) in zip(cols, metrics):
         col.metric(label, val)
 
-    st.plotly_chart(charts.return_figure(report_slice, compare_data), use_container_width=True)
+    st.plotly_chart(charts.return_figure(report_slice, compare_data), width="stretch")
 
     c1, c2 = st.columns(2)
     with c1:
-        st.plotly_chart(charts.excess_figure(report_slice), use_container_width=True)
+        st.plotly_chart(charts.excess_figure(report_slice), width="stretch")
     with c2:
-        st.plotly_chart(charts.account_figure(report_slice), use_container_width=True)
+        st.plotly_chart(charts.account_figure(report_slice), width="stretch")
 
-    st.plotly_chart(charts.turnover_cost_figure(report_slice), use_container_width=True)
+    st.plotly_chart(charts.turnover_cost_figure(report_slice), width="stretch")
 
     st.divider()
     st.subheader(_msg(translate, "bt_daily_detail"))
@@ -255,13 +255,13 @@ def render_backtest_panel(
         if trades_slice.empty:
             st.write(_msg(translate, "bt_no_trades_day"))
         else:
-            st.dataframe(charts.format_trade_table(trades_slice), use_container_width=True, hide_index=True)
+            st.dataframe(charts.format_trade_table(trades_slice), width="stretch", hide_index=True)
 
     with tab_holdings:
         if holdings_slice.empty:
             st.write(_msg(translate, "bt_no_holdings_day"))
         else:
-            st.dataframe(charts.format_holding_table(holdings_slice), use_container_width=True, hide_index=True)
+            st.dataframe(charts.format_holding_table(holdings_slice), width="stretch", hide_index=True)
 
     with tab_all_trades:
         if data.trades.empty:
@@ -271,7 +271,7 @@ def render_backtest_panel(
                 (data.trades["datetime"] >= pd.Timestamp(date_range[0]))
                 & (data.trades["datetime"] <= pd.Timestamp(date_range[1]))
             ]
-            st.dataframe(charts.format_trade_table(filtered), use_container_width=True, hide_index=True)
+            st.dataframe(charts.format_trade_table(filtered), width="stretch", hide_index=True)
 
     with tab_metrics:
         if data.metrics is not None and not (isinstance(data.metrics, pd.Series) and data.metrics.empty):

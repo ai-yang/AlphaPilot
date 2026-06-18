@@ -130,7 +130,7 @@ def _render_data_tab(engine: Any) -> None:
         try:
             universe = data_system.get_universe()
             st.success(t("universe_loaded", count=len(universe)))
-            st.dataframe({"symbol": universe[:500]}, use_container_width=True, hide_index=True)
+            st.dataframe({"symbol": universe[:500]}, width="stretch", hide_index=True)
         except Exception as exc:  # noqa: BLE001
             st.error(t("universe_failed", error=exc))
 
@@ -465,7 +465,7 @@ def _render_factor_tab(engine: Any) -> None:
 
             df = pd.read_csv(zoo_path)
             st.success(t("factor_zoo_rows", count=len(df)))
-            st.dataframe(df.head(200), use_container_width=True, hide_index=True)
+            st.dataframe(df.head(200), width="stretch", hide_index=True)
         except Exception as exc:  # noqa: BLE001
             st.warning(t("factor_zoo_preview_failed", error=exc))
     else:
@@ -685,7 +685,7 @@ def _render_portal_jobs_panel(key_prefix: str) -> None:
         }
         for job in jobs
     ]
-    st.dataframe(rows, use_container_width=True, hide_index=True)
+    st.dataframe(rows, width="stretch", hide_index=True)
 
     selected_id = st.selectbox(
         t("jobs_select"),
@@ -883,7 +883,7 @@ def _render_backtest_tab(engine: Any) -> None:
             st.success(t("backtest_runs_found", count=len(runs)))
             if runs:
                 workspace_ids = [p.name for p in runs[:500]]
-                st.dataframe({"workspace": workspace_ids}, use_container_width=True, hide_index=True)
+                st.dataframe({"workspace": workspace_ids}, width="stretch", hide_index=True)
                 st.markdown(f"#### {t('delete_heading')}")
                 delete_workspace_id = st.selectbox(
                     t("select_backtest_workspace"),
@@ -995,7 +995,7 @@ def _render_home(engine: Any) -> None:
     else:
         st.info(t("home_no_mining"))
     if pages.get("mining") and st.button(
-        f"🔬 {t('home_go_mining')}", type="primary", use_container_width=True, key="home_go_mining"
+        f"🔬 {t('home_go_mining')}", type="primary", width="stretch", key="home_go_mining"
     ):
         st.switch_page(pages["mining"])
 
@@ -1003,15 +1003,15 @@ def _render_home(engine: Any) -> None:
     st.markdown(f"#### {t('home_quick_actions')}")
     q1, q2, q3 = st.columns(3)
     if pages.get("market") and q1.button(
-        f"📈 {t('home_go_data')}", use_container_width=True, key="home_go_data"
+        f"📈 {t('home_go_data')}", width="stretch", key="home_go_data"
     ):
         st.switch_page(pages["market"])
     if pages.get("backtest") and q2.button(
-        f"📊 {t('home_go_backtest')}", use_container_width=True, key="home_go_backtest"
+        f"📊 {t('home_go_backtest')}", width="stretch", key="home_go_backtest"
     ):
         st.switch_page(pages["backtest"])
     if pages.get("library") and q3.button(
-        f"📚 {t('home_go_library')}", use_container_width=True, key="home_go_library"
+        f"📚 {t('home_go_library')}", width="stretch", key="home_go_library"
     ):
         st.switch_page(pages["library"])
 

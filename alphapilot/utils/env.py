@@ -29,6 +29,15 @@ from rich.table import Table
 from alphapilot.core.conf import ExtendedBaseSettings, ExtendedSettingsConfigDict
 from alphapilot.log import logger
 
+# qlib persists every backtest through MLflow's filesystem tracking backend
+# (``./mlruns``). MLflow 3.x refuses that backend by default and raises
+# ``MlflowException: ... is in maintenance mode ...`` the moment an experiment is
+# created, so ``qrun`` aborts before writing ``ret.pkl`` and the backtest fails with
+# a confusing downstream ``FileNotFoundError``. Opt back into the file store here so
+# every qlib run -- in this process and in the ``qrun``/``read_exp_res.py``
+# subprocesses that inherit ``os.environ`` -- works without a database backend.
+os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
+
 ASpecificBaseModel = TypeVar("ASpecificBaseModel", bound=BaseModel)
 
 

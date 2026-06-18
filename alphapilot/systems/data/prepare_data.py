@@ -23,9 +23,11 @@ from alphapilot.systems.data.prepare_cn import (
     resolve_raw_dir,
 )
 from alphapilot.systems.data.qlib_convert import (
+    DEFAULT_BENCHMARK_INDEX,
     DEFAULT_INCLUDE_FIELDS,
     DEFAULT_QLIB_DIR,
     dump_csv_to_qlib,
+    ensure_benchmark_index,
     extend_future_calendar,
 )
 from alphapilot.systems.data.stock_list import (
@@ -284,6 +286,21 @@ class PrepareDataCLI:
             end_date=end_date,
         )
 
+    def benchmark(
+        self,
+        qlib_dir: str = str(DEFAULT_QLIB_DIR),
+        index_code: str = DEFAULT_BENCHMARK_INDEX,
+        start_date: str = "2015-01-01",
+        end_date: str | None = None,
+    ) -> None:
+        """Download the backtest benchmark index (default 中证500/SH000905) into qlib_dir."""
+        ensure_benchmark_index(
+            qlib_dir=qlib_dir,
+            index_code=index_code,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
     def h5(
         self,
         qlib_dir: str = str(DEFAULT_QLIB_DIR),
@@ -309,8 +326,9 @@ class PrepareDataCLI:
         end_date: str | None = None,
         sync_instruments: bool = True,
         max_workers: int = 16,
+        include_benchmark: bool = True,
     ) -> None:
-        """Run dump + calendar + h5 (skip download)."""
+        """Run dump + calendar + benchmark + h5 (skip download)."""
         end = end_date or datetime.now().strftime("%Y-%m-%d")
         pool = _resolve_market(stock_csv if not all_market else None, market, all_market)
 
@@ -334,6 +352,13 @@ class PrepareDataCLI:
             max_workers=max_workers,
         )
         self.calendar(qlib_dir=qlib_dir, region=region)
+        if include_benchmark:
+            # Supplementary: the main conversion already succeeded, so a benchmark
+            # download failure (e.g. baostock offline) must not abort the pipeline.
+            try:
+                self.benchmark(qlib_dir=qlib_dir, end_date=end)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"基准指数写入失败（行情转换已完成，可稍后单独运行 benchmark）: {exc}")
         self.h5(qlib_dir=qlib_dir, market=pool if not all_market else "all")
 
     def pipeline(

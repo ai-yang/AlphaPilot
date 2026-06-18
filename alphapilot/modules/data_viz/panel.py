@@ -217,7 +217,7 @@ def render_data_viz_panel(
     c4.metric(_msg(translate, "dv_metric_low"), f"{df['low'].min():.4f}")
 
     title = f"{label} | {start_date} ~ {end_date} | {source.label}"
-    st.plotly_chart(build_candlestick_figure(df, title=title), use_container_width=True)
+    st.plotly_chart(build_candlestick_figure(df, title=title), width="stretch")
 
     st.markdown(f"**{_msg(translate, 'dv_hover_help_title')}**")
     st.markdown(_msg(translate, "dv_hover_help"))
@@ -240,7 +240,7 @@ def render_data_viz_panel(
     ]
     table = df[display_cols].copy()
     table["date"] = table["date"].dt.strftime("%Y-%m-%d")
-    st.dataframe(table, use_container_width=True, hide_index=True)
+    st.dataframe(table, width="stretch", hide_index=True)
 
     st.download_button(
         _msg(translate, "dv_export_csv"),
