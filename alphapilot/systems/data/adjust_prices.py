@@ -149,6 +149,8 @@ def apply_adjust_to_frame(
         if c in out.columns:
             out[c] = pd.to_numeric(out[c], errors="coerce") * factors.values
 
+    out["factor"] = factors.values
+
     return out
 
 

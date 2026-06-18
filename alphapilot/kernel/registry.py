@@ -117,6 +117,14 @@ def _register_builtin_defaults() -> None:
         "factor_cli",
         "alphapilot.modules.factor.module.FactorModule",
     )
+    register_module(
+        "alphaforge_aff",
+        "alphapilot.modules.alphaforge_aff.module.AlphaForgeAFFModule",
+    )
+    register_module(
+        "alphaforge_search",
+        "alphapilot.modules.alphaforge_search.module.AlphaForgeSearchModule",
+    )
 
 
 _register_builtin_defaults()

@@ -24,6 +24,7 @@ from alphapilot.systems.data.data_paths import (
     canonical_tushare_factor_dir,
     canonical_tushare_raw_dir,
 )
+from alphapilot.systems.data.adjust_prices import lookup_factor_for_dates
 from alphapilot.systems.data.prepare_cn import (
     AdjustMode,
     normalize_adjust_mode,
@@ -343,6 +344,33 @@ def _apply_daily_basic(price_df: pd.DataFrame, basic_df: pd.DataFrame) -> pd.Dat
     return price_df
 
 
+def _attach_factor_column(
+    price_df: pd.DataFrame, factor_df: pd.DataFrame, mode: str
+) -> pd.DataFrame:
+    """为已复权的行情逐交易日附加 ``factor`` 列（与复权所用因子一致）。
+
+    - forward (qfq): ``foreAdjustFactor`` = adj_factor / 最新 adj_factor
+    - backward (hfq): ``backAdjustFactor`` = adj_factor
+    """
+    if price_df.empty:
+        return price_df
+    if factor_df is None or factor_df.empty:
+        price_df["factor"] = 1.0
+        return price_df
+
+    if mode == "backward":
+        col, before_first_ex = "backAdjustFactor", "unit"
+    else:
+        col, before_first_ex = "foreAdjustFactor", "latest"
+
+    dates = pd.DatetimeIndex(pd.to_datetime(price_df["date"], errors="coerce"))
+    factors = lookup_factor_for_dates(
+        dates, factor_df, col, before_first_ex=before_first_ex
+    )
+    price_df["factor"] = factors.values
+    return price_df
+
+
 def _merge_price_csv(output_file: Path, new_df: pd.DataFrame) -> pd.DataFrame:
     if output_file.exists():
         existing_df = pd.read_csv(output_file)
@@ -460,6 +488,11 @@ def download_tushare_data(
     rows. ``forward`` / ``backward`` write adjusted bars directly via Tushare
     ``pro_bar`` (qfq / hfq), matching the baostock download semantics.
 
+    Tushare ``adj_factor`` is downloaded and saved to ``factor_dir`` for *all*
+    modes. In ``forward`` / ``backward`` mode the matching per-day factor is also
+    written into a ``factor`` column on the price CSV, mirroring the column added
+    when ``none`` bars are adjusted offline (see ``adjust_prices``).
+
     ``include_daily_basic=True`` additionally pulls Tushare ``daily_basic``
     (每日指标, requires the 2000-point tier) and fills the ``turn`` / ``peTTM`` /
     ``pbMRQ`` / ``psTTM`` columns in the same per-symbol price CSV. Accounts
@@ -469,9 +502,10 @@ def download_tushare_data(
     mode = normalize_adjust_mode(adjust_mode)
     output_path = Path(output_dir).expanduser()
     output_path.mkdir(parents=True, exist_ok=True)
-    factor_path = resolve_tushare_factor_dir(factor_dir) if mode == "none" else None
-    if factor_path is not None:
-        factor_path.mkdir(parents=True, exist_ok=True)
+    # 因子数据与复权模式无关：none / forward / backward 都下载并保存除权因子，
+    # 以便复权行情也能附带 factor 列、且不复权行情可在后续离线复权时复用。
+    factor_path = resolve_tushare_factor_dir(factor_dir)
+    factor_path.mkdir(parents=True, exist_ok=True)
     state_path = resolve_download_state_path(download_state_path, output_path)
     state_store = DownloadStateStore(state_path)
     pro = client or _get_tushare_client(token)
@@ -568,14 +602,10 @@ def download_tushare_data(
                     end_date=_to_tushare_date(end_date),
                     mode=mode,
                 )
-                adj_df = (
-                    pro.adj_factor(
-                        ts_code=ts_code,
-                        start_date=_to_tushare_date(start_date),
-                        end_date=_to_tushare_date(end_date),
-                    )
-                    if mode == "none"
-                    else None
+                adj_df = pro.adj_factor(
+                    ts_code=ts_code,
+                    start_date=_to_tushare_date(start_date),
+                    end_date=_to_tushare_date(end_date),
                 )
             except Exception as exc:  # noqa: BLE001 - record API failures per symbol
                 logger.warning(f"Tushare 获取 {code} 失败: {exc}")
@@ -605,7 +635,8 @@ def download_tushare_data(
                 stats.incr("empty")
                 return
 
-            if mode == "none" and factor_file is not None:
+            combined_factor_df: pd.DataFrame | None = None
+            if factor_file is not None:
                 new_factor_df = _normalize_factor_frame(adj_df, code)
                 combined_factor_df = _merge_factor_csv(factor_file, new_factor_df)
                 combined_factor_df.to_csv(factor_file, index=False, encoding="utf-8")
@@ -636,6 +667,13 @@ def download_tushare_data(
                 if not normalized_basic.empty:
                     combined_df = _apply_daily_basic(combined_df, normalized_basic)
                     stats.incr("basic_updated")
+
+            if mode != "none":
+                # pro_bar 已返回复权价，这里把对应的复权因子一并写入 factor 列，
+                # 与不复权行情后续离线复权生成的 factor 列保持一致。
+                combined_df = _attach_factor_column(
+                    combined_df, combined_factor_df, mode
+                )
 
             combined_df.to_csv(output_file, index=False, encoding="utf-8")
             stats.incr("price_updated")
@@ -704,8 +742,7 @@ def download_cn_data(
     )
     if mode != "none":
         logger.info(f"Tushare 复权模式: {_TUSHARE_ADJ_BY_MODE[mode]} (pro_bar)")
-    else:
-        logger.info(f"Tushare 复权因子目录: {resolve_tushare_factor_dir(factor_dir)}")
+    logger.info(f"Tushare 复权因子目录: {resolve_tushare_factor_dir(factor_dir)}")
     if include_daily_basic:
         logger.info("已启用 daily_basic（每日指标，需 2000 积分）: 将填充 turn/peTTM/pbMRQ/psTTM")
     codes = download_tushare_data(

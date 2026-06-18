@@ -233,6 +233,22 @@ cd AlphaPilot
 pip install -e .
 ```
 
+**可选：AlphaForge 公式化挖掘依赖**
+
+AlphaForge（无需 LLM 的公式化因子挖掘，详见 [使用流程 §1.5](#15-alphaforge-公式化因子挖掘无需-llm可选)）的依赖不随基础安装引入，按需选装：
+
+```bash
+# AFF（GAN）+ GP + RL：torch / gym / stable-baselines3 / sb3-contrib / shimmy
+pip install -e ".[alphaforge]"
+
+# DSO（实验性、较重，可选）：先装 TensorFlow + Cython
+pip install -e ".[alphaforge-dso]"
+# 再编译 dso 的 Cython 扩展（cyfunc）
+cd alphapilot/modules/alphaforge/vendor/dso && python setup.py build_ext --inplace && cd -
+```
+
+> GP / RL / AFF 三种方法只需 `.[alphaforge]`；DSO 额外依赖 TensorFlow 与已编译的 `cyfunc` 扩展，缺失时仅 `mine_dso` 会报清晰的安装提示，不影响其它方法。numpy / scipy / pandas / scikit-learn / gymnasium 等已随基础依赖（含 qlib）安装。
+
 ### 3. macOS 额外依赖（LightGBM 回测）
 
 在 **macOS** 上跑 `alphapilot mine` 时，Qlib 回测默认使用 **LightGBM**（`LGBModel`）。除 conda 环境内的 Python 包外，还需要本机通过 **Homebrew** 安装 OpenMP 运行时；`brew` 装的是**系统级**库（如 `/opt/homebrew/opt/libomp`），**不会**装进 `alphapilot` 虚拟环境，运行时由 LightGBM 动态加载。
@@ -636,6 +652,35 @@ alphapilot list_mine_logs
 alphapilot delete_mine_log --session=2026-06-04_15-32-47-893456
 ```
 
+### 1.5 AlphaForge 公式化因子挖掘（无需 LLM，可选）
+
+除 LLM 驱动的 `mine` 外，本仓库还集成了从 [AlphaForge](https://github.com/DulyHao/AlphaForge) / AlphaGen 移植的**公式化**因子挖掘（不调用大模型）。挖到的因子会翻译成 AlphaPilot 因子 DSL，校验后可加入因子库（`--save`，默认开）并可选回测（`--backtest`）。依赖见 [环境准备 §2](#2-安装本仓库)（`pip install -e ".[alphaforge]"`）。
+
+| 命令 | 方法 | 依赖 |
+|------|------|------|
+| `alphapilot mine_gp` | 遗传规划（gplearn），最轻量 | `.[alphaforge]` |
+| `alphapilot mine_rl` | PPO 强化学习（stable-baselines3 + sb3-contrib） | `.[alphaforge]` |
+| `alphapilot mine_aff` | AFF（GAN 生成器 + 预测器，论文 stage-1，表达式长度固定 20） | `.[alphaforge]` |
+| `alphapilot mine_dso` | 深度符号优化（实验性） | `.[alphaforge-dso]` + 编译 cyfunc |
+
+> **数据注意**：本仓库 baostock qlib 数据**没有 `csi300` / `csi500` 成分股集**（这些是各方法的默认值），请改用 `--instruments=test_stock_pool_80`（或 `all`，即 `<qlib_data_dir>/instruments/` 下实际存在的股票池）。
+
+CLI 示例：
+
+```bash
+alphapilot mine_gp  --instruments=test_stock_pool_80 --population_size=200 --generations=10
+alphapilot mine_rl  --instruments=test_stock_pool_80 --steps=50000 --pool_capacity=10
+alphapilot mine_aff --instruments=test_stock_pool_80 --zoo_size=20 --device=cpu --backtest=True
+# DSO 需先装 .[alphaforge-dso] 并编译 cyfunc（见 §2）
+alphapilot mine_dso --instruments=test_stock_pool_80
+```
+
+常用参数：`--instruments`（股票池）、`--train_end_year`（默认 2020：train=[2010,end]、valid=end+1、test=end+2）、`--device`（`cpu`/`mps`/`cuda`，省略自动探测）、`--save`（加入因子库，默认 True）、`--backtest`（回测通过的因子，默认 False）；其余训练超参经 `**kwargs` 透传（如 `--top_n=50`、`--num_epochs_g=50`）。
+
+也可在 **Portal「因子挖掘」页 → 「AlphaForge（公式化）」标签** 以表单方式启动：选择方法、股票池（自动列出本地可用 instrument set）、设备与超参，**作为后台任务运行**，并在下方任务面板查看日志 / 进度 / 取消。
+
+详见模块文档 [alphapilot/modules/alphaforge/README.md](alphapilot/modules/alphaforge/README.md)。
+
 ### 2. 多因子回测
 
 ```bash
@@ -738,7 +783,7 @@ alphapilot portal --port 19901
 
 - **🏠 首页**：关键状态一览（本地股票数、因子库/策略数量、回测记录数及最近一次回测）、**最近挖掘会话**列表，以及一键直达常用任务的快捷按钮（**因子挖掘**置顶）。
 - **研究** 分组
-  - **🔬 因子挖掘**：输入市场假说、Start/Stop 挖掘（需后端服务可用）、查看每轮假说/因子代码/反馈与 Qlib 报告图；支持**删除当前 log 会话**。
+  - **🔬 因子挖掘**：含「LLM 挖掘」与「**AlphaForge（公式化）**」两个标签。LLM 标签输入市场假说、Start/Stop 挖掘（需后端服务可用）、查看每轮假说/因子代码/反馈与 Qlib 报告图，支持**删除当前 log 会话**；AlphaForge 标签以表单启动 GP/RL/AFF/DSO 公式化挖掘（无需 LLM），作为**后台任务**运行并在任务面板查看进度。
   - **📊 回测分析**：**运行列表**（可**删除 workspace**）+ **回测详情**（内嵌 `backtest_viz`：收益曲线、持仓、成交）。
   - **📚 因子 / 策略库**：因子校验/添加（**失败时显示具体原因**：语法、与库内过于相似、重名等）、导入导出、删除单条因子；策略参数查看/保存/导出、删除整个策略资产。
 - **数据** 分组
@@ -868,7 +913,10 @@ AlphaPilot/
 │   │   ├── backtest_viz/       # 回测详情 UI（alphapilot backtest_viz）
 │   │   ├── strategy_backtest/  # 策略资产列表与复测 CLI
 │   │   ├── qlib_yaml/          # Qlib qrun yaml 生成与校验（qlib_yaml_generate / qlib_yaml_validate）
-│   │   └── factor/             # 因子库 CLI（factor_validate / factor_add）
+│   │   ├── factor/             # 因子库 CLI（factor_validate / factor_add）
+│   │   ├── alphaforge/         # AlphaForge 公共层（vendor 引擎 + translate/pipeline/data_adapter，非注册模块）
+│   │   ├── alphaforge_aff/     # AFF（GAN）公式化挖掘（mine_aff）
+│   │   └── alphaforge_search/  # GP / RL / DSO 公式化挖掘（mine_gp / mine_rl / mine_dso）
 │   └── log/ui/                 # 挖掘日志 panel（portal 嵌入；基于 Scenario trait，不依赖 alpha_mining）
 ├── tests/                      # pytest（如 systems/factor/test_factor_validation.py）
 ├── .env.example             # 环境变量模板

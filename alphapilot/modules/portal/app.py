@@ -80,6 +80,15 @@ def _recent_mining_sessions(log_dir: Path | str, limit: int = 5) -> list[str]:
     return [p.name for p in dirs[:limit]]
 
 
+def _available_instrument_sets(engine: Any) -> list[str]:
+    """Instrument-set names in the qlib dump (avoids the absent-csi300 pitfall)."""
+    try:
+        inst_dir = Path(engine.config.data.qlib_data_dir) / "instruments"
+        return sorted(p.stem for p in inst_dir.glob("*.txt"))
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def _render_overview(engine: Any) -> None:
     st.subheader(t("overview_subheader"))
     st.write(t("overview_description"))
@@ -653,6 +662,74 @@ def _render_module_hub(engine: Any) -> None:
             st.error(t("command_failed", error=exc))
 
 
+def _accepted_factors_csv(accepted: list[dict[str, Any]]) -> str:
+    import pandas as pd
+
+    return pd.DataFrame(accepted).to_csv(index=False)
+
+
+def _render_alphaforge_result(summary: dict[str, Any], *, key: str) -> None:
+    """Rich rendering of an AlphaForge mining summary (``emit_factors`` output).
+
+    Shared by every method (GP / RL / AFF / DSO) since they emit the same shape:
+    counts + accepted/rejected factor lists + an optional backtest block.
+    """
+    import pandas as pd
+
+    source = str(summary.get("source", "alphaforge"))
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric(t("af_result_mined"), summary.get("mined", "—"))
+    m2.metric(t("af_result_accepted"), summary.get("n_accepted", len(summary.get("accepted") or [])))
+    m3.metric(t("af_result_rejected"), summary.get("n_rejected", len(summary.get("rejected") or [])))
+    m4.metric(t("af_result_untranslatable"), summary.get("untranslatable", "—"))
+    st.caption(t("af_result_source", source=source))
+
+    accepted = summary.get("accepted") or []
+    if accepted:
+        st.markdown(f"##### {t('af_result_accepted_heading')}")
+        df = pd.DataFrame(accepted)
+        if "score" in df.columns:
+            df["_abs"] = pd.to_numeric(df["score"], errors="coerce").abs()
+            df = df.sort_values("_abs", ascending=False, na_position="last").drop(columns="_abs")
+        ordered = [c for c in ("name", "score", "dsl") if c in df.columns]
+        df = df[ordered + [c for c in df.columns if c not in ordered]].reset_index(drop=True)
+        df.insert(0, "#", range(1, len(df) + 1))
+        st.dataframe(df, width="stretch", hide_index=True)
+        st.download_button(
+            t("af_result_download"),
+            data=_accepted_factors_csv(accepted),
+            file_name=f"{source}_accepted.csv",
+            mime="text/csv",
+            key=f"af_dl_{key}",
+        )
+    else:
+        st.info(t("af_result_no_accepted"))
+
+    rejected = summary.get("rejected") or []
+    if rejected:
+        with st.expander(t("af_result_rejected_heading", count=len(rejected)), expanded=False):
+            rdf = pd.DataFrame(rejected)
+            ordered = [c for c in ("name", "code", "reason", "dsl") if c in rdf.columns]
+            rdf = rdf[ordered + [c for c in rdf.columns if c not in ordered]]
+            st.dataframe(rdf, width="stretch", hide_index=True)
+
+    backtest = summary.get("backtest")
+    if isinstance(backtest, dict):
+        st.markdown(f"##### {t('af_result_backtest_heading')}")
+        if backtest.get("ok"):
+            metrics = backtest.get("metrics")
+            if isinstance(metrics, dict) and metrics:
+                st.dataframe(
+                    pd.DataFrame([{"metric": k, "value": v} for k, v in metrics.items()]),
+                    width="stretch",
+                    hide_index=True,
+                )
+            else:
+                st.success(t("af_result_backtest_ok"))
+        else:
+            st.error(t("af_result_backtest_failed", error=backtest.get("error", "")))
+
+
 def _render_portal_jobs_panel(key_prefix: str) -> None:
     from alphapilot.modules.portal import jobs as portal_jobs
 
@@ -715,8 +792,15 @@ def _render_portal_jobs_panel(key_prefix: str) -> None:
 
     result = portal_jobs.read_result(selected_id)
     if result is not None:
-        with st.expander(t("jobs_result"), expanded=False):
-            st.json(result)
+        payload = result.get("result") if isinstance(result, dict) else None
+        if selected.get("kind") in _ALPHAFORGE_METHODS and isinstance(payload, dict):
+            st.markdown(f"#### {t('af_result_title')}")
+            _render_alphaforge_result(payload, key=selected_id)
+            with st.expander(t("jobs_result_raw"), expanded=False):
+                st.json(result)
+        else:
+            with st.expander(t("jobs_result"), expanded=False):
+                st.json(result)
 
 
 def _format_job_label(job: dict[str, Any]) -> str:
@@ -758,10 +842,137 @@ def _render_mine_launcher() -> None:
             st.error(t("job_start_failed", error=exc))
 
 
+_ALPHAFORGE_METHODS = ["mine_gp", "mine_rl", "mine_aff", "mine_dso"]
+
+
+def _render_alphaforge_launcher(engine: Any) -> None:
+    """LLM-free formulaic alpha mining (AlphaForge: GP / RL / AFF / DSO)."""
+    from alphapilot.modules.portal import jobs as portal_jobs
+
+    st.markdown(f"#### {t('af_start_heading')}")
+    st.caption(t("af_start_caption"))
+    st.info(t("jobs_resource_warning"))
+
+    # Method picker lives OUTSIDE the form so the per-method fields re-render
+    # immediately when it changes (in-form widgets don't rerun until submit).
+    method = st.selectbox(
+        t("af_method"),
+        _ALPHAFORGE_METHODS,
+        format_func=lambda m: t(f"af_method_{m}"),
+        key="af_method",
+    )
+    instrument_sets = _available_instrument_sets(engine)
+
+    with st.form("portal_alphaforge_form"):
+        if instrument_sets:
+            default_idx = (
+                instrument_sets.index("test_stock_pool_80")
+                if "test_stock_pool_80" in instrument_sets
+                else 0
+            )
+            instruments = st.selectbox(
+                t("af_instruments"), instrument_sets, index=default_idx, key="af_instruments"
+            )
+        else:
+            instruments = st.text_input(
+                t("af_instruments"), value="test_stock_pool_80", key="af_instruments_text"
+            )
+            st.caption(t("af_instruments_hint"))
+
+        c1, c2, c3 = st.columns(3)
+        train_end_year = c1.number_input(
+            t("af_train_end_year"), min_value=2000, max_value=2100, value=2020, step=1
+        )
+        device = c2.selectbox(t("af_device"), ["auto", "cpu", "mps", "cuda"], index=0, key="af_device")
+        seed = c3.number_input(t("af_seed"), min_value=0, max_value=10_000_000, value=0, step=1)
+
+        method_kwargs: dict[str, Any] = {}
+        if method == "mine_aff":
+            st.caption(t("af_aff_note"))
+            a1, a2 = st.columns(2)
+            method_kwargs["zoo_size"] = int(
+                a1.number_input(t("af_zoo_size"), min_value=1, max_value=10_000, value=100, step=1)
+            )
+            method_kwargs["ic_thresh"] = float(
+                a2.number_input(t("af_ic_thresh"), min_value=0.0, max_value=1.0, value=0.03, step=0.01, format="%.3f")
+            )
+            a3, a4 = st.columns(2)
+            method_kwargs["corr_thresh"] = float(
+                a3.number_input(t("af_corr_thresh"), min_value=0.0, max_value=1.0, value=0.7, step=0.05, format="%.2f")
+            )
+            method_kwargs["icir_thresh"] = float(
+                a4.number_input(t("af_icir_thresh"), min_value=0.0, max_value=10.0, value=0.1, step=0.05, format="%.2f")
+            )
+        elif method == "mine_gp":
+            g1, g2 = st.columns(2)
+            method_kwargs["population_size"] = int(
+                g1.number_input(t("af_population_size"), min_value=10, max_value=100_000, value=200, step=10)
+            )
+            method_kwargs["generations"] = int(
+                g2.number_input(t("af_generations"), min_value=1, max_value=1000, value=10, step=1)
+            )
+        elif method == "mine_rl":
+            r1, r2 = st.columns(2)
+            method_kwargs["steps"] = int(
+                r1.number_input(t("af_steps"), min_value=1000, max_value=10_000_000, value=50_000, step=1000)
+            )
+            method_kwargs["pool_capacity"] = int(
+                r2.number_input(t("af_pool_capacity"), min_value=1, max_value=200, value=10, step=1)
+            )
+        elif method == "mine_dso":
+            st.warning(t("af_dso_note"))
+            d1, d2 = st.columns(2)
+            method_kwargs["n_samples"] = int(
+                d1.number_input(t("af_n_samples"), min_value=100, max_value=1_000_000, value=5000, step=100)
+            )
+            method_kwargs["pool_capacity"] = int(
+                d2.number_input(t("af_pool_capacity"), min_value=1, max_value=200, value=10, step=1)
+            )
+
+        s1, s2 = st.columns(2)
+        save = s1.checkbox(t("af_save"), value=True, key="af_save")
+        backtest = s2.checkbox(t("af_backtest"), value=False, key="af_backtest")
+
+        with st.expander(t("advanced_options"), expanded=False):
+            qlib_dir = st.text_input(t("af_qlib_dir"), value="", key="af_qlib_dir")
+            freq = st.text_input(t("af_freq"), value="day", key="af_freq")
+            raw_kwargs = st.text_area(
+                t("af_advanced_kwargs"), value="{}", height=90, help=t("af_advanced_kwargs_help")
+            )
+
+        submitted = st.form_submit_button(t("af_start_btn"), type="primary")
+
+    if submitted:
+        try:
+            kwargs: dict[str, Any] = {
+                "instruments": str(instruments).strip(),
+                "train_end_year": int(train_end_year),
+                "seed": int(seed),
+                "freq": freq.strip() or "day",
+                "save": bool(save),
+                "backtest": bool(backtest),
+                **method_kwargs,
+            }
+            if device != "auto":
+                kwargs["device"] = device
+            if qlib_dir.strip():
+                kwargs["qlib_dir"] = qlib_dir.strip()
+            kwargs.update(_safe_json_load(raw_kwargs))
+            job = portal_jobs.start_job(method, kwargs)
+            st.success(t("job_started", job_id=job["job_id"]))
+            st.rerun()
+        except Exception as exc:  # noqa: BLE001
+            st.error(t("job_start_failed", error=exc))
+
+
 def _render_mine_log_tab(engine: Any) -> None:
     from alphapilot.log.ui.panel import render_log_ui_panel
 
-    _render_mine_launcher()
+    llm_tab, af_tab = st.tabs([t("mine_tab_llm"), t("mine_tab_alphaforge")])
+    with llm_tab:
+        _render_mine_launcher()
+    with af_tab:
+        _render_alphaforge_launcher(engine)
     st.divider()
     _render_portal_jobs_panel("portal_mine")
     st.divider()

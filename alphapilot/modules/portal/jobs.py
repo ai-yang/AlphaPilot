@@ -19,7 +19,16 @@ from typing import Any, Callable
 JobKind = str
 JobStatus = str
 
-VALID_KINDS = {"mine", "factor_backtest", "strategy_backtest"}
+# AlphaForge formulaic miners run as background jobs (heavy torch training).
+# Each kind maps to (module name, command) dispatched in ``_run_target``.
+ALPHAFORGE_JOBS: dict[str, tuple[str, str]] = {
+    "mine_aff": ("alphaforge_aff", "mine_aff"),
+    "mine_gp": ("alphaforge_search", "mine_gp"),
+    "mine_rl": ("alphaforge_search", "mine_rl"),
+    "mine_dso": ("alphaforge_search", "mine_dso"),
+}
+
+VALID_KINDS = {"mine", "factor_backtest", "strategy_backtest", *ALPHAFORGE_JOBS}
 TERMINAL_STATUSES = {"succeeded", "failed", "cancelled", "lost"}
 
 
@@ -88,6 +97,14 @@ def _result_summary(result: Any) -> str:
     if isinstance(result, list):
         return f"list[{len(result)}]"
     if isinstance(result, dict):
+        # AlphaForge mining summary: surface the accept/mine counts directly.
+        if "n_accepted" in result and "mined" in result:
+            parts = [f"accepted={result.get('n_accepted')}/{result.get('mined')} mined"]
+            if result.get("n_rejected"):
+                parts.append(f"rejected={result.get('n_rejected')}")
+            if result.get("untranslatable"):
+                parts.append(f"untranslatable={result.get('untranslatable')}")
+            return ", ".join(parts)
         keys = ", ".join(list(result.keys())[:8])
         return f"dict({keys})"
     text = repr(result)
@@ -121,6 +138,9 @@ def _run_target(kind: JobKind, kwargs: dict[str, Any]) -> Any:
         return engine.get_module("alpha_mining").run_backtest(**kwargs)
     if kind == "strategy_backtest":
         return engine.get_module("strategy_backtest").strategy_backtest(**kwargs)
+    if kind in ALPHAFORGE_JOBS:
+        module_name, command = ALPHAFORGE_JOBS[kind]
+        return getattr(engine.get_module(module_name), command)(**kwargs)
     raise ValueError(f"Unsupported portal job kind: {kind!r}")
 
 
