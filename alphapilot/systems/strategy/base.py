@@ -55,7 +55,7 @@ class StrategyBacktestRequest:
     """Execute backtest from a saved strategy asset."""
 
     strategy_name: str
-    mode: str = "retrain"  # retrain | reuse_model | both
+    mode: str = "retrain"  # retrain | reuse_model
     qlib_config_name: str | None = None
     qlib_template_dir: str | None = None
     qlib_data_dir: str | None = None

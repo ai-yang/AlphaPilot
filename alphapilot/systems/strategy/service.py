@@ -196,9 +196,9 @@ class StrategySystem(BaseStrategySystem):
             raise ValueError(f"Strategy asset not found: {request.strategy_name}")
 
         mode = request.mode.lower()
-        if mode not in {"retrain", "reuse_model", "both"}:
+        if mode not in {"retrain", "reuse_model"}:
             raise ValueError(f"Unsupported mode: {request.mode}")
-        modes = ["retrain", "reuse_model"] if mode == "both" else [mode]
+        modes = [mode]
 
         factors = self._factors_to_defs(record.factor_formulas)
         qlib_config_name = request.qlib_config_name or (record.metadata or {}).get("qlib_config_name")

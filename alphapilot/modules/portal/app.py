@@ -833,7 +833,7 @@ def _render_backtest_launcher(engine: Any) -> None:
                 strategy_name = st.text_input(t("strategy_name"), value="", key="bt_strategy_name_text")
                 st.caption(t("no_stored_params"))
             c1, c2 = st.columns(2)
-            mode = c1.selectbox(t("bt_strategy_mode"), ["both", "retrain", "reuse_model"], index=0)
+            mode = c1.selectbox(t("bt_strategy_mode"), ["retrain", "reuse_model"], index=0)
             scenario = c2.text_input(t("bt_scenario"), value="factor_backtest", key="strategy_bt_scenario")
             qlib_data_dir = st.text_input(t("qlib_data_dir"), value="", key="strategy_bt_qlib_data")
             qlib_config_name = st.text_input(t("qlib_config_name"), value="", key="strategy_bt_qlib_config")

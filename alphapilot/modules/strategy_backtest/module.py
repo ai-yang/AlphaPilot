@@ -44,7 +44,7 @@ class StrategyBacktestModule(BaseModule):
         qlib_data_dir: str | None = None,
         qlib_config_name: str | None = None,
         qlib_template_dir: str | None = None,
-        mode: str = "both",
+        mode: str = "retrain",
         scenario: str = "factor_backtest",
         use_local: bool | None = None,
         run_tag: str | None = None,
