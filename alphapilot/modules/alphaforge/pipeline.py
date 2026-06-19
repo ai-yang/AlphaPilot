@@ -57,7 +57,9 @@ def emit_factors(
         name = f"{source}_{run_id}_{i:03d}"
         if save:
             try:
-                result = factor_sys.add_factor(name, dsl)
+                # Auto-tag every mined factor with its source method (e.g.
+                # ``alphaforge_gp``). Defer the CSV mirror to one save after the loop.
+                result = factor_sys.add_factor(name, dsl, categories=[source], save=False)
             except Exception as exc:  # noqa: BLE001 - never let one factor abort the batch
                 rejected.append({"name": name, "dsl": dsl, "reason": f"add_factor error: {exc}"})
                 continue
@@ -74,6 +76,9 @@ def emit_factors(
                 accepted.append({"name": name, "dsl": dsl, "score": score})
             else:
                 rejected.append({"name": name, "dsl": dsl, "reason": "not acceptable"})
+
+    if save and accepted:
+        factor_sys.database.save()  # single CSV re-materialization for the batch
 
     summary: dict[str, Any] = {
         "source": source,

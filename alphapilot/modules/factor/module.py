@@ -1,4 +1,4 @@
-"""CLI module for factor zoo validation and management."""
+"""CLI module for factor zoo validation, management, and categories."""
 
 from __future__ import annotations
 
@@ -13,7 +13,9 @@ if TYPE_CHECKING:
     from alphapilot.kernel.context import Context
 
 
-def _print_validation(result: FactorValidationResult, *, expression: str | None = None) -> None:
+def _print_validation(
+    result: FactorValidationResult, *, expression: str | None = None
+) -> None:
     if expression is not None:
         print(f"Expression: {expression}")
     status = "PASS" if result.acceptable else "FAIL"
@@ -21,11 +23,29 @@ def _print_validation(result: FactorValidationResult, *, expression: str | None 
     print(f"Code: {result.code}")
     print(f"Message: {result.message}")
     if result.details:
-        print(f"Details: {json.dumps(result.details, ensure_ascii=False, indent=2, default=str)}")
+        print(
+            f"Details: {json.dumps(result.details, ensure_ascii=False, indent=2, default=str)}"
+        )
+
+
+def _parse_categories(value: Any) -> list[str]:
+    """Normalize a CLI ``--categories`` value (``"a,b"`` or a list) to a list."""
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        items = value
+    else:
+        items = str(value).split(",")
+    return [str(c).strip() for c in items if str(c).strip()]
+
+
+def _parse_factor_names(value: Any) -> list[str]:
+    """Normalize a CLI factor-name list (``"a,b"`` or a list) to a list."""
+    return _parse_categories(value)
 
 
 class FactorModule(BaseModule):
-    """Validate and add factors via CLI."""
+    """Validate, add, categorize, and list factors via CLI."""
 
     name = "factor"
 
@@ -40,16 +60,107 @@ class FactorModule(BaseModule):
             sys.exit(1)
         return result.to_dict()
 
-    def factor_add(self, factor_name: str, expression: str) -> dict[str, Any]:
-        """Validate then add a factor to the zoo."""
-        result = self.context.factor().add_factor(factor_name, expression)
+    def factor_add(
+        self, factor_name: str, expression: str, categories: Any = None
+    ) -> dict[str, Any]:
+        """Validate then add a factor; ``--categories=a,b`` assigns categories."""
+        cats = _parse_categories(categories)
+        result = self.context.factor().add_factor(
+            factor_name, expression, categories=cats
+        )
         _print_validation(result, expression=expression)
         if not result.acceptable:
             sys.exit(1)
         return result.to_dict()
 
+    def factor_list(self, category: str | None = None) -> list[dict[str, Any]]:
+        """List factors in the zoo, optionally filtered to a single ``--category``."""
+        factor_system = self.context.factor()
+        if category:
+            factors = factor_system.factors_in_category(category)
+        else:
+            factors = factor_system.list_factors()
+        for item in factors:
+            cats = ", ".join(item.get("categories", []))
+            suffix = f"  [{cats}]" if cats else ""
+            print(f"{item['factor_name']}: {item['factor_expression']}{suffix}")
+        return factors
+
+    def factor_categorize(
+        self, factor_name: str, categories: Any = None
+    ) -> dict[str, Any]:
+        """Replace a factor's categories with ``--categories=a,b`` (creates missing ones)."""
+        cats = _parse_categories(categories)
+        ok = self.context.factor().set_factor_categories(factor_name, cats)
+        if not ok:
+            print(f"Factor not found: {factor_name}")
+            sys.exit(1)
+        print(f"Set categories of '{factor_name}' to: {cats or '[]'}")
+        return {"factor_name": factor_name, "categories": cats}
+
+    def factor_category_add(self, factor_names: Any, category: str) -> dict[str, Any]:
+        """Add one category to multiple factors without replacing existing categories."""
+        names = _parse_factor_names(factor_names)
+        summary = self.context.factor().add_factors_to_category(names, category)
+        print(
+            f"Added category '{summary['category']}' to {len(summary['changed'])} factor(s); "
+            f"unchanged={len(summary['unchanged'])}, missing={len(summary['missing'])}."
+        )
+        return summary
+
+    def factor_category_remove(
+        self, factor_names: Any, category: str
+    ) -> dict[str, Any]:
+        """Remove one category from multiple factors while preserving other categories."""
+        names = _parse_factor_names(factor_names)
+        summary = self.context.factor().remove_factors_from_category(names, category)
+        print(
+            f"Removed category '{summary['category']}' from {len(summary['changed'])} factor(s); "
+            f"unchanged={len(summary['unchanged'])}, missing={len(summary['missing'])}."
+        )
+        return summary
+
+    def category_list(self) -> list[str]:
+        """List all categories in the registry."""
+        names = self.context.factor().list_categories()
+        for name in names:
+            print(name)
+        return names
+
+    def category_create(self, name: str) -> dict[str, Any]:
+        """Create an (initially empty) category."""
+        created = self.context.factor().create_category(name)
+        print(f"Category '{name}' {'created' if created else 'already exists'}.")
+        return {"name": name, "created": created}
+
+    def category_rename(self, old_name: str, new_name: str) -> dict[str, Any]:
+        """Rename a category."""
+        ok = self.context.factor().rename_category(old_name, new_name)
+        if not ok:
+            print(f"Category not found: {old_name}")
+            sys.exit(1)
+        print(f"Renamed category '{old_name}' -> '{new_name}'.")
+        return {"old_name": old_name, "new_name": new_name}
+
+    def category_delete(self, name: str) -> dict[str, Any]:
+        """Delete a category (factors are kept; only the assignments are removed)."""
+        removed = self.context.factor().delete_category(name)
+        if not removed:
+            print(f"Category not found: {name}")
+            sys.exit(1)
+        print(f"Deleted category '{name}'.")
+        return {"name": name, "removed": removed}
+
     def commands(self) -> dict[str, Callable[..., Any]]:
         return {
             "factor_validate": self.factor_validate,
             "factor_add": self.factor_add,
+            "factor_list": self.factor_list,
+            "factor_categorize": self.factor_categorize,
+            "factor_category_add": self.factor_category_add,
+            "factor_category_remove": self.factor_category_remove,
+            "category_list": self.category_list,
+            "category_create": self.category_create,
+            "category_rename": self.category_rename,
+            "category_delete": self.category_delete,
         }

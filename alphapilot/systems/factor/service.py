@@ -65,9 +65,14 @@ class FactorSystem(BaseFactorSystem):
         factor_name: str,
         factor_expression: str,
         *,
+        categories: list[str] | None = None,
         save: bool = True,
     ) -> FactorValidationResult:
-        """Validate then add a factor; return structured result on failure."""
+        """Validate then add a factor; return structured result on failure.
+
+        *categories* (optional) assigns the new factor to those categories when
+        the backend supports a registry; ignored otherwise.
+        """
         name = factor_name.strip()
         expr = factor_expression.strip()
         if not name:
@@ -101,13 +106,15 @@ class FactorSystem(BaseFactorSystem):
                 )
 
         self._database.add(name, expr)
+        if categories and getattr(self._database, "supports_categories", False):
+            self._database.set_factor_categories(name, categories)
         if save:
             self._database.save()
         return FactorValidationResult(
             acceptable=True,
             code=OK_CODE,
             message=f"Factor '{name}' added.",
-            details={"factor_name": name},
+            details={"factor_name": name, "categories": categories or []},
         )
 
     def evaluate_expression(self, expression: str) -> Any:
@@ -115,7 +122,7 @@ class FactorSystem(BaseFactorSystem):
 
         return parse_expression(expression)
 
-    def list_factors(self) -> list[dict[str, str]]:
+    def list_factors(self) -> list[dict[str, Any]]:
         return self._database.list_factors()
 
     def delete_factor(self, factor_name: str, *, save: bool = True) -> bool:

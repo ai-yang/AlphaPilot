@@ -10,7 +10,13 @@ from typing import Any, Callable
 
 import streamlit as st
 
-from alphapilot.modules.portal.i18n import format_factor_rejection, init_lang, language_selector, t
+from alphapilot.modules.portal.i18n import (
+    format_factor_rejection,
+    get_lang,
+    init_lang,
+    language_selector,
+    t,
+)
 
 
 # Heavy data ops (convert / build_h5) spawn worker processes & threads (dump_bin's
@@ -89,6 +95,849 @@ def _available_instrument_sets(engine: Any) -> list[str]:
         return []
 
 
+_COMMAND_KWARGS_EXAMPLES: dict[tuple[str, str], dict[str, Any]] = {
+    ("alpha_mining", "mine"): {
+        "step_n": 5,
+        "scenario": "alpha_factor_mining",
+        "direction": "验证低波动反转因子",
+    },
+    ("alpha_mining", "backtest"): {
+        "factor_path": "important_data/factors.csv",
+        "scenario": "factor_backtest",
+    },
+    ("alphaforge_aff", "mine_aff"): {
+        "instruments": "test_stock_pool_80",
+        "zoo_size": 100,
+        "ic_thresh": 0.03,
+        "top_n": 50,
+        "raw": True,
+    },
+    ("alphaforge_search", "mine_gp"): {
+        "instruments": "test_stock_pool_80",
+        "population_size": 200,
+        "generations": 10,
+        "top_n": 50,
+        "raw": True,
+    },
+    ("alphaforge_search", "mine_rl"): {
+        "instruments": "test_stock_pool_80",
+        "steps": 50_000,
+        "pool_capacity": 10,
+        "raw": True,
+    },
+    ("alphaforge_search", "mine_dso"): {
+        "instruments": "test_stock_pool_80",
+        "n_samples": 5000,
+        "pool_capacity": 10,
+        "raw": True,
+    },
+    ("platform", "prepare_data"): {
+        "action": "pipeline",
+        "source": "tushare_cn",
+        "start_date": "2005-01-01",
+        "stock_csv": "important_data/stock_lists/main_stock_2026_4_27.csv",
+        "all_market": False,
+    },
+    ("platform", "delete_stock"): {
+        "symbol": "sh.600000",
+        "adjust_mode": "all",
+        "dry_run": True,
+    },
+    ("platform", "trim_stock"): {
+        "symbol": "sh.600000",
+        "start_date": "2020-01-01",
+        "end_date": "2024-12-31",
+        "drop_dates": "2023-01-03,2023-01-04",
+        "dry_run": True,
+    },
+    ("platform", "refresh_stock"): {
+        "symbol": "sh.600000",
+        "adjust_mode": "backward",
+        "start_date": "2016-12-31",
+        "rebuild_h5": False,
+    },
+    ("qlib_yaml", "qlib_yaml_generate"): {
+        "output": "important_data/factor_qlib_templates/custom.yaml",
+        "template": "baseline",
+        "market": "all",
+        "topk": 50,
+        "skip_smoke": True,
+    },
+    ("qlib_yaml", "qlib_yaml_validate"): {
+        "config": "important_data/factor_qlib_templates/conf.yaml",
+        "skip_smoke": True,
+    },
+    ("strategy_backtest", "strategy_backtest"): {
+        "strategy_name": "my_strategy",
+        "mode": "retrain",
+        "scenario": "factor_backtest",
+        "run_tag": "portal_test",
+    },
+    ("portal", "portal"): {"port": 19901, "host": "0.0.0.0"},
+    ("portal", "scheduler"): {"interval": 30},
+    ("data_viz", "data_viz"): {"port": 19902, "host": "0.0.0.0"},
+    ("backtest_viz", "backtest_viz"): {"port": 19903, "host": "0.0.0.0"},
+}
+
+_COMMAND_EXTRA_NOTES: dict[tuple[str, str], dict[str, str]] = {
+    ("alphaforge_aff", "mine_aff"): {
+        "en": (
+            "`**kwargs` is passed to AFFMiner. Common fields: `batch_size`, `num_epochs_g`, "
+            "`num_epochs_p`, `init_collect`, `iter_collect`, `max_loops`, `raw`, `top_n`."
+        ),
+        "zh": (
+            "`**kwargs` 会继续传给 AFFMiner，常用：`batch_size`, `num_epochs_g`, "
+            "`num_epochs_p`, `init_collect`, `iter_collect`, `max_loops`, `raw`, `top_n`。"
+        ),
+    },
+    ("alphaforge_search", "mine_gp"): {
+        "en": "`**kwargs` is passed to GPRunner. Common fields: `tournament_size`, `top_n`, `raw`.",
+        "zh": "`**kwargs` 会继续传给 GPRunner，常用：`tournament_size`, `top_n`, `raw`。",
+    },
+    ("alphaforge_search", "mine_rl"): {
+        "en": "`**kwargs` is passed to RLRunner. Common field: `raw`.",
+        "zh": "`**kwargs` 会继续传给 RLRunner，常用：`raw`。",
+    },
+    ("alphaforge_search", "mine_dso"): {
+        "en": "`**kwargs` is passed to DSORunner. Common field: `raw`.",
+        "zh": "`**kwargs` 会继续传给 DSORunner，常用：`raw`。",
+    },
+    ("platform", "prepare_data"): {
+        "en": (
+            "`**options` is passed to the selected data action. Common fields: `source`, `token`, "
+            "`all_market`, `code_column`, `factor_dir`, `include_daily_basic`, `target_mode`."
+        ),
+        "zh": (
+            "`**options` 会继续传给具体数据动作，常用：`source`, `token`, `all_market`, "
+            "`code_column`, `factor_dir`, `include_daily_basic`, `target_mode`。"
+        ),
+    },
+    ("strategy_backtest", "strategy_backtest"): {
+        "en": "`**options` is passed into the strategy backtest request for model/template extensions.",
+        "zh": "`**options` 会作为策略回测的附加 options 传入，适合放模型或模板支持的扩展项。",
+    },
+}
+
+_ALPHAFORGE_EXTRA_KWARGS_EXAMPLES: dict[str, dict[str, Any]] = {
+    "mine_aff": {"top_n": 50, "raw": True, "num_epochs_g": 50, "max_loops": 10},
+    "mine_gp": {"top_n": 50, "raw": True, "tournament_size": 20},
+    "mine_rl": {"raw": True},
+    "mine_dso": {"raw": True},
+}
+
+_COMMAND_EXTRA_PARAM_NAMES: dict[tuple[str, str], list[str]] = {
+    ("alphaforge_aff", "mine_aff"): [
+        "batch_size",
+        "num_epochs_g",
+        "num_epochs_p",
+        "init_collect",
+        "iter_collect",
+        "max_loops",
+        "top_n",
+        "raw",
+    ],
+    ("alphaforge_search", "mine_gp"): ["tournament_size", "top_n", "raw"],
+    ("alphaforge_search", "mine_rl"): ["raw"],
+    ("alphaforge_search", "mine_dso"): ["raw"],
+    ("platform", "prepare_data"): [
+        "source",
+        "token",
+        "all_market",
+        "code_column",
+        "factor_dir",
+        "include_daily_basic",
+        "target_mode",
+    ],
+}
+
+_PARAMETER_DETAILS: dict[str, dict[str, dict[str, str]]] = {
+    "action": {
+        "en": {
+            "desc": "Data operation to run.",
+            "range": "`pipeline`, `download`, `apply_adjust`, `convert`, `build_h5`.",
+        },
+        "zh": {
+            "desc": "要执行的数据操作。",
+            "range": "`pipeline`、`download`、`apply_adjust`、`convert`、`build_h5`。",
+        },
+    },
+    "adjust_mode": {
+        "en": {
+            "desc": "Price-adjustment mode for downloaded/converted bars.",
+            "range": "`backward` is the usual backtest default; use `forward` for forward-adjusted charts, `none` for raw bars.",
+        },
+        "zh": {
+            "desc": "下载/转换行情的复权方式。",
+            "range": "回测通常用 `backward`；看前复权走势用 `forward`；需要未复权行情和复权因子时用 `none`。",
+        },
+    },
+    "all_market": {
+        "en": {
+            "desc": "Ignore stock CSV and download the whole market.",
+            "range": "Usually `false`; set `true` only for large full-market refreshes.",
+        },
+        "zh": {
+            "desc": "忽略股票 CSV，改为下载全市场。",
+            "range": "一般填 `false`；只有需要大规模全市场刷新时填 `true`。",
+        },
+    },
+    "backtest": {
+        "en": {
+            "desc": "Run a backtest after accepted factors are mined.",
+            "range": "Use `false` for quick mining; `true` when you want immediate validation.",
+        },
+        "zh": {"desc": "因子通过后是否立即回测。", "range": "快速挖掘填 `false`；需要立刻验证收益表现时填 `true`。"},
+    },
+    "batch_size": {
+        "en": {
+            "desc": "AFF training batch size.",
+            "range": "Try `32`-`256`; reduce it if memory is tight.",
+        },
+        "zh": {"desc": "AFF 训练 batch size。", "range": "建议 `32`-`256`；显存/内存紧张时调小。"},
+    },
+    "code_column": {
+        "en": {
+            "desc": "Column name for stock codes in the CSV.",
+            "range": "Common values: `code`, `symbol`, `ts_code`; Tushare CSV often uses `ts_code`.",
+        },
+        "zh": {
+            "desc": "股票列表 CSV 里的代码列名。",
+            "range": "常见为 `code`、`symbol`、`ts_code`；Tushare 常用 `ts_code`。",
+        },
+    },
+    "corr_thresh": {
+        "en": {
+            "desc": "Maximum correlation allowed between newly accepted factors and the pool.",
+            "range": "`0.5`-`0.8`; stricter pools use `0.5`-`0.7`.",
+        },
+        "zh": {
+            "desc": "新因子与池内因子的最高相关性阈值。",
+            "range": "建议 `0.5`-`0.8`；想更去重可用 `0.5`-`0.7`。",
+        },
+    },
+    "device": {
+        "en": {
+            "desc": "Compute device.",
+            "range": "`auto`/unset is safest; use `cpu`, `mps`, or `cuda` when you know the environment.",
+        },
+        "zh": {"desc": "计算设备。", "range": "最稳妥是 `auto`/不填；明确环境时可填 `cpu`、`mps`、`cuda`。"},
+    },
+    "direction": {
+        "en": {
+            "desc": "Natural-language research direction for LLM mining.",
+            "range": "Keep it specific: one hypothesis or factor family in 1-3 sentences.",
+        },
+        "zh": {"desc": "LLM 挖掘的自然语言研究方向。", "range": "建议具体一些：用 1-3 句话描述一个假说或一个因子族。"},
+    },
+    "dry_run": {
+        "en": {
+            "desc": "Preview a destructive data-management operation.",
+            "range": "Use `true` before delete/trim; switch to `false` only after checking the report.",
+        },
+        "zh": {
+            "desc": "预演删除/裁剪等数据管理操作。",
+            "range": "删除/裁剪前建议先填 `true`；确认报告后再改 `false`。",
+        },
+    },
+    "end_date": {
+        "en": {
+            "desc": "End date, inclusive.",
+            "range": "`YYYY-MM-DD`; leave empty/omit to use the latest available date.",
+        },
+        "zh": {"desc": "结束日期，通常包含当天。", "range": "`YYYY-MM-DD`；不填通常表示拉到最新可用日期。"},
+    },
+    "factor_dir": {
+        "en": {
+            "desc": "Directory for adjustment-factor CSV files.",
+            "range": "Leave unset unless you maintain a custom data layout.",
+        },
+        "zh": {"desc": "复权因子 CSV 目录。", "range": "一般不填，除非你维护了自定义数据目录。"},
+    },
+    "factor_path": {
+        "en": {
+            "desc": "CSV file containing factors to backtest.",
+            "range": "Use an existing factor CSV; relative paths are resolved from the project root.",
+        },
+        "zh": {"desc": "要回测的因子 CSV 文件。", "range": "填写已存在的因子 CSV；相对路径按项目根目录理解。"},
+    },
+    "freq": {
+        "en": {
+            "desc": "Data frequency.",
+            "range": "Use `day` for the current daily-bar workflow.",
+        },
+        "zh": {"desc": "数据频率。", "range": "当前日频流程建议填 `day`。"},
+    },
+    "generations": {
+        "en": {
+            "desc": "GP evolution generations.",
+            "range": "Fast smoke test: `3`-`10`; normal run: `10`-`50`; larger values take longer.",
+        },
+        "zh": {"desc": "GP 遗传迭代代数。", "range": "快速试跑 `3`-`10`；常规 `10`-`50`；越大耗时越长。"},
+    },
+    "host": {
+        "en": {
+            "desc": "Host address for Streamlit apps.",
+            "range": "`127.0.0.1` for local-only; `0.0.0.0` for LAN/container access.",
+        },
+        "zh": {
+            "desc": "Streamlit 应用监听地址。",
+            "range": "只本机访问用 `127.0.0.1`；局域网/容器访问用 `0.0.0.0`。",
+        },
+    },
+    "ic_thresh": {
+        "en": {
+            "desc": "Minimum IC threshold for accepting mined factors.",
+            "range": "`0.01`-`0.05`; `0.03` is a common starting point.",
+        },
+        "zh": {"desc": "挖掘因子通过筛选的最低 IC 阈值。", "range": "建议 `0.01`-`0.05`；常用起点是 `0.03`。"},
+    },
+    "icir_thresh": {
+        "en": {
+            "desc": "Minimum ICIR threshold for accepting mined factors.",
+            "range": "`0.05`-`0.5`; start around `0.1`.",
+        },
+        "zh": {"desc": "挖掘因子通过筛选的最低 ICIR 阈值。", "range": "建议 `0.05`-`0.5`；可从 `0.1` 开始。"},
+    },
+    "include_daily_basic": {
+        "en": {
+            "desc": "Download Tushare daily_basic fields.",
+            "range": "Usually `false`; set `true` only when you need turnover/PE/PB/PS and have enough Tushare quota.",
+        },
+        "zh": {
+            "desc": "是否下载 Tushare daily_basic 每日指标。",
+            "range": "一般填 `false`；需要换手率/PE/PB/PS 且 Tushare 积分足够时填 `true`。",
+        },
+    },
+    "init_collect": {
+        "en": {
+            "desc": "Initial samples collected before AFF training loops.",
+            "range": "`500`-`5000`; larger values improve diversity but slow startup.",
+        },
+        "zh": {"desc": "AFF 训练循环前的初始采样数量。", "range": "建议 `500`-`5000`；越大多样性更好但启动更慢。"},
+    },
+    "instruments": {
+        "en": {
+            "desc": "Qlib instrument set name.",
+            "range": "Use a file under `<qlib_data_dir>/instruments`; for tests use `test_stock_pool_80`, for full runs use `all` if present.",
+        },
+        "zh": {
+            "desc": "Qlib 股票池名称。",
+            "range": "需存在于 `<qlib_data_dir>/instruments`；测试可用 `test_stock_pool_80`，全量可用存在的 `all`。",
+        },
+    },
+    "interval": {
+        "en": {
+            "desc": "Scheduler daemon polling interval in seconds.",
+            "range": "`10`-`120`; default `30` is usually enough.",
+        },
+        "zh": {"desc": "定时任务守护进程轮询间隔（秒）。", "range": "建议 `10`-`120`；默认 `30` 通常足够。"},
+    },
+    "iter_collect": {
+        "en": {
+            "desc": "New samples collected in each AFF loop.",
+            "range": "`100`-`2000`; increase when accepted factors are too few.",
+        },
+        "zh": {"desc": "AFF 每轮新增采样数量。", "range": "建议 `100`-`2000`；通过因子太少时可调大。"},
+    },
+    "market": {
+        "en": {
+            "desc": "Qlib market/instrument name used by templates or h5 rebuilds.",
+            "range": "Common values: `all`, `csi300`, `csi500`; must exist in local instruments for Qlib runs.",
+        },
+        "zh": {
+            "desc": "模板或 h5 重建使用的 Qlib market/instrument 名称。",
+            "range": "常见 `all`、`csi300`、`csi500`；Qlib 运行时需本地 instruments 存在。",
+        },
+    },
+    "max_len": {
+        "en": {
+            "desc": "Maximum generated expression length for AFF.",
+            "range": "Default `20`; try `10`-`30`; longer expressions are harder to interpret.",
+        },
+        "zh": {"desc": "AFF 生成表达式的最大长度。", "range": "默认 `20`；可试 `10`-`30`；越长越难解释。"},
+    },
+    "max_loops": {
+        "en": {
+            "desc": "Maximum AFF training/mining loops.",
+            "range": "`3`-`20`; use lower values for smoke tests.",
+        },
+        "zh": {"desc": "AFF 最大训练/挖掘循环数。", "range": "建议 `3`-`20`；冒烟测试用较小值。"},
+    },
+    "mode": {
+        "en": {
+            "desc": "Strategy backtest mode.",
+            "range": "`retrain` for a fresh model; `reuse_model` when a saved model artifact exists.",
+        },
+        "zh": {"desc": "策略回测模式。", "range": "重新训练用 `retrain`；已有模型产物时可用 `reuse_model`。"},
+    },
+    "n_samples": {
+        "en": {
+            "desc": "Number of DSO samples.",
+            "range": "Smoke test: `500`-`5000`; normal run: `5000`-`50000`; DSO is dependency-heavy.",
+        },
+        "zh": {
+            "desc": "DSO 采样数量。",
+            "range": "冒烟 `500`-`5000`；常规 `5000`-`50000`；DSO 依赖和耗时都更重。",
+        },
+    },
+    "num_epochs_g": {
+        "en": {
+            "desc": "AFF generator training epochs.",
+            "range": "`10`-`100`; start with `50`.",
+        },
+        "zh": {"desc": "AFF 生成器训练 epoch 数。", "range": "建议 `10`-`100`；可从 `50` 开始。"},
+    },
+    "num_epochs_p": {
+        "en": {
+            "desc": "AFF predictor training epochs.",
+            "range": "`10`-`100`; start with `50`.",
+        },
+        "zh": {"desc": "AFF 预测器训练 epoch 数。", "range": "建议 `10`-`100`；可从 `50` 开始。"},
+    },
+    "pool_capacity": {
+        "en": {
+            "desc": "Maximum number of factors kept in the search pool.",
+            "range": "`5`-`50`; `10` is a good quick default.",
+        },
+        "zh": {"desc": "搜索池保留的最大因子数量。", "range": "建议 `5`-`50`；快速运行可用 `10`。"},
+    },
+    "population_size": {
+        "en": {
+            "desc": "GP population size.",
+            "range": "Smoke test: `50`-`300`; normal run: `500`-`5000`; larger values improve search but cost CPU.",
+        },
+        "zh": {
+            "desc": "GP 种群规模。",
+            "range": "冒烟 `50`-`300`；常规 `500`-`5000`；越大搜索更充分但更耗 CPU。",
+        },
+    },
+    "port": {
+        "en": {
+            "desc": "Local HTTP port for a Streamlit app.",
+            "range": "`1024`-`65535`; portal defaults to `19901`.",
+        },
+        "zh": {
+            "desc": "Streamlit 应用的本地 HTTP 端口。",
+            "range": "可用 `1024`-`65535`；portal 默认 `19901`。",
+        },
+    },
+    "qlib_config_name": {
+        "en": {
+            "desc": "Named Qlib config/template variant.",
+            "range": "Usually omit; set only when the scenario/template defines a specific config name.",
+        },
+        "zh": {"desc": "Qlib 配置/模板变体名称。", "range": "通常不填；只有场景/模板定义了特定配置名时填写。"},
+    },
+    "qlib_dir": {
+        "en": {
+            "desc": "Override Qlib data directory.",
+            "range": "Usually omit and use project config; set to a valid local qlib data root when testing another dataset.",
+        },
+        "zh": {
+            "desc": "覆盖 Qlib 数据目录。",
+            "range": "通常不填，使用项目配置；测试其他数据集时填有效的本地 qlib 数据根目录。",
+        },
+    },
+    "qlib_template_dir": {
+        "en": {
+            "desc": "Directory containing Qlib YAML templates/helper scripts.",
+            "range": "Usually omit; use `important_data/factor_qlib_templates` for custom factor templates.",
+        },
+        "zh": {
+            "desc": "Qlib YAML 模板和辅助脚本目录。",
+            "range": "通常不填；自定义因子模板可用 `important_data/factor_qlib_templates`。",
+        },
+    },
+    "raw": {
+        "en": {
+            "desc": "Return/raw-log extra mined expressions instead of only accepted factors where supported.",
+            "range": "Use `false`/omit for normal runs; `true` for debugging or analysis.",
+        },
+        "zh": {
+            "desc": "支持时返回/记录更多原始挖掘表达式，而不只看通过因子。",
+            "range": "常规运行不填或 `false`；调试/分析时填 `true`。",
+        },
+    },
+    "rebuild_h5": {
+        "en": {
+            "desc": "Rebuild daily_pv h5 after single-stock changes.",
+            "range": "Usually `false` during batches; run once with `true` after all edits.",
+        },
+        "zh": {
+            "desc": "单股改动后是否重建 daily_pv h5。",
+            "range": "批量处理时通常先 `false`；全部改完后再统一 `true`。",
+        },
+    },
+    "run_tag": {
+        "en": {
+            "desc": "Human-readable backtest run label.",
+            "range": "Optional; use short stable labels like `portal_test` or `my_strategy_202606`.",
+        },
+        "zh": {
+            "desc": "回测运行标签。",
+            "range": "可选；建议短且稳定，如 `portal_test`、`my_strategy_202606`。",
+        },
+    },
+    "save": {
+        "en": {
+            "desc": "Save accepted factors into the factor zoo.",
+            "range": "Use `true` for productive runs; `false` for experiments you do not want persisted.",
+        },
+        "zh": {"desc": "是否把通过的因子保存进因子库。", "range": "正式挖掘填 `true`；只实验不想入库时填 `false`。"},
+    },
+    "scenario": {
+        "en": {
+            "desc": "Registered scenario name controlling loop/template behavior.",
+            "range": "Mining usually uses `alpha_factor_mining`; factor backtest uses `factor_backtest`.",
+        },
+        "zh": {
+            "desc": "控制循环/模板行为的已注册场景名。",
+            "range": "因子挖掘通常用 `alpha_factor_mining`；因子回测用 `factor_backtest`。",
+        },
+    },
+    "seed": {
+        "en": {
+            "desc": "Random seed for reproducibility.",
+            "range": "`0`-`10000000`; keep fixed when comparing methods.",
+        },
+        "zh": {"desc": "随机种子，用于复现实验。", "range": "`0`-`10000000`；比较不同方法时建议固定。"},
+    },
+    "skip_smoke": {
+        "en": {
+            "desc": "Skip Qlib smoke validation.",
+            "range": "Use `false` for final configs; `true` only when dependencies/data are unavailable or you need fast generation.",
+        },
+        "zh": {
+            "desc": "是否跳过 Qlib 冒烟校验。",
+            "range": "最终配置建议 `false`；依赖/数据不可用或只想快速生成时用 `true`。",
+        },
+    },
+    "smoke_timeout": {
+        "en": {
+            "desc": "Timeout for Qlib smoke validation in seconds.",
+            "range": "`60`-`600`; default `120` is enough for small configs.",
+        },
+        "zh": {"desc": "Qlib 冒烟校验超时时间（秒）。", "range": "建议 `60`-`600`；小配置默认 `120` 足够。"},
+    },
+    "source": {
+        "en": {
+            "desc": "Market data source.",
+            "range": "`baostock_cn` for no-token local-friendly runs; `tushare_cn` when Tushare token/quota is available.",
+        },
+        "zh": {
+            "desc": "行情数据源。",
+            "range": "无需 token 的本地友好流程用 `baostock_cn`；有 Tushare token/积分时可用 `tushare_cn`。",
+        },
+    },
+    "start_date": {
+        "en": {
+            "desc": "Start date.",
+            "range": "`YYYY-MM-DD`; daily Chinese-stock workflows often start from `2005-01-01` or later.",
+        },
+        "zh": {"desc": "开始日期。", "range": "`YYYY-MM-DD`；A 股日频常从 `2005-01-01` 或之后开始。"},
+    },
+    "steps": {
+        "en": {
+            "desc": "RL training/search steps.",
+            "range": "Smoke test: `1000`-`10000`; normal run: `50000`-`500000`.",
+        },
+        "zh": {
+            "desc": "RL 训练/搜索步数。",
+            "range": "冒烟 `1000`-`10000`；常规 `50000`-`500000`。",
+        },
+    },
+    "step_n": {
+        "en": {
+            "desc": "Number of LLM mining/backtest loop steps.",
+            "range": "Smoke test: `1`-`3`; exploratory run: `5`-`20`; larger runs cost more LLM/API time.",
+        },
+        "zh": {
+            "desc": "LLM 挖掘/回测循环步数。",
+            "range": "冒烟 `1`-`3`；探索 `5`-`20`；更大值会显著增加 LLM/API 成本。",
+        },
+    },
+    "stock_csv": {
+        "en": {
+            "desc": "CSV file listing target stocks.",
+            "range": "Use a small pool for tests; use main stock list for production downloads.",
+        },
+        "zh": {"desc": "目标股票列表 CSV。", "range": "测试用小股票池；正式下载用主股票列表。"},
+    },
+    "strategy_name": {
+        "en": {
+            "desc": "Saved strategy asset name.",
+            "range": "Must exist in the strategy database for strategy backtests.",
+        },
+        "zh": {"desc": "已保存的策略资产名称。", "range": "策略回测时必须存在于策略库。"},
+    },
+    "target_mode": {
+        "en": {
+            "desc": "Final adjustment mode synthesized after raw download.",
+            "range": "`forward` for forward-adjusted output; `backward` for backtest-style adjusted output.",
+        },
+        "zh": {
+            "desc": "未复权下载后最终合成的复权类型。",
+            "range": "输出前复权用 `forward`；偏回测使用的后复权用 `backward`。",
+        },
+    },
+    "template": {
+        "en": {
+            "desc": "Qlib YAML template family.",
+            "range": "`baseline` for simple configs; `combined` for the combined KDD-style template.",
+        },
+        "zh": {
+            "desc": "Qlib YAML 模板类型。",
+            "range": "简单配置用 `baseline`；组合 KDD 风格模板用 `combined`。",
+        },
+    },
+    "token": {
+        "en": {
+            "desc": "Tushare token.",
+            "range": "Prefer leaving empty and using `TUSHARE_TOKEN`; paste only for temporary portal runs.",
+        },
+        "zh": {
+            "desc": "Tushare token。",
+            "range": "优先留空并使用环境变量 `TUSHARE_TOKEN`；只在临时 portal 运行时粘贴。",
+        },
+    },
+    "top_n": {
+        "en": {
+            "desc": "Keep/evaluate the top-N mined expressions where supported.",
+            "range": "`10`-`200`; start with `50`.",
+        },
+        "zh": {"desc": "支持时保留/评估排名前 N 的挖掘表达式。", "range": "建议 `10`-`200`；可从 `50` 开始。"},
+    },
+    "topk": {
+        "en": {
+            "desc": "Portfolio TopK value in generated Qlib config.",
+            "range": "`10`-`100`; common starting point is `50`.",
+        },
+        "zh": {"desc": "生成 Qlib 配置中的组合 TopK。", "range": "建议 `10`-`100`；常用起点 `50`。"},
+    },
+    "tournament_size": {
+        "en": {
+            "desc": "GP tournament size for parent selection.",
+            "range": "`5`-`50`; start around `20`.",
+        },
+        "zh": {"desc": "GP 父代选择的锦标赛规模。", "range": "建议 `5`-`50`；可从 `20` 开始。"},
+    },
+    "train_end_year": {
+        "en": {
+            "desc": "Last year included in the training segment.",
+            "range": "`2018`-`2022` is common; default `2020` leaves later years for validation/test.",
+        },
+        "zh": {
+            "desc": "训练集包含的最后年份。",
+            "range": "常见 `2018`-`2022`；默认 `2020` 会把后续年份留给验证/测试。",
+        },
+    },
+    "zoo_size": {
+        "en": {
+            "desc": "Target number of factors in the AFF candidate zoo.",
+            "range": "Smoke test: `20`-`100`; normal run: `100`-`1000`.",
+        },
+        "zh": {"desc": "AFF 候选因子池目标大小。", "range": "冒烟 `20`-`100`；常规 `100`-`1000`。"},
+    },
+}
+
+
+def _json_example_value(name: str, param: inspect.Parameter) -> Any:
+    samples: dict[str, Any] = {
+        "action": "pipeline",
+        "adjust_mode": "backward",
+        "benchmark": "SH000300",
+        "config": "important_data/factor_qlib_templates/conf.yaml",
+        "direction": "验证一个新的量价因子假说",
+        "end_date": "2024-12-31",
+        "factor_path": "important_data/factors.csv",
+        "host": "0.0.0.0",
+        "instruments": "test_stock_pool_80",
+        "market": "all",
+        "mode": "retrain",
+        "output": "important_data/factor_qlib_templates/custom.yaml",
+        "path": "log/session_name",
+        "qlib_config_name": "conf.yaml",
+        "qlib_data_dir": "git_ignore_folder/qlib_data/cn_data",
+        "qlib_dir": "git_ignore_folder/qlib_data/cn_data",
+        "qlib_template_dir": "important_data/factor_qlib_templates",
+        "run_tag": "portal_test",
+        "scenario": "factor_backtest",
+        "source": "baostock_cn",
+        "start_date": "2020-01-01",
+        "stock_csv": "important_data/stock_lists/main_stock_2026_4_27.csv",
+        "strategy_name": "my_strategy",
+        "symbol": "sh.600000",
+        "template": "baseline",
+    }
+    if name in samples:
+        return samples[name]
+    if param.default is not inspect._empty and param.default is not None:
+        return param.default
+    annotation = param.annotation
+    if annotation is bool or isinstance(param.default, bool):
+        return False
+    if annotation is int or isinstance(param.default, int):
+        return 1
+    if annotation is float or isinstance(param.default, float):
+        return 0.1
+    return f"<{name}>"
+
+
+def _command_kwargs_example(
+    module_name: str,
+    command_name: str,
+    sig: inspect.Signature | str,
+) -> dict[str, Any]:
+    override = _COMMAND_KWARGS_EXAMPLES.get((module_name, command_name))
+    if override is not None:
+        return override
+    if not isinstance(sig, inspect.Signature):
+        return {}
+
+    required: dict[str, Any] = {}
+    optional: dict[str, Any] = {}
+    for name, param in sig.parameters.items():
+        if param.kind in (
+            inspect.Parameter.VAR_KEYWORD,
+            inspect.Parameter.VAR_POSITIONAL,
+        ):
+            continue
+        if param.default is inspect._empty:
+            required[name] = _json_example_value(name, param)
+        elif len(optional) < 3:
+            optional[name] = _json_example_value(name, param)
+    return required or optional
+
+
+def _format_command_parameters(
+    sig: inspect.Signature | str,
+) -> tuple[list[str], list[str], str | None]:
+    if not isinstance(sig, inspect.Signature):
+        return [], [], None
+
+    required: list[str] = []
+    optional: list[str] = []
+    var_kw: str | None = None
+    for name, param in sig.parameters.items():
+        if param.kind == inspect.Parameter.VAR_KEYWORD:
+            var_kw = name
+            continue
+        if param.kind == inspect.Parameter.VAR_POSITIONAL:
+            continue
+        if param.default is inspect._empty:
+            required.append(name)
+        else:
+            try:
+                default = json.dumps(param.default, ensure_ascii=False, default=str)
+            except TypeError:
+                default = repr(param.default)
+            optional.append(f"{name}={default}")
+    return required, optional, var_kw
+
+
+def _command_parameter_names(
+    module_name: str,
+    command_name: str,
+    sig: inspect.Signature | str,
+    example: dict[str, Any],
+) -> list[str]:
+    names: list[str] = []
+    if isinstance(sig, inspect.Signature):
+        names.extend(
+            name
+            for name, param in sig.parameters.items()
+            if param.kind
+            not in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL)
+        )
+    names.extend(example.keys())
+    names.extend(_COMMAND_EXTRA_PARAM_NAMES.get((module_name, command_name), []))
+    return list(dict.fromkeys(names))
+
+
+def _render_parameter_details(names: list[str]) -> None:
+    rows: list[dict[str, str]] = []
+    lang = get_lang()
+    for name in names:
+        localized = _PARAMETER_DETAILS.get(name, {}).get(lang)
+        if not localized:
+            continue
+        rows.append(
+            {
+                t("param_detail_name"): name,
+                t("param_detail_desc"): localized["desc"],
+                t("param_detail_range"): localized["range"],
+            }
+        )
+    if not rows:
+        return
+    with st.expander(t("param_detail_heading"), expanded=False):
+        st.dataframe(rows, width="stretch", hide_index=True)
+
+
+def _render_command_kwargs_help(
+    module_name: str,
+    command_name: str,
+    command_fn: Callable[..., Any],
+    sig: inspect.Signature | str,
+) -> None:
+    required, optional, var_kw = _format_command_parameters(sig)
+    example = _command_kwargs_example(module_name, command_name, sig)
+    doc = inspect.getdoc(command_fn) or ""
+    doc_first_line = doc.splitlines()[0] if doc else ""
+
+    st.markdown(f"**{t('command_kwargs_guide_title')}**")
+    st.caption(t("command_kwargs_guide_caption"))
+    if doc_first_line:
+        st.caption(doc_first_line)
+    if required:
+        st.write(
+            t("command_required_params", params=", ".join(f"`{p}`" for p in required))
+        )
+    if optional:
+        st.write(
+            t(
+                "command_optional_params",
+                params=", ".join(f"`{p}`" for p in optional[:12]),
+            )
+        )
+        if len(optional) > 12:
+            st.caption(t("command_optional_more", count=len(optional) - 12))
+    if var_kw:
+        st.write(t("command_var_kwargs", name=var_kw))
+    extra_note = _COMMAND_EXTRA_NOTES.get((module_name, command_name))
+    if extra_note:
+        st.info(extra_note.get(get_lang(), extra_note["en"]))
+    _render_parameter_details(
+        _command_parameter_names(module_name, command_name, sig, example)
+    )
+    st.write(t("command_example_json"))
+    st.code(json.dumps(example, ensure_ascii=False, indent=2), language="json")
+    st.caption(t("command_empty_json_hint"))
+
+
+def _render_alphaforge_extra_kwargs_help(method: str) -> None:
+    module_name = "alphaforge_aff" if method == "mine_aff" else "alphaforge_search"
+    extra_note = _COMMAND_EXTRA_NOTES.get((module_name, method))
+
+    st.markdown(f"**{t('af_extra_kwargs_guide_title')}**")
+    st.caption(t("af_extra_kwargs_guide_caption"))
+    if extra_note:
+        st.info(extra_note.get(get_lang(), extra_note["en"]))
+    names = list(_ALPHAFORGE_EXTRA_KWARGS_EXAMPLES.get(method, {}).keys())
+    names.extend(_COMMAND_EXTRA_PARAM_NAMES.get((module_name, method), []))
+    _render_parameter_details(list(dict.fromkeys(names)))
+    st.write(t("command_example_json"))
+    st.code(
+        json.dumps(
+            _ALPHAFORGE_EXTRA_KWARGS_EXAMPLES.get(method, {}),
+            ensure_ascii=False,
+            indent=2,
+        ),
+        language="json",
+    )
+    st.caption(t("command_empty_json_hint"))
+
+
 def _render_overview(engine: Any) -> None:
     st.subheader(t("overview_subheader"))
     st.write(t("overview_description"))
@@ -110,7 +959,9 @@ def _render_overview(engine: Any) -> None:
     st.markdown(f"#### {t('modules_heading')}")
     for name, module in engine.modules.items():
         commands = sorted(module.commands().keys())
-        with st.expander(t("module_expander", name=name, count=len(commands)), expanded=False):
+        with st.expander(
+            t("module_expander", name=name, count=len(commands)), expanded=False
+        ):
             st.write(
                 t(
                     "type_label",
@@ -163,7 +1014,9 @@ def _render_data_tab(engine: Any) -> None:
             if is_apply_adjust
             else "data_pipeline_source"
         )
-        source = st.selectbox(t("data_source"), ["baostock_cn", "tushare_cn"], key=source_key)
+        source = st.selectbox(
+            t("data_source"), ["baostock_cn", "tushare_cn"], key=source_key
+        )
     is_tushare = source == "tushare_cn"
 
     start_date = end_date = ""
@@ -239,17 +1092,27 @@ def _render_data_tab(engine: Any) -> None:
             show_target_mode = True
         else:
             adjust_mode = st.selectbox(
-                t("adjust_mode"), ["none", "forward", "backward"], index=0, key="data_pipeline_adjust_mode"
+                t("adjust_mode"),
+                ["none", "forward", "backward"],
+                index=0,
+                key="data_pipeline_adjust_mode",
             )
             show_target_mode = adjust_mode == "none"
         if show_target_mode:
             target_mode = st.selectbox(
-                t("pipeline_target_mode"), ["forward", "backward"], index=0, key="data_pipeline_target_mode"
+                t("pipeline_target_mode"),
+                ["forward", "backward"],
+                index=0,
+                key="data_pipeline_target_mode",
             )
         if is_tushare:
-            pipeline_token = st.text_input(t("tushare_token"), "", type="password", key="data_pipeline_token")
+            pipeline_token = st.text_input(
+                t("tushare_token"), "", type="password", key="data_pipeline_token"
+            )
     else:
-        adjust_mode = st.selectbox(t("adjust_mode"), ["backward", "forward", "none"], index=0)
+        adjust_mode = st.selectbox(
+            t("adjust_mode"), ["backward", "forward", "none"], index=0
+        )
         if is_tushare:
             st.info(t("tushare_adjust_note"))
 
@@ -257,12 +1120,22 @@ def _render_data_tab(engine: Any) -> None:
     all_market = include_daily_basic = False
     if is_download:
         with st.expander(t("download_custom_params")):
-            output_dir = st.text_input(t("download_output_dir"), "", key="data_dl_output_dir")
-            factor_dir = st.text_input(t("download_factor_dir"), "", key="data_dl_factor_dir")
-            code_column = st.text_input(t("download_code_column"), "", key="data_dl_code_column")
-            all_market = st.checkbox(t("download_all_market"), value=False, key="data_dl_all_market")
+            output_dir = st.text_input(
+                t("download_output_dir"), "", key="data_dl_output_dir"
+            )
+            factor_dir = st.text_input(
+                t("download_factor_dir"), "", key="data_dl_factor_dir"
+            )
+            code_column = st.text_input(
+                t("download_code_column"), "", key="data_dl_code_column"
+            )
+            all_market = st.checkbox(
+                t("download_all_market"), value=False, key="data_dl_all_market"
+            )
             if is_tushare:
-                token = st.text_input(t("tushare_token"), "", type="password", key="data_dl_token")
+                token = st.text_input(
+                    t("tushare_token"), "", type="password", key="data_dl_token"
+                )
                 include_daily_basic = st.checkbox(
                     t("include_daily_basic"), value=False, key="data_dl_daily_basic"
                 )
@@ -279,8 +1152,12 @@ def _render_data_tab(engine: Any) -> None:
             elif action == "apply_adjust":
                 kwargs["adjust_mode"] = adjust_mode
                 kwargs["raw_dir"] = apply_raw_dir.strip() or apply_default_raw_dir
-                kwargs["factor_dir"] = apply_factor_dir.strip() or apply_default_factor_dir
-                kwargs["output_dir"] = apply_output_dir.strip() or apply_default_output_dir
+                kwargs["factor_dir"] = (
+                    apply_factor_dir.strip() or apply_default_factor_dir
+                )
+                kwargs["output_dir"] = (
+                    apply_output_dir.strip() or apply_default_output_dir
+                )
                 if refresh_factors_if_needed and not is_tushare:
                     kwargs["refresh_factors_if_needed"] = True
             else:
@@ -337,7 +1214,9 @@ def _render_h5_rebuild(data_system: Any) -> None:
     if not st.session_state.get("portal_stock_h5_stale"):
         return
     st.warning(t("stock_h5_stale_warning"))
-    market = st.text_input(t("stock_rebuild_h5_market"), value="", key="portal_stock_h5_market")
+    market = st.text_input(
+        t("stock_rebuild_h5_market"), value="", key="portal_stock_h5_market"
+    )
     if st.button(t("stock_rebuild_h5_btn"), key="portal_stock_h5_btn"):
         try:
             if market.strip():
@@ -368,7 +1247,9 @@ def _render_stock_manage(data_system: Any) -> None:
         return
 
     available_modes = [m for m, syms in by_mode.items() if syms]
-    symbol = st.selectbox(t("stock_select_symbol"), all_symbols, key="portal_stock_symbol")
+    symbol = st.selectbox(
+        t("stock_select_symbol"), all_symbols, key="portal_stock_symbol"
+    )
     modes = st.multiselect(
         t("stock_adjust_modes"),
         list(by_mode.keys()),
@@ -394,7 +1275,11 @@ def _render_stock_manage(data_system: Any) -> None:
                 st.session_state["portal_stock_h5_stale"] = True
                 st.cache_data.clear()
                 st.success(
-                    t("stock_deleted", name=symbol, detail=f"{len(report.get('deleted', []))} items")
+                    t(
+                        "stock_deleted",
+                        name=symbol,
+                        detail=f"{len(report.get('deleted', []))} items",
+                    )
                 )
                 st.rerun()
             except Exception as exc:  # noqa: BLE001
@@ -402,7 +1287,9 @@ def _render_stock_manage(data_system: Any) -> None:
 
     # --- Refresh / re-download ---
     st.markdown(f"##### {t('stock_refresh_heading')}")
-    refresh_start = st.text_input(t("start_date"), value="2016-12-31", key="portal_stock_refresh_start")
+    refresh_start = st.text_input(
+        t("start_date"), value="2016-12-31", key="portal_stock_refresh_start"
+    )
     refresh_end = st.text_input(t("end_date"), value="", key="portal_stock_refresh_end")
     if st.button(t("stock_refresh_btn"), key="portal_stock_refresh_btn"):
         try:
@@ -439,9 +1326,13 @@ def _render_stock_manage(data_system: Any) -> None:
 
     # --- Trim ---
     st.markdown(f"##### {t('stock_trim_heading')}")
-    trim_start = st.text_input(t("stock_trim_start"), value="", key="portal_stock_trim_start")
+    trim_start = st.text_input(
+        t("stock_trim_start"), value="", key="portal_stock_trim_start"
+    )
     trim_end = st.text_input(t("stock_trim_end"), value="", key="portal_stock_trim_end")
-    drop_dates = st.text_input(t("stock_drop_dates"), value="", key="portal_stock_drop_dates")
+    drop_dates = st.text_input(
+        t("stock_drop_dates"), value="", key="portal_stock_drop_dates"
+    )
     if st.button(t("stock_trim_btn"), key="portal_stock_trim_btn"):
         try:
             data_system.trim_symbol(
@@ -465,27 +1356,206 @@ def _render_factor_tab(engine: Any) -> None:
     st.subheader(t("factor_subheader"))
     factor_system = engine.get_system("factor")
     zoo_path = Path(engine.config.factor.zoo_dir) / "factor_zoo.csv"
+    has_categories = bool(getattr(factor_system, "supports_categories", False))
 
-    st.text_input(t("factor_zoo_csv"), str(zoo_path), disabled=True)
+    try:
+        factors = factor_system.list_factors()
+    except Exception as exc:  # noqa: BLE001
+        factors = []
+        st.warning(t("factor_zoo_preview_failed", error=exc))
+    all_categories = factor_system.list_categories() if has_categories else []
 
-    if zoo_path.exists():
-        try:
-            import pandas as pd
+    factor_names = [f["factor_name"] for f in factors]
+    category_counts: dict[str, int] = {cat: 0 for cat in all_categories}
+    for factor in factors:
+        for cat in factor.get("categories", []):
+            category_counts[cat] = category_counts.get(cat, 0) + 1
 
-            df = pd.read_csv(zoo_path)
-            st.success(t("factor_zoo_rows", count=len(df)))
-            st.dataframe(df.head(200), width="stretch", hide_index=True)
-        except Exception as exc:  # noqa: BLE001
-            st.warning(t("factor_zoo_preview_failed", error=exc))
+    # ---- Factor list (source of truth = factor system; shows categories) ----
+    selected_factor_names: list[str] = []
+    if factors:
+        filter_cats = (
+            st.multiselect(
+                t("factor_filter_by_category"),
+                all_categories,
+                key="portal_factor_filter",
+            )
+            if has_categories and all_categories
+            else []
+        )
+        search_text = st.text_input(t("factor_search"), key="portal_factor_search")
+        query = search_text.strip().lower()
+        rows = [
+            {
+                "factor_name": f["factor_name"],
+                "factor_expression": f["factor_expression"],
+                "categories": ", ".join(f.get("categories", [])),
+            }
+            for f in factors
+            if not filter_cats or (set(filter_cats) & set(f.get("categories", [])))
+        ]
+        if query:
+            rows = [
+                row
+                for row in rows
+                if query
+                in " ".join(
+                    [
+                        str(row["factor_name"]),
+                        str(row["factor_expression"]),
+                        str(row["categories"]),
+                    ]
+                ).lower()
+            ]
+        st.success(t("factor_zoo_rows", count=len(rows)))
+        table_state = st.dataframe(
+            rows,
+            width="stretch",
+            hide_index=True,
+            key="portal_factor_table",
+            on_select="rerun",
+            selection_mode="multi-row",
+        )
+        selection = getattr(table_state, "selection", None)
+        if selection is None and isinstance(table_state, dict):
+            selection = table_state.get("selection", {})
+        selected_rows = getattr(selection, "rows", None)
+        if selected_rows is None and isinstance(selection, dict):
+            selected_rows = selection.get("rows", [])
+        selected_factor_names = [
+            rows[i]["factor_name"] for i in (selected_rows or []) if 0 <= i < len(rows)
+        ]
+        st.caption(
+            t(
+                "factor_selection_summary",
+                shown=len(rows),
+                selected=len(selected_factor_names),
+            )
+        )
     else:
         st.info(t("factor_zoo_missing"))
+    st.text_input(t("factor_zoo_csv"), str(zoo_path), disabled=True)
 
-    factors = factor_system.list_factors()
+    # ---- Bulk category assignment/removal ----
+    if has_categories and factors:
+        st.markdown(f"#### {t('bulk_category_heading')}")
+        st.caption(t("bulk_category_caption"))
+        last_bulk_summary = st.session_state.get("portal_bulk_category_last")
+        if last_bulk_summary:
+            st.success(
+                t(
+                    "bulk_category_result",
+                    changed=len(last_bulk_summary.get("changed", [])),
+                    unchanged=len(last_bulk_summary.get("unchanged", [])),
+                    missing=len(last_bulk_summary.get("missing", [])),
+                )
+            )
+            with st.expander(t("bulk_category_result_details"), expanded=False):
+                st.json(last_bulk_summary)
+        bc1, bc2 = st.columns(2)
+        existing_target = bc1.selectbox(
+            t("bulk_category_existing"),
+            [""] + all_categories,
+            format_func=lambda name: t("bulk_category_existing_placeholder")
+            if not name
+            else name,
+            key="portal_bulk_cat_existing",
+        )
+        new_target = bc2.text_input(t("bulk_category_new"), key="portal_bulk_cat_new")
+        target_category = new_target.strip() or str(existing_target).strip()
+        disabled_bulk = not selected_factor_names or not target_category
+        ba, br = st.columns(2)
+        if ba.button(
+            t("bulk_category_add_btn"),
+            key="portal_bulk_cat_add",
+            disabled=disabled_bulk,
+            width="stretch",
+        ):
+            try:
+                summary = factor_system.add_factors_to_category(
+                    selected_factor_names, target_category
+                )
+                st.session_state["portal_bulk_category_last"] = summary
+                st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                ba.error(t("bulk_category_failed", error=exc))
+        if br.button(
+            t("bulk_category_remove_btn"),
+            key="portal_bulk_cat_remove",
+            disabled=disabled_bulk,
+            width="stretch",
+        ):
+            try:
+                summary = factor_system.remove_factors_from_category(
+                    selected_factor_names, target_category
+                )
+                st.session_state["portal_bulk_category_last"] = summary
+                st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                br.error(t("bulk_category_failed", error=exc))
+        if disabled_bulk:
+            st.caption(t("bulk_category_disabled_hint"))
+
+    # ---- Category registry management ----
+    if has_categories:
+        st.markdown(f"#### {t('category_manage_heading')}")
+        if category_counts:
+            st.dataframe(
+                [
+                    {
+                        t("category_table_name"): cat,
+                        t("category_table_factor_count"): category_counts.get(cat, 0),
+                    }
+                    for cat in sorted(category_counts)
+                ],
+                width="stretch",
+                hide_index=True,
+            )
+        new_cat = st.text_input(t("category_new_name"), key="portal_cat_new")
+        if st.button(t("category_create_btn"), key="portal_cat_create"):
+            if new_cat.strip() and factor_system.create_category(new_cat.strip()):
+                st.success(t("category_created", name=new_cat.strip()))
+                st.rerun()
+        if all_categories:
+            rc, dc = st.columns(2)
+            with rc:
+                ren_old = st.selectbox(
+                    t("category_rename_old"), all_categories, key="portal_cat_ren_old"
+                )
+                ren_new = st.text_input(
+                    t("category_rename_new"), key="portal_cat_ren_new"
+                )
+                if st.button(t("category_rename_btn"), key="portal_cat_ren_btn"):
+                    if ren_new.strip() and factor_system.rename_category(
+                        ren_old, ren_new.strip()
+                    ):
+                        st.success(
+                            t("category_renamed", old=ren_old, new=ren_new.strip())
+                        )
+                        st.rerun()
+            with dc:
+                del_cat = st.selectbox(
+                    t("category_delete_select"),
+                    all_categories,
+                    key="portal_cat_del_sel",
+                )
+                del_ok = st.checkbox(t("delete_confirm"), key="portal_cat_del_confirm")
+                if st.button(t("category_delete_btn"), key="portal_cat_del_btn"):
+                    if not del_ok:
+                        st.warning(t("delete_confirm"))
+                    elif factor_system.delete_category(del_cat):
+                        st.success(t("category_deleted", name=del_cat))
+                        st.rerun()
+
+    # ---- Delete factor ----
     if factors:
         st.markdown(f"#### {t('delete_heading')}")
-        factor_names = [item["factor_name"] for item in factors]
-        delete_factor_name = st.selectbox(t("select_factor_to_delete"), factor_names, key="portal_delete_factor")
-        delete_factor_confirm = st.checkbox(t("delete_confirm"), key="portal_delete_factor_confirm")
+        delete_factor_name = st.selectbox(
+            t("select_factor_to_delete"), factor_names, key="portal_delete_factor"
+        )
+        delete_factor_confirm = st.checkbox(
+            t("delete_confirm"), key="portal_delete_factor_confirm"
+        )
         if st.button(t("delete_factor_btn"), key="portal_delete_factor_btn"):
             if not delete_factor_confirm:
                 st.warning(t("delete_confirm"))
@@ -499,6 +1569,73 @@ def _render_factor_tab(engine: Any) -> None:
                 except Exception as exc:  # noqa: BLE001
                     st.error(t("factor_delete_error", error=exc))
 
+    # ---- Edit a single factor's categories ----
+    if has_categories and factors:
+        with st.expander(t("factor_edit_categories_heading"), expanded=False):
+            edit_factor = st.selectbox(
+                t("factor_edit_select"), factor_names, key="portal_fcat_sel"
+            )
+            current = next(
+                (
+                    f.get("categories", [])
+                    for f in factors
+                    if f["factor_name"] == edit_factor
+                ),
+                [],
+            )
+            chosen = st.multiselect(
+                t("factor_edit_categories"),
+                all_categories,
+                default=current,
+                key="portal_fcat_ms",
+            )
+            extra = st.text_input(
+                t("factor_edit_new_categories"), key="portal_fcat_extra"
+            )
+            if st.button(t("factor_edit_save"), key="portal_fcat_save"):
+                cats = list(chosen) + [c.strip() for c in extra.split(",") if c.strip()]
+                if factor_system.set_factor_categories(edit_factor, cats):
+                    st.success(t("factor_categories_updated", name=edit_factor))
+                    st.rerun()
+
+    # ---- Category-scoped actions: export / backtest ----
+    if has_categories and all_categories:
+        st.markdown(f"#### {t('category_actions_heading')}")
+        act_cat = st.selectbox(
+            t("category_action_select"), all_categories, key="portal_cat_act_sel"
+        )
+        safe_name = "".join(ch if ch.isalnum() else "_" for ch in act_cat)
+        ec, bc = st.columns(2)
+        exp_path = ec.text_input(
+            t("category_export_path"),
+            value=str(zoo_path.parent / f"category_{safe_name}.csv"),
+            key="portal_cat_exp_path",
+        )
+        if ec.button(t("category_export_btn"), key="portal_cat_exp_btn"):
+            try:
+                n = factor_system.export_category_csv(act_cat, exp_path.strip())
+                ec.success(t("category_exported", count=n, path=exp_path.strip()))
+            except Exception as exc:  # noqa: BLE001
+                ec.error(t("category_export_failed", error=exc))
+        if bc.button(t("category_backtest_btn"), key="portal_cat_bt_btn"):
+            import tempfile
+
+            from alphapilot.modules.portal import jobs as portal_jobs
+
+            tmp = Path(tempfile.gettempdir()) / f"alphapilot_category_{safe_name}.csv"
+            try:
+                n = factor_system.export_category_csv(act_cat, tmp)
+                if n == 0:
+                    bc.warning(t("category_empty"))
+                else:
+                    job = portal_jobs.start_job(
+                        "factor_backtest", {"factor_path": str(tmp)}
+                    )
+                    bc.success(t("job_started", job_id=job["job_id"]))
+            except Exception as exc:  # noqa: BLE001
+                bc.error(t("job_start_failed", error=exc))
+
+    # ---- Validate / Add ----
     st.markdown(f"#### {t('factor_validate_heading')}")
     expr = st.text_area(
         t("expression"),
@@ -507,6 +1644,15 @@ def _render_factor_tab(engine: Any) -> None:
         placeholder=t("expression_placeholder"),
     )
     factor_name = st.text_input(t("factor_name"), value="")
+    add_cats: list[str] = []
+    add_extra = ""
+    if has_categories:
+        add_cats = st.multiselect(
+            t("factor_add_categories"), all_categories, key="portal_add_cats"
+        )
+        add_extra = st.text_input(
+            t("factor_add_new_categories"), key="portal_add_new_cats"
+        )
     c1, c2 = st.columns(2)
     if c1.button(t("check_expression")):
         try:
@@ -514,7 +1660,9 @@ def _render_factor_tab(engine: Any) -> None:
             if result.acceptable:
                 st.success(t("expression_acceptable"))
             else:
-                reason = format_factor_rejection(result.code, result.message, result.details)
+                reason = format_factor_rejection(
+                    result.code, result.message, result.details
+                )
                 st.error(t("expression_not_acceptable"))
                 st.caption(reason)
             if result.details:
@@ -524,12 +1672,19 @@ def _render_factor_tab(engine: Any) -> None:
             st.error(t("check_failed", error=exc))
     if c2.button(t("add_to_factor_db")):
         try:
-            result = factor_system.add_factor(factor_name.strip(), expr.strip())
+            new_cats = list(add_cats) + [
+                c.strip() for c in add_extra.split(",") if c.strip()
+            ]
+            result = factor_system.add_factor(
+                factor_name.strip(), expr.strip(), categories=new_cats or None
+            )
             if result.acceptable:
                 st.success(t("factor_added"))
                 st.rerun()
             else:
-                reason = format_factor_rejection(result.code, result.message, result.details)
+                reason = format_factor_rejection(
+                    result.code, result.message, result.details
+                )
                 st.warning(t("factor_not_added", reason=reason))
                 if result.details:
                     with st.expander(t("factor_validation_details")):
@@ -572,7 +1727,9 @@ def _render_strategy_tab(engine: Any) -> None:
         params = db.load(selected)
         st.json(params or {})
         st.markdown(f"#### {t('delete_heading')}")
-        delete_strategy_confirm = st.checkbox(t("delete_confirm"), key="portal_delete_strategy_confirm")
+        delete_strategy_confirm = st.checkbox(
+            t("delete_confirm"), key="portal_delete_strategy_confirm"
+        )
         if st.button(t("delete_strategy_btn"), key="portal_delete_strategy_btn"):
             if not delete_strategy_confirm:
                 st.warning(t("delete_confirm"))
@@ -607,7 +1764,9 @@ def _render_strategy_tab(engine: Any) -> None:
                 raise ValueError(t("strategy_params_not_found"))
             out = Path(export_strategy_path.strip())
             out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            out.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
             st.success(t("params_exported", name=export_strategy_name, path=out))
         except Exception as exc:  # noqa: BLE001
             st.error(t("export_failed", error=exc))
@@ -645,17 +1804,30 @@ def _render_module_hub(engine: Any) -> None:
     st.markdown(f"#### {t('run_module_command')}")
     selected_module = st.selectbox(t("module_label"), module_names)
     selected_commands = engine.modules[selected_module].commands()
-    selected_command = st.selectbox(t("command_label"), sorted(selected_commands.keys()))
-    raw_kwargs = st.text_area(
-        t("command_kwargs"),
-        value="{}",
-        height=120,
-        help=t("command_kwargs_help"),
+    selected_command = st.selectbox(
+        t("command_label"), sorted(selected_commands.keys())
     )
+    selected_fn = selected_commands[selected_command]
+    try:
+        selected_sig: inspect.Signature | str = inspect.signature(selected_fn)
+    except Exception:  # noqa: BLE001
+        selected_sig = "(signature unavailable)"
+    kwargs_col, help_col = st.columns([1.1, 1], vertical_alignment="top")
+    with kwargs_col:
+        raw_kwargs = st.text_area(
+            t("command_kwargs"),
+            value="{}",
+            height=220,
+            help=t("command_kwargs_help"),
+        )
+    with help_col:
+        _render_command_kwargs_help(
+            selected_module, selected_command, selected_fn, selected_sig
+        )
     if st.button(t("run_command")):
         try:
             kwargs = _safe_json_load(raw_kwargs)
-            result = selected_commands[selected_command](**kwargs)
+            result = selected_fn(**kwargs)
             st.success(t("command_executed"))
             st.write(result)
         except Exception as exc:  # noqa: BLE001
@@ -679,8 +1851,14 @@ def _render_alphaforge_result(summary: dict[str, Any], *, key: str) -> None:
     source = str(summary.get("source", "alphaforge"))
     m1, m2, m3, m4 = st.columns(4)
     m1.metric(t("af_result_mined"), summary.get("mined", "—"))
-    m2.metric(t("af_result_accepted"), summary.get("n_accepted", len(summary.get("accepted") or [])))
-    m3.metric(t("af_result_rejected"), summary.get("n_rejected", len(summary.get("rejected") or [])))
+    m2.metric(
+        t("af_result_accepted"),
+        summary.get("n_accepted", len(summary.get("accepted") or [])),
+    )
+    m3.metric(
+        t("af_result_rejected"),
+        summary.get("n_rejected", len(summary.get("rejected") or [])),
+    )
     m4.metric(t("af_result_untranslatable"), summary.get("untranslatable", "—"))
     st.caption(t("af_result_source", source=source))
 
@@ -690,9 +1868,13 @@ def _render_alphaforge_result(summary: dict[str, Any], *, key: str) -> None:
         df = pd.DataFrame(accepted)
         if "score" in df.columns:
             df["_abs"] = pd.to_numeric(df["score"], errors="coerce").abs()
-            df = df.sort_values("_abs", ascending=False, na_position="last").drop(columns="_abs")
+            df = df.sort_values("_abs", ascending=False, na_position="last").drop(
+                columns="_abs"
+            )
         ordered = [c for c in ("name", "score", "dsl") if c in df.columns]
-        df = df[ordered + [c for c in df.columns if c not in ordered]].reset_index(drop=True)
+        df = df[ordered + [c for c in df.columns if c not in ordered]].reset_index(
+            drop=True
+        )
         df.insert(0, "#", range(1, len(df) + 1))
         st.dataframe(df, width="stretch", hide_index=True)
         st.download_button(
@@ -707,7 +1889,9 @@ def _render_alphaforge_result(summary: dict[str, Any], *, key: str) -> None:
 
     rejected = summary.get("rejected") or []
     if rejected:
-        with st.expander(t("af_result_rejected_heading", count=len(rejected)), expanded=False):
+        with st.expander(
+            t("af_result_rejected_heading", count=len(rejected)), expanded=False
+        ):
             rdf = pd.DataFrame(rejected)
             ordered = [c for c in ("name", "code", "reason", "dsl") if c in rdf.columns]
             rdf = rdf[ordered + [c for c in rdf.columns if c not in ordered]]
@@ -720,7 +1904,9 @@ def _render_alphaforge_result(summary: dict[str, Any], *, key: str) -> None:
             metrics = backtest.get("metrics")
             if isinstance(metrics, dict) and metrics:
                 st.dataframe(
-                    pd.DataFrame([{"metric": k, "value": v} for k, v in metrics.items()]),
+                    pd.DataFrame(
+                        [{"metric": k, "value": v} for k, v in metrics.items()]
+                    ),
                     width="stretch",
                     hide_index=True,
                 )
@@ -738,7 +1924,9 @@ def _render_portal_jobs_panel(key_prefix: str) -> None:
     cols = st.columns([1, 1, 2])
     if cols[0].button(t("jobs_refresh"), key=f"{key_prefix}_jobs_refresh"):
         st.rerun()
-    if cols[1].button(t("jobs_clear_finished"), key=f"{key_prefix}_jobs_clear_finished"):
+    if cols[1].button(
+        t("jobs_clear_finished"), key=f"{key_prefix}_jobs_clear_finished"
+    ):
         removed = portal_jobs.clear_finished_jobs()
         st.success(t("jobs_cleared", n=removed))
         st.rerun()
@@ -771,7 +1959,9 @@ def _render_portal_jobs_panel(key_prefix: str) -> None:
     selected_id = st.selectbox(
         t("jobs_select"),
         [job["job_id"] for job in jobs],
-        format_func=lambda job_id: _format_job_label(next(j for j in jobs if j["job_id"] == job_id)),
+        format_func=lambda job_id: _format_job_label(
+            next(j for j in jobs if j["job_id"] == job_id)
+        ),
         key=f"{key_prefix}_jobs_select",
     )
     selected = next(job for job in jobs if job["job_id"] == selected_id)
@@ -843,13 +2033,19 @@ def _render_mine_launcher() -> None:
     st.info(t("jobs_resource_warning"))
     with st.form("portal_mine_start_form"):
         c1, c2 = st.columns(2)
-        step_n = c1.number_input(t("mine_step_n"), min_value=1, max_value=1000, value=1, step=1)
+        step_n = c1.number_input(
+            t("mine_step_n"), min_value=1, max_value=1000, value=1, step=1
+        )
         scenario = c2.text_input(t("mine_scenario"), value="alpha_factor_mining")
         direction = st.text_area(t("mine_direction"), value="", height=90)
         with st.expander(t("advanced_options"), expanded=False):
             path = st.text_input(t("mine_resume_path"), value="")
-            qlib_config_name = st.text_input(t("qlib_config_name"), value="", key="mine_qlib_config")
-            qlib_template_dir = st.text_input(t("qlib_template_dir"), value="", key="mine_qlib_template")
+            qlib_config_name = st.text_input(
+                t("qlib_config_name"), value="", key="mine_qlib_config"
+            )
+            qlib_template_dir = st.text_input(
+                t("qlib_template_dir"), value="", key="mine_qlib_template"
+            )
         submitted = st.form_submit_button(t("mine_start_btn"), type="primary")
 
     if submitted:
@@ -900,11 +2096,16 @@ def _render_alphaforge_launcher(engine: Any) -> None:
                 else 0
             )
             instruments = st.selectbox(
-                t("af_instruments"), instrument_sets, index=default_idx, key="af_instruments"
+                t("af_instruments"),
+                instrument_sets,
+                index=default_idx,
+                key="af_instruments",
             )
         else:
             instruments = st.text_input(
-                t("af_instruments"), value="test_stock_pool_80", key="af_instruments_text"
+                t("af_instruments"),
+                value="test_stock_pool_80",
+                key="af_instruments_text",
             )
             st.caption(t("af_instruments_hint"))
 
@@ -912,50 +2113,101 @@ def _render_alphaforge_launcher(engine: Any) -> None:
         train_end_year = c1.number_input(
             t("af_train_end_year"), min_value=2000, max_value=2100, value=2020, step=1
         )
-        device = c2.selectbox(t("af_device"), ["auto", "cpu", "mps", "cuda"], index=0, key="af_device")
-        seed = c3.number_input(t("af_seed"), min_value=0, max_value=10_000_000, value=0, step=1)
+        device = c2.selectbox(
+            t("af_device"), ["auto", "cpu", "mps", "cuda"], index=0, key="af_device"
+        )
+        seed = c3.number_input(
+            t("af_seed"), min_value=0, max_value=10_000_000, value=0, step=1
+        )
 
         method_kwargs: dict[str, Any] = {}
         if method == "mine_aff":
             st.caption(t("af_aff_note"))
             a1, a2 = st.columns(2)
             method_kwargs["zoo_size"] = int(
-                a1.number_input(t("af_zoo_size"), min_value=1, max_value=10_000, value=100, step=1)
+                a1.number_input(
+                    t("af_zoo_size"), min_value=1, max_value=10_000, value=100, step=1
+                )
             )
             method_kwargs["ic_thresh"] = float(
-                a2.number_input(t("af_ic_thresh"), min_value=0.0, max_value=1.0, value=0.03, step=0.01, format="%.3f")
+                a2.number_input(
+                    t("af_ic_thresh"),
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.03,
+                    step=0.01,
+                    format="%.3f",
+                )
             )
             a3, a4 = st.columns(2)
             method_kwargs["corr_thresh"] = float(
-                a3.number_input(t("af_corr_thresh"), min_value=0.0, max_value=1.0, value=0.7, step=0.05, format="%.2f")
+                a3.number_input(
+                    t("af_corr_thresh"),
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.7,
+                    step=0.05,
+                    format="%.2f",
+                )
             )
             method_kwargs["icir_thresh"] = float(
-                a4.number_input(t("af_icir_thresh"), min_value=0.0, max_value=10.0, value=0.1, step=0.05, format="%.2f")
+                a4.number_input(
+                    t("af_icir_thresh"),
+                    min_value=0.0,
+                    max_value=10.0,
+                    value=0.1,
+                    step=0.05,
+                    format="%.2f",
+                )
             )
         elif method == "mine_gp":
             g1, g2 = st.columns(2)
             method_kwargs["population_size"] = int(
-                g1.number_input(t("af_population_size"), min_value=10, max_value=100_000, value=200, step=10)
+                g1.number_input(
+                    t("af_population_size"),
+                    min_value=10,
+                    max_value=100_000,
+                    value=200,
+                    step=10,
+                )
             )
             method_kwargs["generations"] = int(
-                g2.number_input(t("af_generations"), min_value=1, max_value=1000, value=10, step=1)
+                g2.number_input(
+                    t("af_generations"), min_value=1, max_value=1000, value=10, step=1
+                )
             )
         elif method == "mine_rl":
             r1, r2 = st.columns(2)
             method_kwargs["steps"] = int(
-                r1.number_input(t("af_steps"), min_value=1000, max_value=10_000_000, value=50_000, step=1000)
+                r1.number_input(
+                    t("af_steps"),
+                    min_value=1000,
+                    max_value=10_000_000,
+                    value=50_000,
+                    step=1000,
+                )
             )
             method_kwargs["pool_capacity"] = int(
-                r2.number_input(t("af_pool_capacity"), min_value=1, max_value=200, value=10, step=1)
+                r2.number_input(
+                    t("af_pool_capacity"), min_value=1, max_value=200, value=10, step=1
+                )
             )
         elif method == "mine_dso":
             st.warning(t("af_dso_note"))
             d1, d2 = st.columns(2)
             method_kwargs["n_samples"] = int(
-                d1.number_input(t("af_n_samples"), min_value=100, max_value=1_000_000, value=5000, step=100)
+                d1.number_input(
+                    t("af_n_samples"),
+                    min_value=100,
+                    max_value=1_000_000,
+                    value=5000,
+                    step=100,
+                )
             )
             method_kwargs["pool_capacity"] = int(
-                d2.number_input(t("af_pool_capacity"), min_value=1, max_value=200, value=10, step=1)
+                d2.number_input(
+                    t("af_pool_capacity"), min_value=1, max_value=200, value=10, step=1
+                )
             )
 
         s1, s2 = st.columns(2)
@@ -965,9 +2217,16 @@ def _render_alphaforge_launcher(engine: Any) -> None:
         with st.expander(t("advanced_options"), expanded=False):
             qlib_dir = st.text_input(t("af_qlib_dir"), value="", key="af_qlib_dir")
             freq = st.text_input(t("af_freq"), value="day", key="af_freq")
-            raw_kwargs = st.text_area(
-                t("af_advanced_kwargs"), value="{}", height=90, help=t("af_advanced_kwargs_help")
-            )
+            extra_col, extra_help_col = st.columns([1.1, 1], vertical_alignment="top")
+            with extra_col:
+                raw_kwargs = st.text_area(
+                    t("af_advanced_kwargs"),
+                    value="{}",
+                    height=150,
+                    help=t("af_advanced_kwargs_help"),
+                )
+            with extra_help_col:
+                _render_alphaforge_extra_kwargs_help(method)
 
         submitted = st.form_submit_button(t("af_start_btn"), type="primary")
 
@@ -1032,15 +2291,23 @@ def _render_backtest_launcher(engine: Any) -> None:
 
     st.markdown(f"#### {t('bt_start_heading')}")
     st.info(t("jobs_resource_warning"))
-    factor_tab, strategy_tab = st.tabs([t("bt_start_factor_csv"), t("bt_start_strategy_asset")])
+    factor_tab, strategy_tab = st.tabs(
+        [t("bt_start_factor_csv"), t("bt_start_strategy_asset")]
+    )
 
     with factor_tab:
         with st.form("portal_factor_backtest_form"):
             factor_path = st.text_input(t("factor_path"), value="")
             c1, c2 = st.columns(2)
-            scenario = c1.text_input(t("bt_scenario"), value="factor_backtest", key="factor_bt_scenario")
-            qlib_config_name = c2.text_input(t("qlib_config_name"), value="", key="factor_bt_qlib_config")
-            qlib_template_dir = st.text_input(t("qlib_template_dir"), value="", key="factor_bt_qlib_template")
+            scenario = c1.text_input(
+                t("bt_scenario"), value="factor_backtest", key="factor_bt_scenario"
+            )
+            qlib_config_name = c2.text_input(
+                t("qlib_config_name"), value="", key="factor_bt_qlib_config"
+            )
+            qlib_template_dir = st.text_input(
+                t("qlib_template_dir"), value="", key="factor_bt_qlib_template"
+            )
             submitted = st.form_submit_button(t("bt_start_factor_btn"), type="primary")
         if submitted:
             if not factor_path.strip():
@@ -1068,18 +2335,36 @@ def _render_backtest_launcher(engine: Any) -> None:
         )
         with st.form("portal_strategy_backtest_form"):
             if isinstance(strategies, list) and strategies:
-                strategy_name = st.selectbox(t("strategy_name"), strategies, key="bt_strategy_name_select")
+                strategy_name = st.selectbox(
+                    t("strategy_name"), strategies, key="bt_strategy_name_select"
+                )
             else:
-                strategy_name = st.text_input(t("strategy_name"), value="", key="bt_strategy_name_text")
+                strategy_name = st.text_input(
+                    t("strategy_name"), value="", key="bt_strategy_name_text"
+                )
                 st.caption(t("no_stored_params"))
             c1, c2 = st.columns(2)
-            mode = c1.selectbox(t("bt_strategy_mode"), ["retrain", "reuse_model"], index=0)
-            scenario = c2.text_input(t("bt_scenario"), value="factor_backtest", key="strategy_bt_scenario")
-            qlib_data_dir = st.text_input(t("qlib_data_dir"), value="", key="strategy_bt_qlib_data")
-            qlib_config_name = st.text_input(t("qlib_config_name"), value="", key="strategy_bt_qlib_config")
-            qlib_template_dir = st.text_input(t("qlib_template_dir"), value="", key="strategy_bt_qlib_template")
-            run_tag = st.text_input(t("bt_run_tag"), value="", key="strategy_bt_run_tag")
-            submitted = st.form_submit_button(t("bt_start_strategy_btn"), type="primary")
+            mode = c1.selectbox(
+                t("bt_strategy_mode"), ["retrain", "reuse_model"], index=0
+            )
+            scenario = c2.text_input(
+                t("bt_scenario"), value="factor_backtest", key="strategy_bt_scenario"
+            )
+            qlib_data_dir = st.text_input(
+                t("qlib_data_dir"), value="", key="strategy_bt_qlib_data"
+            )
+            qlib_config_name = st.text_input(
+                t("qlib_config_name"), value="", key="strategy_bt_qlib_config"
+            )
+            qlib_template_dir = st.text_input(
+                t("qlib_template_dir"), value="", key="strategy_bt_qlib_template"
+            )
+            run_tag = st.text_input(
+                t("bt_run_tag"), value="", key="strategy_bt_run_tag"
+            )
+            submitted = st.form_submit_button(
+                t("bt_start_strategy_btn"), type="primary"
+            )
         if submitted:
             if not str(strategy_name).strip():
                 st.warning(t("strategy_name_required"))
@@ -1105,7 +2390,9 @@ def _render_backtest_launcher(engine: Any) -> None:
 
 def _render_backtest_tab(engine: Any) -> None:
     st.subheader(t("backtest_subheader"))
-    tab_start, tab_list, tab_detail = st.tabs([t("bt_tab_start"), t("bt_tab_runs"), t("bt_tab_detail")])
+    tab_start, tab_list, tab_detail = st.tabs(
+        [t("bt_tab_start"), t("bt_tab_runs"), t("bt_tab_detail")]
+    )
     with tab_start:
         _render_backtest_launcher(engine)
         st.divider()
@@ -1123,24 +2410,37 @@ def _render_backtest_tab(engine: Any) -> None:
             st.success(t("backtest_runs_found", count=len(runs)))
             if runs:
                 workspace_ids = [p.name for p in runs[:500]]
-                st.dataframe({"workspace": workspace_ids}, width="stretch", hide_index=True)
+                st.dataframe(
+                    {"workspace": workspace_ids}, width="stretch", hide_index=True
+                )
                 st.markdown(f"#### {t('delete_heading')}")
                 delete_workspace_id = st.selectbox(
                     t("select_backtest_workspace"),
                     workspace_ids,
                     key="portal_delete_backtest_ws",
                 )
-                delete_backtest_confirm = st.checkbox(t("delete_confirm"), key="portal_delete_backtest_confirm")
-                if st.button(t("delete_backtest_btn"), key="portal_delete_backtest_btn"):
+                delete_backtest_confirm = st.checkbox(
+                    t("delete_confirm"), key="portal_delete_backtest_confirm"
+                )
+                if st.button(
+                    t("delete_backtest_btn"), key="portal_delete_backtest_btn"
+                ):
                     if not delete_backtest_confirm:
                         st.warning(t("delete_confirm"))
                     else:
                         try:
                             if backtest_system.delete_workspace(delete_workspace_id):
-                                st.success(t("backtest_deleted", name=delete_workspace_id))
+                                st.success(
+                                    t("backtest_deleted", name=delete_workspace_id)
+                                )
                                 st.rerun()
                             else:
-                                st.error(t("backtest_delete_failed", name=delete_workspace_id))
+                                st.error(
+                                    t(
+                                        "backtest_delete_failed",
+                                        name=delete_workspace_id,
+                                    )
+                                )
                         except Exception as exc:  # noqa: BLE001
                             st.error(t("backtest_delete_error", error=exc))
         except Exception as exc:  # noqa: BLE001
@@ -1211,14 +2511,18 @@ def _render_schedule_form(sched: Any) -> None:
         key="sched_new_kind",
     )
     tcol1, tcol2 = st.columns([1, 1], vertical_alignment="bottom")
-    run_time = tcol1.time_input(t("sched_time"), value=_dt_time(7, 30), key="sched_new_time")
+    run_time = tcol1.time_input(
+        t("sched_time"), value=_dt_time(7, 30), key="sched_new_time"
+    )
     enabled = tcol2.checkbox(t("sched_enabled"), value=True, key="sched_new_enabled")
     notify_done = st.checkbox(t("sched_notify"), value=False, key="sched_new_notify")
 
     kwargs: dict[str, Any] = {}
     if kind == "data":
         kwargs["action"] = st.selectbox(
-            t("sched_data_action"), list(portal_jobs.DATA_ACTIONS), key="sched_new_data_action"
+            t("sched_data_action"),
+            list(portal_jobs.DATA_ACTIONS),
+            key="sched_new_data_action",
         )
         kwargs["source"] = st.selectbox(
             t("data_source"), ["baostock_cn", "tushare_cn"], key="sched_new_data_source"
@@ -1227,7 +2531,9 @@ def _render_schedule_form(sched: Any) -> None:
         start_date = dcol1.text_input(t("sched_start_date"), key="sched_new_start")
         end_date = dcol2.text_input(t("sched_end_date"), key="sched_new_end")
         stock_csv = st.text_input(t("sched_stock_csv"), key="sched_new_csv")
-        token = st.text_input(t("tushare_token"), "", type="password", key="sched_new_token")
+        token = st.text_input(
+            t("tushare_token"), "", type="password", key="sched_new_token"
+        )
         if start_date.strip():
             kwargs["start_date"] = start_date.strip()
         if end_date.strip():
@@ -1237,17 +2543,23 @@ def _render_schedule_form(sched: Any) -> None:
         if token.strip():
             kwargs["token"] = token.strip()
     elif kind == "mine":
-        steps = st.number_input(t("sched_step_n"), min_value=0, value=0, step=1, key="sched_new_mine_step")
+        steps = st.number_input(
+            t("sched_step_n"), min_value=0, value=0, step=1, key="sched_new_mine_step"
+        )
         if int(steps) > 0:
             kwargs["step_n"] = int(steps)
-        scenario = st.text_input(t("sched_scenario"), value="alpha_factor_mining", key="sched_new_mine_scn")
+        scenario = st.text_input(
+            t("sched_scenario"), value="alpha_factor_mining", key="sched_new_mine_scn"
+        )
         if scenario.strip():
             kwargs["scenario"] = scenario.strip()
         tmpl = st.text_input(t("sched_qlib_template_dir"), key="sched_new_mine_tmpl")
         if tmpl.strip():
             kwargs["qlib_template_dir"] = tmpl.strip()
     elif kind == "factor_backtest":
-        steps = st.number_input(t("sched_step_n"), min_value=0, value=0, step=1, key="sched_new_bt_step")
+        steps = st.number_input(
+            t("sched_step_n"), min_value=0, value=0, step=1, key="sched_new_bt_step"
+        )
         if int(steps) > 0:
             kwargs["step_n"] = int(steps)
         factor_path = st.text_input(t("sched_factor_path"), key="sched_new_bt_fp")
@@ -1258,7 +2570,10 @@ def _render_schedule_form(sched: Any) -> None:
             kwargs["qlib_template_dir"] = tmpl.strip()
 
     advanced = st.text_area(
-        t("sched_advanced_kwargs"), value="", key="sched_new_adv", help=t("sched_advanced_help")
+        t("sched_advanced_kwargs"),
+        value="",
+        key="sched_new_adv",
+        help=t("sched_advanced_help"),
     )
     if advanced.strip():
         try:
@@ -1296,7 +2611,9 @@ def _render_schedule_row(sched: Any, s: dict[str, Any]) -> None:
     sid = s["schedule_id"]
     with st.container(border=True):
         cols = st.columns([3, 1, 1, 1], vertical_alignment="center")
-        next_run = sched.next_run_at(s).strftime("%Y-%m-%d %H:%M") if s.get("enabled") else "—"
+        next_run = (
+            sched.next_run_at(s).strftime("%Y-%m-%d %H:%M") if s.get("enabled") else "—"
+        )
         cols[0].markdown(
             f"**{s.get('name')}** · `{t('sched_kind_' + s['kind'])}` · ⏰ {s.get('time')}\n\n"
             f"{t('sched_next_run')}: {next_run} · {t('sched_last_run')}: {s.get('last_run_date') or '—'}"
@@ -1319,7 +2636,9 @@ def _render_schedule_row(sched: Any, s: dict[str, Any]) -> None:
         if st.session_state.get(f"sched_confirm_{sid}"):
             dc1, dc2 = st.columns([3, 1], vertical_alignment="center")
             dc1.warning(t("sched_delete_confirm"))
-            if dc2.button(t("sched_delete_yes"), key=f"sched_delyes_{sid}", width="stretch"):
+            if dc2.button(
+                t("sched_delete_yes"), key=f"sched_delyes_{sid}", width="stretch"
+            ):
                 try:
                     sched.delete_schedule(sid)
                 finally:
@@ -1340,16 +2659,28 @@ def _render_scheduler_page() -> None:
     with st.container(border=True):
         c1, c2, c3 = st.columns([2, 1, 1], vertical_alignment="center")
         if status["running"] and not status["stale"]:
-            c1.success(t("sched_daemon_running", pid=status["pid"], hb=status["heartbeat_at"]))
+            c1.success(
+                t("sched_daemon_running", pid=status["pid"], hb=status["heartbeat_at"])
+            )
         elif status["running"] and status["stale"]:
             c1.warning(t("sched_daemon_stale", pid=status["pid"]))
         else:
             c1.error(t("sched_daemon_stopped"))
         running_ok = bool(status["running"]) and not status["stale"]
-        if c2.button(t("sched_daemon_start"), key="sched_daemon_start", disabled=running_ok, width="stretch"):
+        if c2.button(
+            t("sched_daemon_start"),
+            key="sched_daemon_start",
+            disabled=running_ok,
+            width="stretch",
+        ):
             sched.start_daemon()
             st.rerun()
-        if c3.button(t("sched_daemon_stop"), key="sched_daemon_stop", disabled=not status["running"], width="stretch"):
+        if c3.button(
+            t("sched_daemon_stop"),
+            key="sched_daemon_stop",
+            disabled=not status["running"],
+            width="stretch",
+        ):
             sched.stop_daemon()
             st.rerun()
         st.caption(t("sched_daemon_hint"))
@@ -1381,7 +2712,9 @@ def _render_notify_page() -> None:
         st.info(t("notify_none"))
     st.caption(t("notify_path", path=notify_pkg.credentials_path()))
 
-    new_cfg: dict[str, Any] = {ch: dict(cfg.get(ch, {})) for ch in notify_pkg.CHANNEL_FIELDS}
+    new_cfg: dict[str, Any] = {
+        ch: dict(cfg.get(ch, {})) for ch in notify_pkg.CHANNEL_FIELDS
+    }
     new_cfg["options"] = {
         "notify_on_all_jobs": st.checkbox(
             t("notify_on_all_jobs"),
@@ -1399,14 +2732,22 @@ def _render_notify_page() -> None:
                 if ftype == "bool":
                     new_cfg[ch][name] = st.checkbox(label, value=bool(cur), key=key)
                 elif ftype == "int":
-                    new_cfg[ch][name] = st.number_input(label, value=int(cur or 0), step=1, key=key)
+                    new_cfg[ch][name] = st.number_input(
+                        label, value=int(cur or 0), step=1, key=key
+                    )
                 elif ftype == "secret":
-                    new_cfg[ch][name] = st.text_input(label, value=str(cur or ""), type="password", key=key)
+                    new_cfg[ch][name] = st.text_input(
+                        label, value=str(cur or ""), type="password", key=key
+                    )
                 elif ftype == "list":
                     raw = ", ".join(cur) if isinstance(cur, list) else str(cur or "")
-                    new_cfg[ch][name] = st.text_input(f"{label} (a, b, c)", value=raw, key=key)
+                    new_cfg[ch][name] = st.text_input(
+                        f"{label} (a, b, c)", value=raw, key=key
+                    )
                 else:
-                    new_cfg[ch][name] = st.text_input(label, value=str(cur or ""), key=key)
+                    new_cfg[ch][name] = st.text_input(
+                        label, value=str(cur or ""), key=key
+                    )
 
     if st.button(t("notify_save"), type="primary", key="notify_save"):
         notify_pkg.save_notify_config(new_cfg)
@@ -1416,7 +2757,9 @@ def _render_notify_page() -> None:
     st.markdown(f"#### {t('notify_test_heading')}")
     st.caption(t("notify_test_hint"))
     test_cols = st.columns(len(notify_pkg.CHANNEL_FIELDS) + 1)
-    if test_cols[0].button(t("notify_test_all"), key="notify_test_all", width="stretch"):
+    if test_cols[0].button(
+        t("notify_test_all"), key="notify_test_all", width="stretch"
+    ):
         st.write(notify_pkg.test_send())
     for i, ch in enumerate(notify_pkg.CHANNEL_FIELDS, start=1):
         if test_cols[i].button(ch, key=f"notify_test_{ch}", width="stretch"):
@@ -1437,9 +2780,16 @@ def _render_home(engine: Any) -> None:
     c1, c2, c3, c4 = st.columns(4)
     c1.metric(
         t("home_metric_symbols"),
-        _safe_metric(lambda: len({s for syms in data_system.list_symbols().values() for s in syms})),
+        _safe_metric(
+            lambda: len(
+                {s for syms in data_system.list_symbols().values() for s in syms}
+            )
+        ),
     )
-    c2.metric(t("home_metric_factors"), _safe_metric(lambda: len(factor_system.list_factors())))
+    c2.metric(
+        t("home_metric_factors"),
+        _safe_metric(lambda: len(factor_system.list_factors())),
+    )
     c3.metric(
         t("home_metric_strategies"),
         _safe_metric(lambda: len(strategy_system.param_database.list_strategies())),
@@ -1462,7 +2812,10 @@ def _render_home(engine: Any) -> None:
     else:
         st.info(t("home_no_mining"))
     if pages.get("mining") and st.button(
-        f"🔬 {t('home_go_mining')}", type="primary", width="stretch", key="home_go_mining"
+        f"🔬 {t('home_go_mining')}",
+        type="primary",
+        width="stretch",
+        key="home_go_mining",
     ):
         st.switch_page(pages["mining"])
 

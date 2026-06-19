@@ -120,9 +120,12 @@ class AlphaPool(AlphaPoolBase):
         self._optimize(alpha=5e-3, lr=5e-4, n_iter=500)
 
     def _optimize(self, alpha: float, lr: float, n_iter: int) -> np.ndarray:
-        ics_ret = torch.from_numpy(self.single_ics[:self.size]).to(self.device)
-        ics_mut = torch.from_numpy(self.mutual_ics[:self.size, :self.size]).to(self.device)
-        weights = torch.from_numpy(self.weights[:self.size]).to(self.device).requires_grad_()
+        # single_ics / mutual_ics / weights are float64 numpy arrays. Cast to
+        # float32 before moving to the device: MPS has no float64 support, and
+        # float32 matches the StockData tensors on every backend (cpu/cuda/mps).
+        ics_ret = torch.from_numpy(self.single_ics[:self.size]).float().to(self.device)
+        ics_mut = torch.from_numpy(self.mutual_ics[:self.size, :self.size]).float().to(self.device)
+        weights = torch.from_numpy(self.weights[:self.size]).float().to(self.device).requires_grad_()
         optim = torch.optim.Adam([weights], lr=lr)
 
         loss_ic_min = 1e9 + 7  # An arbitrary big value

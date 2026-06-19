@@ -337,6 +337,12 @@ def match_alphazoo(prop_expr, factor_df):
     max_size = 0
     matched_subtree = None
     matched_alpha = None
+    if factor_df is None or len(factor_df) == 0:
+        return max_size, matched_subtree, matched_alpha
+    # Defensive: the row unpacking below expects exactly (name, expression).
+    # Select the two canonical columns so extra columns never break dedup.
+    if {"factor_name", "factor_expression"}.issubset(factor_df.columns):
+        factor_df = factor_df[["factor_name", "factor_expression"]]
     for index, (name, alpha_expr) in factor_df.iterrows():
         try:
             match = compare_expressions(prop_expr, alpha_expr)

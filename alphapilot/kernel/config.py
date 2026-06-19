@@ -103,7 +103,7 @@ class FactorConfig:
     """Factor database / zoo location + selection."""
 
     database_backend: str = field(
-        default_factory=lambda: _env_str("ALPHAPILOT_FACTOR_DB_BACKEND", "file")
+        default_factory=lambda: _env_str("ALPHAPILOT_FACTOR_DB_BACKEND", "sqlite")
     )
     zoo_dir: Path = field(
         default_factory=lambda: _env_path(

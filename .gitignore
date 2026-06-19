@@ -149,6 +149,7 @@ dmypy.json
 
 # all vs-code files
 .vscode/
+.claude/
 
 # reports
 reports/

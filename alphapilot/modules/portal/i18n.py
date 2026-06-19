@@ -74,7 +74,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "sched_qlib_template_dir": "Qlib template dir (optional)",
         "sched_factor_path": "Factor path (optional)",
         "sched_advanced_kwargs": "Advanced parameters (JSON, optional — overrides the above)",
-        "sched_advanced_help": "A JSON object merged into the task parameters, e.g. {\"all_market\": true}. Required for strategy backtest parameters.",
+        "sched_advanced_help": 'A JSON object merged into the task parameters, e.g. {"all_market": true}. Required for strategy backtest parameters.',
         "sched_advanced_invalid": "Advanced parameters must be a valid JSON object.",
         "sched_create_btn": "Save Schedule",
         "sched_name_required": "Please enter a schedule name.",
@@ -217,6 +217,49 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "factor_zoo_rows": "Factor zoo rows: {count}",
         "factor_zoo_preview_failed": "Cannot preview factor zoo: {error}",
         "factor_zoo_missing": "Factor zoo file does not exist yet.",
+        "factor_filter_by_category": "Filter by category",
+        "factor_search": "Search factors",
+        "factor_selection_summary": "Showing {shown} factor(s); selected {selected}.",
+        "bulk_category_heading": "Bulk category assignment",
+        "bulk_category_caption": "Select rows in the factor table, then add or remove one category for the selected factors.",
+        "bulk_category_existing": "Existing category",
+        "bulk_category_existing_placeholder": "Choose existing category",
+        "bulk_category_new": "New category (optional; overrides existing selection)",
+        "bulk_category_add_btn": "Add category to selected factors",
+        "bulk_category_remove_btn": "Remove category from selected factors",
+        "bulk_category_disabled_hint": "Select at least one factor and choose or enter a category to enable bulk actions.",
+        "bulk_category_result": "Changed {changed}; unchanged {unchanged}; missing {missing}.",
+        "bulk_category_result_details": "Bulk operation details",
+        "bulk_category_failed": "Bulk category operation failed: {error}",
+        "category_manage_heading": "Categories",
+        "category_table_name": "Category",
+        "category_table_factor_count": "Factors",
+        "category_new_name": "New category name",
+        "category_create_btn": "Create category",
+        "category_created": "Category `{name}` created.",
+        "category_rename_old": "Category to rename",
+        "category_rename_new": "New name",
+        "category_rename_btn": "Rename",
+        "category_renamed": "Renamed `{old}` -> `{new}`.",
+        "category_delete_select": "Category to delete",
+        "category_delete_btn": "Delete category",
+        "category_deleted": "Category `{name}` deleted (factors kept).",
+        "factor_edit_categories_heading": "Edit factor categories",
+        "factor_edit_select": "Factor",
+        "factor_edit_categories": "Categories",
+        "factor_edit_new_categories": "New categories (comma-separated)",
+        "factor_edit_save": "Save categories",
+        "factor_categories_updated": "Updated categories for `{name}`.",
+        "category_actions_heading": "Category actions",
+        "category_action_select": "Category",
+        "category_export_path": "Export CSV path",
+        "category_export_btn": "Export category to CSV",
+        "category_exported": "Exported {count} factors to {path}",
+        "category_export_failed": "Export failed: {error}",
+        "category_backtest_btn": "Backtest category",
+        "category_empty": "This category has no factors.",
+        "factor_add_categories": "Assign categories",
+        "factor_add_new_categories": "New categories (comma-separated)",
         "factor_validate_heading": "Validate/Add Factor Expression",
         "expression": "Expression",
         "expression_placeholder": "e.g. Ref($close, 1) / $close - 1",
@@ -303,7 +346,19 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "module_label": "Module",
         "command_label": "Command",
         "command_kwargs": "Command kwargs (JSON object)",
-        "command_kwargs_help": 'Example: {"scenario": "alpha_factor_mining", "step_n": 5} or {"strategy_name": "mine_round_01_...", "mode": "retrain"}',
+        "command_kwargs_help": "Fill a JSON object. Keys must match the selected command's function parameters.",
+        "command_kwargs_guide_title": "Parameter guide",
+        "command_kwargs_guide_caption": "These notes update when you change the selected module command.",
+        "command_required_params": "Required: {params}",
+        "command_optional_params": "Optional/defaulted: {params}",
+        "command_optional_more": "...and {count} more optional parameter(s).",
+        "command_var_kwargs": "Extra fields are accepted through `**{name}`.",
+        "command_example_json": "Example JSON:",
+        "command_empty_json_hint": "Use `{}` when the command does not need parameters.",
+        "param_detail_heading": "Parameter meanings and recommended ranges",
+        "param_detail_name": "Parameter",
+        "param_detail_desc": "Meaning",
+        "param_detail_range": "Recommended value / range",
         "run_command": "Run Command",
         "command_executed": "Command executed.",
         "command_failed": "Command failed: {error}",
@@ -370,7 +425,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "af_qlib_dir": "Qlib data dir override (optional)",
         "af_freq": "Frequency",
         "af_advanced_kwargs": "Extra kwargs (JSON, optional)",
-        "af_advanced_kwargs_help": 'Passed through to the miner, e.g. {"top_n": 50, "raw": true, "num_epochs_g": 50}',
+        "af_advanced_kwargs_help": "Merged into the final miner parameters. If a key repeats a field above, this JSON value overrides it.",
+        "af_extra_kwargs_guide_title": "Extra-parameter guide",
+        "af_extra_kwargs_guide_caption": "Only put advanced passthrough fields here; normal fields above are already included.",
         "af_start_btn": "Start AlphaForge Job",
         "af_result_title": "AlphaForge mining result",
         "af_result_source": "Source: `{source}`",
@@ -624,7 +681,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "sched_qlib_template_dir": "Qlib 模板目录（可选）",
         "sched_factor_path": "因子路径（可选）",
         "sched_advanced_kwargs": "高级参数（JSON，可选，会覆盖上面的设置）",
-        "sched_advanced_help": "一个会合并进任务参数的 JSON 对象，例如 {\"all_market\": true}。策略回测参数需在此填写。",
+        "sched_advanced_help": '一个会合并进任务参数的 JSON 对象，例如 {"all_market": true}。策略回测参数需在此填写。',
         "sched_advanced_invalid": "高级参数必须是合法的 JSON 对象。",
         "sched_create_btn": "保存定时任务",
         "sched_name_required": "请填写任务名称。",
@@ -764,6 +821,49 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "factor_zoo_rows": "因子库行数：{count}",
         "factor_zoo_preview_failed": "无法预览因子库：{error}",
         "factor_zoo_missing": "因子库文件尚不存在。",
+        "factor_filter_by_category": "按类别筛选",
+        "factor_search": "搜索因子",
+        "factor_selection_summary": "当前显示 {shown} 个因子；已选择 {selected} 个。",
+        "bulk_category_heading": "批量分类",
+        "bulk_category_caption": "先在因子表格中选择行，再为选中的因子批量加入或移除一个类别。",
+        "bulk_category_existing": "已有类别",
+        "bulk_category_existing_placeholder": "选择已有类别",
+        "bulk_category_new": "新类别（可选；填写后优先使用）",
+        "bulk_category_add_btn": "给选中因子加入类别",
+        "bulk_category_remove_btn": "从选中因子移除类别",
+        "bulk_category_disabled_hint": "请选择至少一个因子，并选择或填写一个类别后再执行批量操作。",
+        "bulk_category_result": "已变更 {changed} 个；未变化 {unchanged} 个；未找到 {missing} 个。",
+        "bulk_category_result_details": "批量操作详情",
+        "bulk_category_failed": "批量分类操作失败：{error}",
+        "category_manage_heading": "类别管理",
+        "category_table_name": "类别",
+        "category_table_factor_count": "因子数",
+        "category_new_name": "新类别名称",
+        "category_create_btn": "创建类别",
+        "category_created": "已创建类别 `{name}`。",
+        "category_rename_old": "要重命名的类别",
+        "category_rename_new": "新名称",
+        "category_rename_btn": "重命名",
+        "category_renamed": "已将 `{old}` 重命名为 `{new}`。",
+        "category_delete_select": "要删除的类别",
+        "category_delete_btn": "删除类别",
+        "category_deleted": "已删除类别 `{name}`（因子保留）。",
+        "factor_edit_categories_heading": "编辑因子类别",
+        "factor_edit_select": "因子",
+        "factor_edit_categories": "类别",
+        "factor_edit_new_categories": "新类别（逗号分隔）",
+        "factor_edit_save": "保存类别",
+        "factor_categories_updated": "已更新 `{name}` 的类别。",
+        "category_actions_heading": "类别操作",
+        "category_action_select": "类别",
+        "category_export_path": "导出 CSV 路径",
+        "category_export_btn": "导出类别为 CSV",
+        "category_exported": "已导出 {count} 个因子到 {path}",
+        "category_export_failed": "导出失败：{error}",
+        "category_backtest_btn": "回测该类别",
+        "category_empty": "该类别下没有因子。",
+        "factor_add_categories": "分配类别",
+        "factor_add_new_categories": "新类别（逗号分隔）",
         "factor_validate_heading": "校验/添加因子表达式",
         "expression": "表达式",
         "expression_placeholder": "例如 Ref($close, 1) / $close - 1",
@@ -778,9 +878,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "与因子库中已有因子过于相似（重复子树大小 {duplicated_subtree_size}，"
             "阈值 {duplication_threshold}）{matched_hint}。"
         ),
-        "factor_reject_too_many_literals": (
-            "数值常量占比过高（{free_args_ratio:.1%}，上限约 50%）。"
-        ),
+        "factor_reject_too_many_literals": ("数值常量占比过高（{free_args_ratio:.1%}，上限约 50%）。"),
         "factor_reject_insufficient_variables": (
             "行情变量多样性不足（唯一变量占比 {unique_vars_ratio:.1%}，需 >50%）。"
         ),
@@ -850,7 +948,19 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "module_label": "模块",
         "command_label": "命令",
         "command_kwargs": "命令参数（JSON 对象）",
-        "command_kwargs_help": '示例：{"scenario": "alpha_factor_mining", "step_n": 5} 或 {"strategy_name": "mine_round_01_...", "mode": "retrain"}',
+        "command_kwargs_help": "填写 JSON 对象，key 需要对应当前所选命令的函数参数名。",
+        "command_kwargs_guide_title": "参数填写说明",
+        "command_kwargs_guide_caption": "切换模块命令后，这里的说明和示例会自动更新。",
+        "command_required_params": "必填参数：{params}",
+        "command_optional_params": "可选/有默认值参数：{params}",
+        "command_optional_more": "……另有 {count} 个可选参数。",
+        "command_var_kwargs": "还可以通过 `**{name}` 接收额外字段。",
+        "command_example_json": "示例 JSON：",
+        "command_empty_json_hint": "如果该命令不需要参数，填写 `{}` 即可。",
+        "param_detail_heading": "具体参数含义与推荐范围",
+        "param_detail_name": "参数",
+        "param_detail_desc": "含义",
+        "param_detail_range": "推荐值 / 范围",
         "run_command": "运行命令",
         "command_executed": "命令已执行。",
         "command_failed": "命令失败：{error}",
@@ -917,7 +1027,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "af_qlib_dir": "覆盖 Qlib 数据目录（可选）",
         "af_freq": "频率",
         "af_advanced_kwargs": "额外参数（JSON，可选）",
-        "af_advanced_kwargs_help": '透传给挖掘器，例如 {"top_n": 50, "raw": true, "num_epochs_g": 50}',
+        "af_advanced_kwargs_help": "会合并进最终挖掘参数；如果 key 与上方控件重名，这里的 JSON 值会覆盖上方控件。",
+        "af_extra_kwargs_guide_title": "额外参数填写说明",
+        "af_extra_kwargs_guide_caption": "这里只填写高级透传字段；上方常规字段已经会自动传入。",
         "af_start_btn": "启动 AlphaForge 任务",
         "af_result_title": "AlphaForge 挖掘结果",
         "af_result_source": "来源：`{source}`",
@@ -1051,10 +1163,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "ml_loops_header": "AlphaPilot 循环",
         "ml_loop_radio": "轮次",
         "ml_disclaimer_title": "免责声明",
-        "ml_disclaimer_body": (
-            "内容由 AI 生成，可能不完全准确或未及时更新；"
-            "重要事项请向专业人士核实。"
-        ),
+        "ml_disclaimer_body": ("内容由 AI 生成，可能不完全准确或未及时更新；" "重要事项请向专业人士核实。"),
         "ml_tab_final_feedback": "最终反馈",
         "ml_tab_execution_feedback": "执行反馈",
         "ml_tab_code_feedback": "代码反馈",
@@ -1118,11 +1227,15 @@ def get_lang() -> str:
 
 def t(key: str, **kwargs: Any) -> str:
     lang = get_lang()
-    text = TRANSLATIONS.get(lang, TRANSLATIONS["en"]).get(key) or TRANSLATIONS["en"][key]
+    text = (
+        TRANSLATIONS.get(lang, TRANSLATIONS["en"]).get(key) or TRANSLATIONS["en"][key]
+    )
     return text.format(**kwargs) if kwargs else text
 
 
-def format_factor_rejection(code: str, message: str, details: dict[str, Any] | None = None) -> str:
+def format_factor_rejection(
+    code: str, message: str, details: dict[str, Any] | None = None
+) -> str:
     """Map a validation *code* to a user-facing portal message."""
     key = f"factor_reject_{code}"
     lang = get_lang()
@@ -1135,13 +1248,19 @@ def format_factor_rejection(code: str, message: str, details: dict[str, Any] | N
         fmt_kwargs.update(details)
         matched = details.get("matched_alpha")
         fmt_kwargs["matched_hint"] = (
-            f"（与已有因子「{matched}」相似）" if get_lang() == "zh" and matched
-            else f" (similar to '{matched}')" if matched
+            f"（与已有因子「{matched}」相似）"
+            if get_lang() == "zh" and matched
+            else f" (similar to '{matched}')"
+            if matched
             else ""
         )
-        if "free_args_ratio" in details and isinstance(details["free_args_ratio"], (int, float)):
+        if "free_args_ratio" in details and isinstance(
+            details["free_args_ratio"], (int, float)
+        ):
             fmt_kwargs["free_args_ratio"] = float(details["free_args_ratio"])
-        if "unique_vars_ratio" in details and isinstance(details["unique_vars_ratio"], (int, float)):
+        if "unique_vars_ratio" in details and isinstance(
+            details["unique_vars_ratio"], (int, float)
+        ):
             fmt_kwargs["unique_vars_ratio"] = float(details["unique_vars_ratio"])
     else:
         fmt_kwargs["matched_hint"] = ""
