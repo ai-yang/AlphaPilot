@@ -11,7 +11,11 @@ from typing import Any
 import pandas as pd
 
 from alphapilot.log import logger
-from alphapilot.systems.backtest.artifacts import find_artifact, parse_trades_and_holdings
+from alphapilot.systems.backtest.artifacts import (
+    build_summary,
+    find_artifact,
+    parse_trades_and_holdings,
+)
 
 
 def _resolve_daily_report(workspace: Path) -> tuple[pd.DataFrame, Path | None]:
@@ -32,29 +36,10 @@ def _resolve_daily_report(workspace: Path) -> tuple[pd.DataFrame, Path | None]:
 
 
 def build_portfolio_summary(report: pd.DataFrame) -> dict[str, float]:
+    """Portfolio summary for export; ``{}`` when there is nothing to summarize."""
     if report.empty or "return" not in report.columns:
         return {}
-
-    cum_return = report["return"].cumsum()
-    cum_bench = report["bench"].cumsum() if "bench" in report.columns else pd.Series(dtype=float)
-    cum_excess = (report["return"] - report["bench"]).cumsum() if "bench" in report.columns else cum_return
-    cum_return_w_cost = (
-        (report["return"] - report["cost"]).cumsum() if "cost" in report.columns else cum_return
-    )
-
-    dd = cum_return - cum_return.cummax()
-    max_dd = float(dd.min()) if len(dd) else 0.0
-
-    return {
-        "累计收益(不含成本)": float(cum_return.iloc[-1]) if len(cum_return) else 0.0,
-        "累计收益(含成本)": float(cum_return_w_cost.iloc[-1]) if len(cum_return_w_cost) else 0.0,
-        "基准累计收益": float(cum_bench.iloc[-1]) if len(cum_bench) else 0.0,
-        "累计超额(不含成本)": float(cum_excess.iloc[-1]) if len(cum_excess) else 0.0,
-        "最大回撤(不含成本)": max_dd,
-        "平均日换手": float(report["turnover"].mean()) if "turnover" in report.columns else 0.0,
-        "累计手续费": float(report["cost"].sum()) if "cost" in report.columns else 0.0,
-        "期末总资产": float(report["account"].iloc[-1]) if "account" in report.columns and len(report) else 0.0,
-    }
+    return build_summary(report)
 
 
 def export_portfolio_to_dir(workspace: Path | str, dest_dir: Path | str) -> dict[str, str]:

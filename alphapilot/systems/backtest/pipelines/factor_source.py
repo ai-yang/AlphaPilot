@@ -23,6 +23,10 @@ def build_factor_experiment_from_csv(
 
     tpl = resolve_qlib_template_dir(qlib_template_dir)
     factor_df = pd.read_csv(path, usecols=["factor_name", "factor_expression"])
+    # Drop duplicate factor names before building tasks: qlib cannot ingest a
+    # feature frame with duplicate columns, and the downstream runner reads
+    # ``sub_tasks`` directly, so dedup must happen at construction time.
+    factor_df = factor_df.drop_duplicates(subset="factor_name", keep="first")
     tasks = [
         FactorTask(
             factor_name=row["factor_name"],
@@ -36,19 +40,4 @@ def build_factor_experiment_from_csv(
 
     exp = QlibFactorExperiment(tasks, template_folder_path=tpl)
     exp.based_experiments = [QlibFactorExperiment(sub_tasks=[], template_folder_path=tpl)]
-
-    unique_tasks: list[FactorTask] = []
-    for task in tasks:
-        duplicate = False
-        for based_exp in exp.based_experiments:
-            for sub_task in based_exp.sub_tasks:
-                if task.factor_name == sub_task.factor_name:
-                    duplicate = True
-                    break
-            if duplicate:
-                break
-        if not duplicate:
-            unique_tasks.append(task)
-
-    exp.tasks = unique_tasks
     return exp

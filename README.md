@@ -16,6 +16,8 @@ AlphaPilot 通过三个 Agent 协作完成因子挖掘：
 
 本仓库使用 [Qlib](https://github.com/microsoft/qlib) 作为回测引擎，使用 OpenAI 兼容 API 调用大模型。
 
+> **CLI 完整参考**：所有 `alphapilot` 命令及参数见 [docs/alphapilot-cli.md](docs/alphapilot-cli.md)。
+
 ---
 
 ## 相对原版的改动说明
@@ -162,6 +164,7 @@ alphapilot qlib_yaml_validate \
 - 策略复测编排收拢到 `alphapilot/systems/strategy/backtest.py`，经 `context.backtest()` 执行，**不再**经 `alpha_mining` 模块中转
 - 挖掘日志 UI（`alphapilot/log/ui/`）通过 `core.scenario.Scenario` 的 UI trait 分支渲染，**不再 import** `alpha_mining` 具体场景类
 - adapter 层仅保留 **LLM + 数据源** 可插拔边界；已移除未接入主路径的 backtest engine adapter（`get_backtest_engine`），回测统一经 `systems/backtest/` 执行（详见 [alphapilot/adapters/README.md](alphapilot/adapters/README.md)）
+- 任务完成通知收拢到 `alphapilot/systems/notify/`（Telegram / 飞书 / 邮件）；Portal「自动化 → 通知」配置凭证，后台 job 结束时由 `modules/portal/jobs.py` 触发推送
 
 **数据系统代码位置（供二开参考）**
 
@@ -212,6 +215,24 @@ data.run_download(DataDownloadCommand(
 - 所有破坏性操作支持 `--dry_run True` 先预览将改动的文件 / instruments 行。
 - 单股重 dump 依赖已存在的 `instruments/all.txt` 与 `calendars/day.txt`；若缺失会提示改跑全量 `alphapilot prepare_data convert`。
 - Portal「数据」标签也内嵌了同一套删除 / 刷新 / 裁剪控件与「重建 daily_pv h5」按钮。
+
+### 7. 任务完成通知（`alphapilot/systems/notify/`）
+
+因子挖掘、因子/策略回测、数据任务、AlphaForge 等**后台任务**完成后，可推送摘要到 **Telegram**、**飞书** 或 **邮件 SMTP**。
+
+- **配置入口**：`alphapilot portal` → **自动化** → **通知**
+- **凭证文件**：`~/.alphapilot/credentials/notify.json`（仓库外，权限 `0600`；勿提交 git）
+- **触发方式**：在「定时任务」创建任务时勾选「完成后通知」；或在通知页开启「所有后台任务完成都通知」
+- **环境变量覆盖**（服务器部署）：`ALPHAPILOT_NOTIFY_*`（如 `ALPHAPILOT_NOTIFY_TELEGRAM_BOT_TOKEN`、`ALPHAPILOT_NOTIFY_FEISHU_WEBHOOK`）；**运行时 env 优先于文件**
+- **测试**：Portal 中先 **Save**，再点频道 **Test Send**（未保存时测试读的是磁盘上的旧配置）
+
+| 频道 | 必填项 | 说明 |
+|------|--------|------|
+| Telegram | `bot_token`、`chat_id` | @BotFather 创建 bot；先向 bot 发 `/start`，再填个人或群 `chat_id` |
+| 飞书 Feishu | `webhook` | 群 **自定义机器人** Webhook URL；若创建时开启签名校验则同时填 `secret`，否则留空 |
+| Email | `host`、`sender`、`recipients` | SMTP（默认 SSL 465；`use_ssl=false` 时用 STARTTLS）；按需填 `username` / `password` |
+
+实现位于 `alphapilot/systems/notify/`（`config.py`、各 channel、`service.py`）；Portal 后台 worker 在 `modules/portal/jobs.py` 中于任务结束时调用。
 
 ---
 
@@ -546,6 +567,18 @@ EMBEDDING_MAX_STR_NUM=10     # DashScope 等 embedding 接口的单次 batch 上
 # ALPHAPILOT_WORKSPACE_ROOT=git_ignore_folder/RD-Agent_workspace
 # ALPHAPILOT_BACKTEST_ROOT=git_ignore_folder/RD-Agent_workspace
 
+# 可选：任务完成通知（默认 ~/.alphapilot/credentials/notify.json；Portal「通知」页也可配置）
+# ALPHAPILOT_NOTIFY_CREDENTIALS_PATH=~/.alphapilot/credentials/notify.json
+# ALPHAPILOT_NOTIFY_ON_ALL_JOBS=false
+# ALPHAPILOT_NOTIFY_TELEGRAM_ENABLED=true
+# ALPHAPILOT_NOTIFY_TELEGRAM_BOT_TOKEN=...
+# ALPHAPILOT_NOTIFY_TELEGRAM_CHAT_ID=...
+# ALPHAPILOT_NOTIFY_FEISHU_ENABLED=true
+# ALPHAPILOT_NOTIFY_FEISHU_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/...
+# ALPHAPILOT_NOTIFY_FEISHU_SECRET=...
+# ALPHAPILOT_NOTIFY_EMAIL_HOST=smtp.example.com
+# ALPHAPILOT_NOTIFY_EMAIL_RECIPIENTS=you@example.com,other@example.com
+
 # 可选：因子 factor.py 子进程 Python（默认当前解释器 sys.executable）
 # FACTOR_CoSTEER_PYTHON_BIN=/path/to/python
 ```
@@ -750,7 +783,7 @@ alphapilot strategy_backtest \
 
 | 命令 | 状态 | 主要用途 |
 |------|------|----------|
-| `alphapilot portal` | **推荐** | 一站式 Web 门户：数据/因子/策略/回测、**挖掘日志**、**回测详情**、K 线、模块命令等 |
+| `alphapilot portal` | **推荐** | 一站式 Web 门户：数据/因子/策略/回测、**挖掘日志**、**回测详情**、K 线、**定时任务 / 通知**、模块命令等 |
 | `alphapilot data_viz` | 可选独立 | 查看已下载股票 CSV：**K 线图**（门户「股票 K 线」标签已内嵌，通常无需单独启动） |
 | `alphapilot backtest_viz` | 可选独立 | 查看回测 workspace 产物（门户「回测 → 回测详情」已内嵌，通常无需单独启动） |
 | `alphapilot ui` | **已弃用** | 打印重定向提示 → 请使用 portal「因子挖掘」页 |
@@ -788,6 +821,9 @@ alphapilot portal --port 19901
   - **📚 因子 / 策略库**：因子校验/添加（**失败时显示具体原因**：语法、与库内过于相似、重名等）、导入导出、删除单条因子；策略参数查看/保存/导出、删除整个策略资产。
 - **数据** 分组
   - **📈 行情数据**：**下载 / 管理** 子页（按数据源 baostock/tushare 下载、自定义下载参数、**单股删除/刷新/裁剪** + 「重建 daily_pv h5」）+ **K 线** 子页（内嵌 `data_viz`）。
+- **自动化** 分组
+  - **⏰ 定时任务**：创建/管理 cron 式后台任务（挖掘、回测、数据 pipeline、AlphaForge 等），可勾选「完成后通知」。
+  - **📣 通知**：配置 Telegram / 飞书 / 邮件频道并测试发送（凭证见 [§7 任务完成通知](#7-任务完成通知alphapilotsystemsnotify)）。
 - **系统** 分组
   - **⚙️ 高级**：原「概览」与「模块命令台」（系统/模块清单、JSON 命令调度）、运行时配置与「重新加载引擎」——日常交易无需使用，已默认收纳于此。
 
@@ -825,6 +861,16 @@ alphapilot backtest_viz --port 19903
 说明：只有仍含 `ret.pkl` 的 workspace 会出现在列表中；`run01`/`run02` 若已清理旧 workspace，需重新跑完回测或用手动映射文件关联。
 
 > `alphapilot backtest_ui` 已弃用。如需修改默认路径，请在 `.env` 中设置 `ALPHAPILOT_WORKSPACE_ROOT`（或 `ALPHAPILOT_BACKTEST_ROOT`）与 `ALPHAPILOT_LOG_DIR`。
+
+#### 4.4 任务完成通知（portal「自动化 → 通知」）
+
+后台任务（定时任务、AlphaForge、Portal 触发的挖掘/回测/数据 job 等）结束时会推送标题、状态、Job ID 与结果摘要。支持 **Telegram**、**飞书自定义机器人 Webhook**、**SMTP 邮件** 三个频道，可并行启用。
+
+1. 打开 portal → **自动化** → **通知**，填写频道凭证并 **Save**
+2. 点 **Test Send** 验证（须先 Save）
+3. 在 **定时任务** 创建任务时勾选「完成后通知」，或在通知页开启「所有后台任务完成都通知」
+
+凭证默认写入 `~/.alphapilot/credentials/notify.json`（不在 git 仓库内）。服务器可用 `ALPHAPILOT_NOTIFY_*` 环境变量覆盖，详见 [§7](#7-任务完成通知alphapilotsystemsnotify) 与上方 [配置说明](#配置说明)。
 
 ### 5. 清理缓存
 
@@ -899,11 +945,12 @@ alphapilot prepare_data h5
 AlphaPilot/
 ├── alphapilot/                 # 主程序
 │   ├── kernel/                 # MainEngine / Context / 配置 / 插件发现
-│   ├── systems/                # 四大系统（data/factor/strategy/backtest）
+│   ├── systems/                # 系统层（data/factor/strategy/backtest/notify）
 │   │   ├── data/               # 数据下载、复权、Qlib 转换、h5（prepare_data 实现）
 │   │   ├── factor/             # 因子库（factor_zoo）、结构化表达式校验（FactorValidationResult）
 │   │   ├── backtest/           # 回测执行与产物（artifacts.py、results.py、qlib_yaml/）
-│   │   └── strategy/           # 策略资产存储（strategy_zoo）、复测编排（backtest.py）
+│   │   ├── strategy/           # 策略资产存储（strategy_zoo）、复测编排（backtest.py）
+│   │   └── notify/             # 任务完成通知（Telegram / 飞书 / 邮件 SMTP）
 │   ├── adapters/               # LLM/数据源可插拔适配层（回测见 systems/backtest/）
 │   ├── modules/                # 功能模块（alpha_mining/portal/platform/data_viz/backtest_viz/strategy_backtest/qlib_yaml/factor_cli + 插件）
 │   │   ├── alpha_mining/       # 因子挖掘（qlib 场景 + loops + conf + registry）
@@ -933,6 +980,8 @@ AlphaPilot/
 ~/.qlib/qlib_data/cn_data/   # 行情数据根目录（不在仓库内）
     ├── baostock/             # baostock CSV、download_state.csv、qlib 二进制
     └── tushare/              # Tushare CSV、download_state.csv、qlib 二进制
+
+~/.alphapilot/credentials/   # Portal 通知频道凭证（notify.json，不在仓库内）
 ```
 
 ---

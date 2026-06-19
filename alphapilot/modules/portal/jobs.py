@@ -154,6 +154,41 @@ def _run_target(kind: JobKind, kwargs: dict[str, Any]) -> Any:
     raise ValueError(f"Unsupported portal job kind: {kind!r}")
 
 
+def _maybe_notify(
+    job_dir: Path,
+    kind: JobKind,
+    kwargs: dict[str, Any],
+    notify_flag: Any,
+    status: str,
+    result: Any,
+    error: BaseException | None,
+) -> None:
+    """Best-effort completion notification.
+
+    ``notify_flag`` comes from the per-job ``notify`` control key; when it is
+    unset, fall back to the global ``notify_on_all_jobs`` option. Never raises --
+    a notification must not break (or fail) the job that triggered it.
+    """
+    try:
+        from alphapilot.systems import notify as notify_pkg
+
+        enabled = bool(notify_flag) if notify_flag is not None else notify_pkg.notify_on_all_jobs()
+        if not enabled:
+            return
+        message = notify_pkg.build_job_message(
+            kind=kind,
+            job_id=job_dir.name,
+            status=status,
+            result=result,
+            error=f"{type(error).__name__}: {error}" if error else None,
+            kwargs=kwargs,
+            job_dir=job_dir,
+        )
+        print(f"[portal-job] notify -> {notify_pkg.send(message)}")
+    except Exception as exc:  # noqa: BLE001 - notification is best-effort
+        print(f"[portal-job] notify skipped: {exc}")
+
+
 def _job_worker(job_dir_raw: str, kind: JobKind, kwargs: dict[str, Any]) -> None:
     job_dir = Path(job_dir_raw)
     job_id = job_dir.name
@@ -161,8 +196,9 @@ def _job_worker(job_dir_raw: str, kind: JobKind, kwargs: dict[str, Any]) -> None
     os.environ["ALPHAPILOT_PORTAL_JOB_ID"] = job_id
     os.environ.setdefault("ALPHAPILOT_PORTAL_JOB_DIR", str(job_dir))
 
+    kwargs = dict(kwargs)
+    notify_flag = kwargs.pop("notify", None)  # control key, not a task argument
     if kind == "strategy_backtest" and not kwargs.get("run_tag"):
-        kwargs = dict(kwargs)
         kwargs["run_tag"] = f"portal_{job_id}"
 
     with log_file.open("a", encoding="utf-8", buffering=1) as stream:
@@ -193,6 +229,7 @@ def _job_worker(job_dir_raw: str, kind: JobKind, kwargs: dict[str, Any]) -> None
                     },
                 )
                 print("[portal-job] succeeded")
+                _maybe_notify(job_dir, kind, kwargs, notify_flag, "succeeded", result, None)
             except BaseException as exc:  # noqa: BLE001
                 traceback.print_exc()
                 _patch_job(
@@ -204,6 +241,7 @@ def _job_worker(job_dir_raw: str, kind: JobKind, kwargs: dict[str, Any]) -> None
                         "error": f"{type(exc).__name__}: {exc}",
                     },
                 )
+                _maybe_notify(job_dir, kind, kwargs, notify_flag, "failed", None, exc)
                 raise
 
 

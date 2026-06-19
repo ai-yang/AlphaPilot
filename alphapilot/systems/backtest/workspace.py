@@ -48,7 +48,11 @@ class QlibFBWorkspace(FBWorkspace):
             env=run_env,
         )
 
-        ret_df = pd.read_pickle(self.workspace_path / "ret.pkl")
+        ret_path = self.workspace_path / "ret.pkl"
+        if not ret_path.exists():
+            logger.error(f"File {ret_path} does not exist (qrun likely failed).")
+            return None
+        ret_df = pd.read_pickle(ret_path)
         logger.log_object(ret_df, tag="Quantitative Backtesting Chart")
 
         csv_path = self.workspace_path / "qlib_res.csv"

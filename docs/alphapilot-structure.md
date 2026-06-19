@@ -4,6 +4,7 @@
 
 **目录**
 
+- [CLI 命令参考（完整列表）](alphapilot-cli.md)
 - [项目整体在做什么](#项目整体在做什么)
 - [`alphapilot/` 目录总览](#alphapilot-目录总览)
 - [各子目录作用](#各子目录作用)
@@ -24,7 +25,7 @@
 | **Factor Agent** | 把假设变成因子表达式和可执行代码 |
 | **Eval Agent** | 用 Qlib 回测，把 IC、收益等结果反馈给下一轮 |
 
-命令行入口在 `pyproject.toml` 中注册为 `alphapilot`，实现在 `alphapilot/app/cli.py`：
+命令行入口在 `pyproject.toml` 中注册为 `alphapilot`，实现在 `alphapilot/app/cli.py`。完整 26 条命令及参数说明见 **[CLI 命令参考](alphapilot-cli.md)**。
 
 | 命令 | 作用 |
 |------|------|

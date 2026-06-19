@@ -306,10 +306,20 @@ def load_backtest(workspace: Path | str) -> BacktestArtifacts:
 
 
 def build_summary(report: pd.DataFrame) -> dict[str, float]:
-    cum_return = report["return"].cumsum()
-    cum_bench = report["bench"].cumsum()
-    cum_excess = (report["return"] - report["bench"]).cumsum()
-    cum_return_w_cost = (report["return"] - report["cost"]).cumsum()
+    """Backtest summary metrics. Robust to missing columns; always returns all keys.
+
+    This is the single source of truth for the portfolio summary; ``portfolio_artifacts``
+    delegates here so the displayed and exported numbers stay consistent.
+    """
+    returns = report["return"] if "return" in report.columns else pd.Series(dtype=float)
+    bench = report["bench"] if "bench" in report.columns else pd.Series(0.0, index=returns.index)
+
+    cum_return = returns.cumsum()
+    cum_bench = bench.cumsum()
+    cum_excess = (returns - bench).cumsum()
+    cum_return_w_cost = (
+        (returns - report["cost"]).cumsum() if "cost" in report.columns else cum_return
+    )
 
     dd = cum_return - cum_return.cummax()
     max_dd = float(dd.min()) if len(dd) else 0.0
@@ -320,7 +330,7 @@ def build_summary(report: pd.DataFrame) -> dict[str, float]:
         "基准累计收益": float(cum_bench.iloc[-1]) if len(cum_bench) else 0.0,
         "累计超额(不含成本)": float(cum_excess.iloc[-1]) if len(cum_excess) else 0.0,
         "最大回撤(不含成本)": max_dd,
-        "平均日换手": float(report["turnover"].mean()) if "turnover" in report else 0.0,
-        "累计手续费": float(report["cost"].sum()) if "cost" in report else 0.0,
-        "期末总资产": float(report["account"].iloc[-1]) if "account" in report and len(report) else 0.0,
+        "平均日换手": float(report["turnover"].mean()) if "turnover" in report.columns else 0.0,
+        "累计手续费": float(report["cost"].sum()) if "cost" in report.columns else 0.0,
+        "期末总资产": float(report["account"].iloc[-1]) if "account" in report.columns and len(report) else 0.0,
     }

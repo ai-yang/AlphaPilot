@@ -1213,6 +1213,7 @@ def _render_schedule_form(sched: Any) -> None:
     tcol1, tcol2 = st.columns([1, 1], vertical_alignment="bottom")
     run_time = tcol1.time_input(t("sched_time"), value=_dt_time(7, 30), key="sched_new_time")
     enabled = tcol2.checkbox(t("sched_enabled"), value=True, key="sched_new_enabled")
+    notify_done = st.checkbox(t("sched_notify"), value=False, key="sched_new_notify")
 
     kwargs: dict[str, Any] = {}
     if kind == "data":
@@ -1269,6 +1270,9 @@ def _render_schedule_form(sched: Any) -> None:
             st.warning(t("sched_advanced_invalid"))
             return
         kwargs.update(extra)
+
+    if notify_done:
+        kwargs["notify"] = True  # control key consumed by the job worker
 
     if st.button(t("sched_create_btn"), key="sched_new_submit", type="primary"):
         if not name.strip():
@@ -1362,6 +1366,63 @@ def _render_scheduler_page() -> None:
         _render_schedule_row(sched, s)
 
 
+def _render_notify_page() -> None:
+    """Configure notification channels (email / Feishu / Telegram) + test send."""
+    from alphapilot.systems import notify as notify_pkg
+
+    st.header(f"📣 {t('notify_title')}")
+    st.caption(t("notify_caption"))
+
+    cfg = notify_pkg.load_file_config()
+    configured = notify_pkg.configured_channel_names()
+    if configured:
+        st.success(t("notify_active", channels=", ".join(configured)))
+    else:
+        st.info(t("notify_none"))
+    st.caption(t("notify_path", path=notify_pkg.credentials_path()))
+
+    new_cfg: dict[str, Any] = {ch: dict(cfg.get(ch, {})) for ch in notify_pkg.CHANNEL_FIELDS}
+    new_cfg["options"] = {
+        "notify_on_all_jobs": st.checkbox(
+            t("notify_on_all_jobs"),
+            value=bool(cfg.get("options", {}).get("notify_on_all_jobs", False)),
+            key="notify_opt_all",
+        )
+    }
+
+    for ch, fields in notify_pkg.CHANNEL_FIELDS.items():
+        with st.expander(t(f"notify_ch_{ch}"), expanded=False):
+            for name, ftype in fields:
+                key = f"notify_{ch}_{name}"
+                cur = cfg.get(ch, {}).get(name)
+                label = name.replace("_", " ")
+                if ftype == "bool":
+                    new_cfg[ch][name] = st.checkbox(label, value=bool(cur), key=key)
+                elif ftype == "int":
+                    new_cfg[ch][name] = st.number_input(label, value=int(cur or 0), step=1, key=key)
+                elif ftype == "secret":
+                    new_cfg[ch][name] = st.text_input(label, value=str(cur or ""), type="password", key=key)
+                elif ftype == "list":
+                    raw = ", ".join(cur) if isinstance(cur, list) else str(cur or "")
+                    new_cfg[ch][name] = st.text_input(f"{label} (a, b, c)", value=raw, key=key)
+                else:
+                    new_cfg[ch][name] = st.text_input(label, value=str(cur or ""), key=key)
+
+    if st.button(t("notify_save"), type="primary", key="notify_save"):
+        notify_pkg.save_notify_config(new_cfg)
+        st.success(t("notify_saved", path=notify_pkg.credentials_path()))
+        st.rerun()
+
+    st.markdown(f"#### {t('notify_test_heading')}")
+    st.caption(t("notify_test_hint"))
+    test_cols = st.columns(len(notify_pkg.CHANNEL_FIELDS) + 1)
+    if test_cols[0].button(t("notify_test_all"), key="notify_test_all", width="stretch"):
+        st.write(notify_pkg.test_send())
+    for i, ch in enumerate(notify_pkg.CHANNEL_FIELDS, start=1):
+        if test_cols[i].button(ch, key=f"notify_test_{ch}", width="stretch"):
+            st.write(notify_pkg.test_send(ch))
+
+
 def _render_home(engine: Any) -> None:
     """Trader-facing landing page: status at a glance + quick actions."""
     pages = st.session_state.get("_nav_pages", {})
@@ -1450,6 +1511,10 @@ def _page_scheduler() -> None:
     _render_scheduler_page()
 
 
+def _page_notify() -> None:
+    _render_notify_page()
+
+
 def main() -> None:
     with st.spinner(t("loading_engine")):
         _load_engine()
@@ -1461,6 +1526,7 @@ def main() -> None:
     library_page = st.Page(_page_library, title=t("page_library"), icon="📚")
     market_page = st.Page(_page_market, title=t("page_market"), icon="📈")
     scheduler_page = st.Page(_page_scheduler, title=t("page_scheduler"), icon="⏰")
+    notify_page = st.Page(_page_notify, title=t("page_notify"), icon="📣")
     advanced_page = st.Page(_page_advanced, title=t("page_advanced"), icon="⚙️")
 
     # Stash page handles before nav.run() so the Home page can st.switch_page() to them.
@@ -1471,6 +1537,7 @@ def main() -> None:
         "library": library_page,
         "market": market_page,
         "scheduler": scheduler_page,
+        "notify": notify_page,
         "advanced": advanced_page,
     }
 
@@ -1479,7 +1546,7 @@ def main() -> None:
             t("nav_group_overview"): [home_page],
             t("nav_group_data"): [market_page],
             t("nav_group_research"): [mining_page, backtest_page, library_page],
-            t("nav_group_automation"): [scheduler_page],
+            t("nav_group_automation"): [scheduler_page, notify_page],
             t("nav_group_system"): [advanced_page],
         }
     ).run()

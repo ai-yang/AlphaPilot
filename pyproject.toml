@@ -41,6 +41,7 @@ data = "alphapilot.systems.data.service:QlibDataSystem"
 factor = "alphapilot.systems.factor.service:FactorSystem"
 strategy = "alphapilot.systems.strategy.service:StrategySystem"
 backtest = "alphapilot.systems.backtest.service:QlibBacktestSystem"
+notify = "alphapilot.systems.notify.service:NotificationSystem"
 
 [project.entry-points."alphapilot.modules"]
 alpha_mining = "alphapilot.modules.alpha_mining.module:AlphaMiningModule"
