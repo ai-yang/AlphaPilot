@@ -110,3 +110,127 @@ task:
           module_path: qlib.workflow.record_temp
           kwargs: 
             config: *port_analysis_config
+
+# =============================================================================
+# 参考：本文件不是 Qlib 的全部参数，而是 qrun 工作流的一份实例配置。
+# Qlib 采用「class + module_path + kwargs」组合任意组件；换 class 即换整套能力
+# （如 Alpha158/Alpha360、EnhancedIndexingStrategy、XGBModel 等）。
+# 文档：https://qlib.readthedocs.io/en/latest/component/workflow.html
+# AlphaPilot 运行时还可能用环境变量 ALPHAPILOT_QLIB_DATA_DIR 覆盖 qlib_init.provider_uri。
+# =============================================================================
+#
+# --- qlib_init（Qlib 初始化，除 provider_uri / region 外还可扩展）---
+#   provider_uri: str          # Qlib 二进制数据目录（本仓库默认 baostock dump）
+#   region: cn | us             # 必须与 provider_uri 数据市场一致
+#   # 高级（少见，需在 qlib.init 支持范围内）:
+#   # mount_path, redis_host, redis_port, kernels, mem_cache_size, ...
+#
+# --- 顶层锚点 ---
+#   market: str                 # instruments 池名，对应 qlib/instruments/{market}.txt
+#   benchmark: str               # 基准代码（如 SH000905）；需在 provider 中有该指数行情
+#
+# --- data_handler_config / DataHandlerLP（handler.kwargs 引用 *data_handler_config）---
+#   start_time / end_time       # 数据加载总区间（已用）
+#   instruments: *market        # 股票池（已用）
+#   fit_start_time / fit_end_time  # 处理器拟合区间（RobustZScoreNorm 等需要；当前未设）
+#   process_type: append | independent  # infer/learn 处理器串联方式（默认 append）
+#   drop_raw: bool              # 处理后是否丢弃原始列
+#   shared_processors: []       # infer+learn 共用处理器（在 learn/infer 之前执行）
+#   data_loader:                # 已用 NestedDataLoader；也可换成 Alpha158/Alpha360 等 handler
+#     class: NestedDataLoader
+#     kwargs:
+#       dataloader_l:
+#         - class: QlibDataLoader
+#           kwargs:
+#             config:
+#               feature: [qlib 表达式列表]   # 已用；可增 $amount/$turn/$vwap 等
+#               label: [[表达式], [列名]]    # 已用；常见 forward return
+#             # freq: day                  # 默认 day
+#             # inst_processors: []        # 按 instrument 的处理器
+#         - class: StaticDataLoader
+#           kwargs:
+#             config: "combined_factors_df.pkl"  # workspace 内挖掘因子宽表（已用）
+#   learn_processors / infer_processors  # 已用 Fillna/DropnaLabel/CSZScoreNorm
+#   # 其他常用 Processor（见 Qlib Data 文档）:
+#   #   ProcessInf, RobustZScoreNorm, CSRankNorm, MinMaxNorm, DropnaFeature,
+#   #   FilterCol, TimeRangeFlt, ...
+#   # Processor 常见 kwargs: fields_group (feature|label), fit_start_time, fit_end_time
+#
+# --- port_analysis_config（PortAnaRecord.kwargs.config）---
+#   # 本 combined 模板未写 executor；baseline 模板 conf.yaml 含 SimulatorExecutor，例如:
+#   # executor:
+#   #   class: SimulatorExecutor
+#   #   module_path: qlib.backtest.executor
+#   #   kwargs:
+#   #     time_per_step: day              # day | 1min 等
+#   #     generate_portfolio_metrics: True
+#   #     verbose: False
+#   #     indicator_config:
+#   #       show_indicator: True
+#   strategy:                    # 已用 TopkDropoutStrategy；可换 EnhancedIndexingStrategy 等
+#     class / module_path / kwargs:
+#       signal: <PRED>            # 模型预测占位符（已用）；或 pd.Series / 表达式 Signal
+#       topk / n_drop             # Topk-Drop 核心参数（已用）
+#       hold_thresh: 1           # 最小持仓 bar 数（已用）
+#       risk_degree: 0.90         # 可用资金比例（已用）
+#       # TopkDropoutStrategy 额外可选:
+#       # method_buy: top | random
+#       # method_sell: bottom | random
+#       # only_tradable: false     # true=只选可交易标的（涨跌停/停牌过滤）
+#       # forbid_all_trade_at_limit: true  # 涨跌停日是否禁止买卖
+#   backtest:
+#     start_time / end_time       # 组合回测区间（已用；建议 ⊆ dataset.segments.test）
+#     account: float               # 初始资金（已用）
+#     benchmark: *benchmark       # 已用
+#     exchange_kwargs:            # 传给 qlib.backtest.Exchange
+#       limit_threshold: 0.095     # float：|涨跌幅|<阈值才可交易（A 股常用 0.095）
+#       # 或 tuple 表达式: [buy_limit_expr, sell_limit_expr]
+#       deal_price: close | ["$open","$close"] | ["$open","$close"]  # 已用买卖分价
+#       # 仅支持 quote 字段名 $open/$close/$vwap，不支持 $open/$factor 等表达式
+#       open_cost / close_cost    # 买卖费率（已用）
+#       min_cost: 5               # 单笔最低佣金（已用）
+#       # 其他 Exchange 可选（exchange_kwargs 内）:
+#       # freq: day
+#       # codes: *market           # 回测标的范围（默认跟随 strategy）
+#       # impact_cost: 0.0        # 冲击成本/滑点系数（默认 0）
+#       # trade_unit: 100         # A 股整手；factor 缺失时可能被禁用
+#       # subscribe_fields: []     # 额外订阅 quote 字段
+#       # volume_threshold: ...    # 成交量容量限制（高频/大单场景）
+#       # extra_quote: DataFrame   # 补充行情（高级）
+#
+# --- task.model（已用 LGBModel；kwargs 随模型类而变）---
+#   class / module_path           # 可换 qlib.contrib.model.xgboost.XGBModel 等
+#   kwargs 已用: loss, colsample_bytree, learning_rate, subsample,
+#                lambda_l1, lambda_l2, max_depth, num_leaves, num_threads
+#   LGBModel 常见还可加:
+#     early_stopping_round: 50
+#     num_boost_round: 500
+#     min_child_samples, feature_fraction_bynode, seed, ...
+#
+# --- task.dataset（已用 DatasetH + DataHandlerLP + segments）---
+#   segments.train / valid / test # 训练/验证/测试切分（已用）
+#   # 若换 TSDatasetH（时序模型）还需 step_len, num_timesteps 等
+#
+# --- task.record（Record 列表；可增删条目）---
+#   SignalRecord                  # 生成 pred.pkl / 信号（已用）
+#     kwargs: model: <MODEL>, dataset: <DATASET>
+#   SigAnaRecord                  # IC / RankIC / ICIR（已用）
+#     ana_long_short: false        # 已用
+#     ann_scaler: 252              # 已用
+#     # 还可: ic_aggregation_method, skip_existing, ...
+#   PortAnaRecord                 # 组合回测 + 持仓/指标（已用）
+#     config: *port_analysis_config
+#   # 其他 Record 类型（本模板未启用）:
+#   #   HFSignalRecord, MultiPassPortAnaRecord, ...
+#
+# --- 本文件未出现、但 AlphaPilot 支持的生成项（见 qlib_yaml/schema.py）---
+#   enable_signal_record / enable_sig_ana_record / enable_port_ana_record  # 关闭某步评估
+#   model_class / model_module / model_kwargs      # 非 LGBM 模型
+#   strategy_class / strategy_module / strategy_kwargs  # 非 TopkDropout 策略
+#   include_executor: true                          # 是否在 port_analysis_config 写 executor
+#
+# --- 修改建议 ---
+#   1. 只改回测规则/资金/费率 → 改 port_analysis_config.backtest 与 strategy.kwargs
+#   2. 改标签/特征/预处理 → 改 data_handler_config
+#   3. 改复权/价格体系 → 换 provider 数据（prepare_data adjust_mode），不是改 deal_price 表达式
+#   4. 改 train/valid/test → 同时检查 backtest.start_time 与 test 段对齐

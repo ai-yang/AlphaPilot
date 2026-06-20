@@ -46,24 +46,18 @@ def generate_daily_pv_h5(
     instruments = D.instruments(market=market)
     logger.info(f"从 Qlib 导出价量数据: market={market}, fields={fields}")
 
+    # Index is (datetime, instrument) after swaplevel; ``$return`` must be the per-instrument
+    # day-over-day change, so group by the ``instrument`` level (grouping by the datetime level
+    # would compute a meaningless cross-sectional pct_change within a single day).
     data = D.features(instruments, fields, freq="day").swaplevel().sort_index().loc[start_date:].sort_index()
-    data["$return"] = data.groupby(level=0)["$close"].pct_change().fillna(0)
+    data["$return"] = data.groupby(level="instrument")["$close"].pct_change().fillna(0)
     logger.info(f"daily_pv_all 形状: {data.shape}")
     data.to_hdf(output_dir / "daily_pv_all.h5", key="data")
 
-    debug_instruments = data.reset_index()["instrument"].unique()[:debug_stock_count]
-    debug_data = (
-        D.features(instruments, fields, freq="day")
-        .swaplevel()
-        .sort_index()
-        .swaplevel()
-        .loc[debug_instruments]
-        .swaplevel()
-        .sort_index()
-        .loc[start_date:]
-        .sort_index()
-    )
-    debug_data["$return"] = debug_data.groupby(level=0)["$close"].pct_change().fillna(0)
+    # Slice the debug subset straight from the full frame (keeps the already-correct ``$return``
+    # and avoids a second, expensive ``D.features`` read).
+    debug_instruments = data.index.get_level_values("instrument").unique()[:debug_stock_count]
+    debug_data = data.loc[pd.IndexSlice[:, debug_instruments], :].sort_index()
     logger.info(f"daily_pv_debug 形状: {debug_data.shape}")
     debug_data.to_hdf(output_dir / "daily_pv_debug.h5", key="data")
     logger.info(f"h5 已写入: {output_dir}")

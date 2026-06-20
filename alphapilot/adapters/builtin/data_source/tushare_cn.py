@@ -13,6 +13,14 @@ from alphapilot.adapters.base import (
 from alphapilot.adapters.registry import DATA_SOURCE_REGISTRY
 
 
+def _parse_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return bool(value)
+
+
 @DATA_SOURCE_REGISTRY.register("tushare_cn")
 class TushareDataSourceAdapter(BaseDataSourceAdapter):
     """Download A-share daily CSV via Tushare Pro."""
@@ -35,7 +43,8 @@ class TushareDataSourceAdapter(BaseDataSourceAdapter):
         factor_dir = options.pop("factor_dir", None)
         download_state_path = options.pop("download_state_path", None)
         token = options.pop("token", None)
-        include_daily_basic = bool(options.pop("include_daily_basic", False))
+        include_daily_basic = _parse_bool(options.pop("include_daily_basic", False))
+        parallel_price_factor = _parse_bool(options.pop("parallel_price_factor", False))
 
         raw_dir = (
             Path(request.output_dir).expanduser()
@@ -57,6 +66,7 @@ class TushareDataSourceAdapter(BaseDataSourceAdapter):
             download_state_path=download_state_path,
             token=token,
             include_daily_basic=include_daily_basic,
+            parallel_price_factor=parallel_price_factor,
         )
         return DataDownloadResult(
             output_dir=Path(raw_dir),

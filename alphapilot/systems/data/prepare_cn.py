@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import threading
+import multiprocessing as mp
+import queue
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -29,7 +31,10 @@ from alphapilot.systems.data.data_paths import (
     existing_baostock_factor_dir,
     existing_baostock_raw_dir,
 )
-from alphapilot.systems.data.stock_list import load_stocks_from_file, normalize_to_baostock
+from alphapilot.systems.data.stock_list import (
+    load_stocks_from_file,
+    normalize_to_baostock,
+)
 
 RAW_DIR_BY_MODE = BAOSTOCK_RAW_DIR_BY_MODE
 DEFAULT_RAW_DIR = canonical_baostock_raw_dir("backward")
@@ -66,8 +71,7 @@ def normalize_adjust_mode(adjust_mode: str) -> AdjustMode:
     if key in _ADJUST_MODE_ALIASES:
         return _ADJUST_MODE_ALIASES[key]
     raise ValueError(
-        f"不支持的复权类型: {adjust_mode!r}。"
-        "请使用 none/不复权/除权、forward/前复权、backward/后复权。"
+        f"不支持的复权类型: {adjust_mode!r}。" "请使用 none/不复权/除权、forward/前复权、backward/后复权。"
     )
 
 
@@ -182,21 +186,32 @@ def _query_trade_dates(start_date: str, end_date: str) -> set[str] | None:
         return set()
 
     calendar = pd.DataFrame(rows, columns=rs.fields)
-    if "calendar_date" not in calendar.columns or "is_trading_day" not in calendar.columns:
+    if (
+        "calendar_date" not in calendar.columns
+        or "is_trading_day" not in calendar.columns
+    ):
         logger.warning("交易日查询结果缺少必要字段，将回退为逐股票行情查询")
         return None
-    calendar["is_trading_day"] = pd.to_numeric(calendar["is_trading_day"], errors="coerce").fillna(0)
-    return set(calendar.loc[calendar["is_trading_day"] == 1, "calendar_date"].astype(str))
+    calendar["is_trading_day"] = pd.to_numeric(
+        calendar["is_trading_day"], errors="coerce"
+    ).fillna(0)
+    return set(
+        calendar.loc[calendar["is_trading_day"] == 1, "calendar_date"].astype(str)
+    )
 
 
-def _has_trading_day(trading_dates: set[str] | None, start_date: str, end_date: str) -> bool:
+def _has_trading_day(
+    trading_dates: set[str] | None, start_date: str, end_date: str
+) -> bool:
     """Fail open when the calendar probe failed."""
     if trading_dates is None:
         return True
     return any(start_date <= trade_date <= end_date for trade_date in trading_dates)
 
 
-def factor_covers_price_history(factor_df: pd.DataFrame, price_df: pd.DataFrame) -> bool:
+def factor_covers_price_history(
+    factor_df: pd.DataFrame, price_df: pd.DataFrame
+) -> bool:
     """Return True if factor history extends to (or before) the first price bar."""
     if factor_df.empty or price_df.empty or "dividOperateDate" not in factor_df.columns:
         return False
@@ -321,7 +336,9 @@ def _download_adjust_factors(
 
     factor_dir.mkdir(parents=True, exist_ok=True)
     if not rs_list:
-        pd.DataFrame(columns=rs_adj.fields).to_csv(factor_file, index=False, encoding="utf-8")
+        pd.DataFrame(columns=rs_adj.fields).to_csv(
+            factor_file, index=False, encoding="utf-8"
+        )
         return
 
     factor_df = pd.DataFrame(rs_list, columns=rs_adj.fields)
@@ -330,6 +347,110 @@ def _download_adjust_factors(
         factor_df = factor_df.drop_duplicates(subset=["dividOperateDate"], keep="last")
         factor_df = factor_df.sort_values("dividOperateDate")
     factor_df.to_csv(factor_file, index=False, encoding="utf-8")
+
+
+def _parallel_adjust_factor_worker(
+    codes: list[str],
+    end_date: str,
+    factor_dir: str,
+    download_starts: dict[str, str | None],
+    result_queue: Any,
+) -> None:
+    stats = _DownloadStats()
+    factor_path = Path(factor_dir).expanduser()
+    try:
+        lg = bs.login()
+        if lg.error_code != "0":
+            raise RuntimeError(f"baostock 登录失败: {lg.error_msg}")
+        try:
+            for code in tqdm(codes, desc="复权因子"):
+                incremental_start = download_starts.get(code)
+                if incremental_start is None or incremental_start > end_date:
+                    continue
+                try:
+                    _maybe_download_adjust_factors(
+                        code,
+                        end_date,
+                        factor_path,
+                        incremental_start=incremental_start,
+                        price_df=None,
+                        stats=stats,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    stats.incr("errors")
+                    logger.warning(f"并行下载 {code} 复权因子失败: {exc}")
+        finally:
+            bs.logout()
+        result_queue.put(
+            {
+                "factor_probed": stats.factor_probed,
+                "factor_refreshed": stats.factor_refreshed,
+                "factor_skipped": stats.factor_skipped,
+                "errors": stats.errors,
+            }
+        )
+    except BaseException as exc:  # noqa: BLE001 - propagated through queue + exitcode
+        result_queue.put({"error": f"{type(exc).__name__}: {exc}"})
+        raise
+
+
+def _start_parallel_adjust_factor_process(
+    codes: list[str],
+    end_date: str,
+    factor_dir: Path,
+    download_starts: dict[str, str | None],
+) -> tuple[Any, Any]:
+    ctx = mp.get_context("spawn")
+    result_queue = ctx.Queue()
+    process = ctx.Process(
+        target=_parallel_adjust_factor_worker,
+        args=(codes, end_date, str(factor_dir), download_starts, result_queue),
+        daemon=False,
+    )
+    process.start()
+    return process, result_queue
+
+
+def _finish_parallel_adjust_factor_process(
+    process: Any, result_queue: Any
+) -> dict[str, Any]:
+    process.join()
+    result: dict[str, Any] = {}
+    try:
+        result = result_queue.get_nowait()
+    except queue.Empty:
+        result = {}
+    if result.get("error"):
+        raise RuntimeError(f"并行复权因子下载失败: {result['error']}")
+    if getattr(process, "exitcode", 0) not in (0, None):
+        raise RuntimeError(f"并行复权因子下载进程异常退出: exitcode={process.exitcode}")
+    return result
+
+
+def _ensure_factor_coverage_for_prices(
+    codes: list[str],
+    output_dir: Path,
+    factor_dir: Path,
+    end_date: str,
+) -> int:
+    refreshed = 0
+    for code in codes:
+        price_file = output_dir / f"{code.replace('.', '')}.csv"
+        if not price_file.exists():
+            continue
+        try:
+            price_df = pd.read_csv(price_file)
+            factor_file = _factor_file_path(code, factor_dir)
+            factor_df = _load_local_factor_df(factor_file)
+            if factor_df is None or not factor_covers_price_history(
+                factor_df, price_df
+            ):
+                logger.info(f"{code} 并行下载后复权因子未覆盖行情起点，补全历史因子")
+                _download_adjust_factors(code, end_date, factor_dir)
+                refreshed += 1
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"校验 {code} 复权因子覆盖失败: {exc}")
+    return refreshed
 
 
 def refresh_adjust_factors(
@@ -342,9 +463,7 @@ def refresh_adjust_factors(
     factor_path = resolve_factor_dir(factor_dir)
     # baostock 同一 session 不支持多线程并发，max_workers>1 容易在十余只后卡死
     if max_workers != 1:
-        logger.warning(
-            f"复权因子刷新强制使用 max_workers=1（baostock 不支持并发），已忽略 {max_workers}"
-        )
+        logger.warning(f"复权因子刷新强制使用 max_workers=1（baostock 不支持并发），已忽略 {max_workers}")
         max_workers = 1
 
     lg = bs.login()
@@ -396,6 +515,7 @@ def download_stock_data(
     factor_dir: str | Path | None = None,
     symbols: list[str] | None = None,
     download_state_path: str | Path | None = None,
+    parallel_price_factor: bool = False,
 ) -> list[str]:
     """
     Download daily CSV files. Returns the list of baostock codes that were requested.
@@ -411,6 +531,11 @@ def download_stock_data(
     output_path = Path(output_dir).expanduser()
     output_path.mkdir(parents=True, exist_ok=True)
     factor_path = resolve_factor_dir(factor_dir) if mode == "none" else None
+    parallel_factors_enabled = bool(
+        parallel_price_factor and mode == "none" and factor_path is not None
+    )
+    if parallel_price_factor and not parallel_factors_enabled:
+        logger.info("parallel_price_factor 仅在 adjust_mode=none 时生效，当前保持原下载流程。")
     state_path = resolve_download_state_path(download_state_path, output_path)
     state_store = DownloadStateStore(state_path)
     source = BAOSTOCK_SOURCE
@@ -469,25 +594,43 @@ def download_stock_data(
         raise RuntimeError(f"baostock 登录失败: {lg.error_msg}")
 
     try:
-        active_starts = [date for date in download_starts.values() if date is not None and date <= end_date]
+        active_starts = [
+            date
+            for date in download_starts.values()
+            if date is not None and date <= end_date
+        ]
         trading_dates: set[str] | None = None
         if active_starts:
             min_start = min(active_starts)
             trading_dates = _query_trade_dates(min_start, end_date)
             logger.info(f"下载状态表: {state_path}")
+        factor_process = factor_queue = None
+        if parallel_factors_enabled and active_starts:
+            logger.info("启用并行下载: 行情 CSV 与复权因子将在独立进程中同时执行。")
+            active_codes = [
+                code
+                for code, start in download_starts.items()
+                if start is not None and start <= end_date
+            ]
+            factor_process, factor_queue = _start_parallel_adjust_factor_process(
+                active_codes,
+                end_date,
+                factor_path,
+                download_starts,
+            )
 
         fields = (
             "date,code,open,high,low,close,preclose,volume,amount,turn,"
             "tradestatus,pctChg,peTTM,pbMRQ,psTTM,pcfNcfTTM,isST"
         )
 
-        def download_single_stock(code: str) -> None:
+        def download_single_stock(code: str) -> str | None:
             code_clean = code.replace(".", "")
             output_file = output_path / f"{code_clean}.csv"
             code_download_start_date = download_starts.get(code)
 
             if code_download_start_date is None or code_download_start_date > end_date:
-                return
+                return None
 
             if not _has_trading_day(trading_dates, code_download_start_date, end_date):
                 state_store.upsert(
@@ -501,7 +644,7 @@ def download_stock_data(
                     mark_success=True,
                 )
                 stats.incr("skipped_up_to_date")
-                return
+                return None
 
             logger.info(
                 f"下载 {code} ({mode}) ... {code_download_start_date} ~ {end_date}"
@@ -526,7 +669,7 @@ def download_stock_data(
                         last_error=rs.error_msg,
                     )
                     stats.incr("errors")
-                    return
+                    return None
 
                 data_list = []
                 while rs.next():
@@ -543,7 +686,7 @@ def download_stock_data(
                     last_error="",
                     mark_success=True,
                 )
-                return
+                return None
 
             new_df = pd.DataFrame(data_list, columns=rs.fields)
             new_df["code"] = new_df["code"].str.replace(".", "", regex=False)
@@ -577,7 +720,11 @@ def download_stock_data(
                 mark_success=True,
             )
 
-            if mode == "none" and factor_path is not None:
+            if (
+                mode == "none"
+                and factor_path is not None
+                and not parallel_factors_enabled
+            ):
                 _maybe_download_adjust_factors(
                     code,
                     end_date,
@@ -586,11 +733,36 @@ def download_stock_data(
                     price_df=combined_df,
                     stats=stats,
                 )
+            return code
 
+        updated_codes: list[str] = []
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [executor.submit(download_single_stock, code) for code in all_stocks]
+            futures = [
+                executor.submit(download_single_stock, code) for code in all_stocks
+            ]
             for future in tqdm(as_completed(futures), total=len(futures), desc="下载进度"):
-                future.result()
+                updated_code = future.result()
+                if updated_code is not None:
+                    updated_codes.append(updated_code)
+
+        if factor_process is not None:
+            factor_result = _finish_parallel_adjust_factor_process(
+                factor_process, factor_queue
+            )
+            stats.incr("factor_probed", int(factor_result.get("factor_probed", 0)))
+            stats.incr(
+                "factor_refreshed", int(factor_result.get("factor_refreshed", 0))
+            )
+            stats.incr("factor_skipped", int(factor_result.get("factor_skipped", 0)))
+            stats.incr("errors", int(factor_result.get("errors", 0)))
+            coverage_refreshed = _ensure_factor_coverage_for_prices(
+                updated_codes,
+                output_path,
+                factor_path,
+                end_date,
+            )
+            if coverage_refreshed:
+                stats.incr("factor_refreshed", coverage_refreshed)
 
         logger.info(
             "下载统计: "
@@ -620,14 +792,13 @@ def download_cn_data(
     factor_dir: str | Path | None = None,
     symbols: list[str] | None = None,
     download_state_path: str | Path | None = None,
+    parallel_price_factor: bool = False,
 ) -> list[str]:
     if end_date is None:
         end_date = datetime.now().strftime("%Y-%m-%d")
     raw_dir = resolve_raw_dir(data_dir, adjust_mode)
     mode = normalize_adjust_mode(adjust_mode)
-    logger.info(
-        f"开始下载 A 股数据 ({mode}): {start_date} ~ {end_date} -> {raw_dir}"
-    )
+    logger.info(f"开始下载 A 股数据 ({mode}): {start_date} ~ {end_date} -> {raw_dir}")
     if mode == "none":
         logger.info(f"复权因子目录: {resolve_factor_dir(factor_dir)}")
     codes = download_stock_data(
@@ -642,6 +813,7 @@ def download_cn_data(
         factor_dir=factor_dir,
         symbols=symbols,
         download_state_path=download_state_path,
+        parallel_price_factor=parallel_price_factor,
     )
     logger.info("CSV 下载完成。")
     return codes

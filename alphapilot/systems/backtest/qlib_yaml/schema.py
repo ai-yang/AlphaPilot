@@ -69,10 +69,22 @@ class QlibYamlParams(BaseModel):
     num_leaves: int = 210
     num_threads: int = 20
 
+    # Model class is configurable; ``model_kwargs`` (when non-empty) overrides the
+    # LGBM scalar fields above so non-LGBM / custom models can be plugged in.
+    model_class: str = "LGBModel"
+    model_module: str = "qlib.contrib.model.gbdt"
+    model_kwargs: dict[str, Any] = Field(default_factory=dict)
+
     topk: int = 15
     n_drop: int = 5
     hold_thresh: int = 1
     risk_degree: float = 0.90
+
+    # Trading/rebalancing strategy is configurable; ``strategy_kwargs`` (when
+    # non-empty) overrides the topk/n_drop scalars so custom strategies can be used.
+    strategy_class: str = "TopkDropoutStrategy"
+    strategy_module: str = "qlib.contrib.strategy"
+    strategy_kwargs: dict[str, Any] = Field(default_factory=dict)
 
     backtest_start: str = "2024-01-01"
     backtest_end: str = "2026-05-22"
@@ -84,6 +96,12 @@ class QlibYamlParams(BaseModel):
 
     ann_scaler: int = 252
     ana_long_short: bool = False
+
+    # Record toggles. ``single_ic`` style runs can disable the (expensive) portfolio
+    # simulation by setting ``enable_port_ana_record=False``.
+    enable_signal_record: bool = True
+    enable_sig_ana_record: bool = True
+    enable_port_ana_record: bool = True
 
     @field_validator(
         "start_time",
@@ -131,6 +149,45 @@ class QlibYamlParams(BaseModel):
         merged = _deep_merge(base.model_dump(), patch)
         return cls.model_validate(merged)
 
+    @property
+    def effective_model_kwargs(self) -> dict[str, Any]:
+        """Model kwargs rendered into the template.
+
+        When ``model_kwargs`` is provided it is used verbatim (custom / non-LGBM
+        models); otherwise the LGBM scalar fields reproduce today's behavior.
+        """
+        if self.model_kwargs:
+            return dict(self.model_kwargs)
+        return {
+            "loss": self.loss,
+            "colsample_bytree": self.colsample_bytree,
+            "learning_rate": self.learning_rate,
+            "subsample": self.subsample,
+            "lambda_l1": self.lambda_l1,
+            "lambda_l2": self.lambda_l2,
+            "max_depth": self.max_depth,
+            "num_leaves": self.num_leaves,
+            "num_threads": self.num_threads,
+        }
+
+    @property
+    def effective_strategy_kwargs(self) -> dict[str, Any]:
+        """Strategy kwargs rendered into the template.
+
+        When ``strategy_kwargs`` is provided it is used verbatim (custom strategy);
+        otherwise the TopkDropout scalar fields reproduce today's behavior. ``<PRED>``
+        is the qlib placeholder for the model prediction signal.
+        """
+        if self.strategy_kwargs:
+            return dict(self.strategy_kwargs)
+        return {
+            "signal": "<PRED>",
+            "topk": self.topk,
+            "n_drop": self.n_drop,
+            "hold_thresh": self.hold_thresh,
+            "risk_degree": self.risk_degree,
+        }
+
     def llm_schema_hint(self) -> dict[str, Any]:
         """JSON-schema-like hint for LLM patch generation."""
         return {
@@ -144,6 +201,12 @@ class QlibYamlParams(BaseModel):
             "feature_expressions": ["list of qlib expression strings"],
             "label_expression": "qlib label expression string",
             "static_pkl_name": "filename for combined StaticDataLoader",
+            "model_class": "string, qlib model class name (e.g. LGBModel)",
+            "model_module": "string, python module path of the model class",
+            "model_kwargs": "object, overrides scalar model hyperparams when set",
+            "strategy_class": "string, qlib strategy class name (e.g. TopkDropoutStrategy)",
+            "strategy_module": "string, python module path of the strategy class",
+            "strategy_kwargs": "object, overrides scalar strategy params when set",
             "train_start": "YYYY-MM-DD",
             "train_end": "YYYY-MM-DD",
             "valid_start": "YYYY-MM-DD",

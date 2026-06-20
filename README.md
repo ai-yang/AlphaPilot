@@ -1,6 +1,6 @@
 # AlphaPilot
 
-基于 [AlphaAgent](https://github.com/RndmVariableQ/AlphaAgent)（KDD 2025）的本地化 fork，面向 A 股因子挖掘与 Qlib 回测。本仓库在保留原项目核心流程（假设生成 → 因子构造 → 回测评估）的基础上，增加了 API 兼容、回测可视化等改动，便于在本地环境稳定运行。
+基于 [AlphaAgent](https://github.com/RndmVariableQ/AlphaAgent)（KDD 2025）的本地化 fork，面向 A 股因子挖掘与 Qlib 回测。本仓库在保留原项目核心流程（假设生成 → 因子构造 → 回测评估）的基础上，增加了 API 兼容、**多模式回测**、**日频交易信号**、回测可视化等改动，便于在本地环境稳定运行。
 
 ---
 
@@ -33,8 +33,26 @@ AlphaPilot 通过三个 Agent 协作完成因子挖掘：
 - 收益曲线、超额收益、回撤
 - 日换手与成本
 - 当日成交、持仓明细
+- **`single_ic` / `multi_sequential` 因子排行榜**（扫描 `*_leaderboard.csv`）
 
 原独立界面 `alphapilot ui` / `alphapilot backtest_ui` 已整合进统一门户 `alphapilot portal`（见下方使用流程）。
+
+### 2.5 多模式回测与日频交易信号（`systems/backtest/`）
+
+回测系统新增 **引擎分层** 与 **三种评估模式**（默认 `multi_combined` 与原版行为一致）：
+
+| 模式 | 行为 |
+|------|------|
+| `multi_combined` | 多因子合并 → LGBM → `qrun` 组合回测（默认） |
+| `single_ic` | 只算 IC/RankIC/ICIR，不训练、不 `qrun`（快筛） |
+| `multi_sequential` | 逐因子各跑一次完整 `qrun`（慢，适合少量终选因子） |
+
+- **可配置 yaml**：`--yaml_params`（JSON / 文件）在运行时渲染 `QlibYamlParams` 到 workspace，可改模型、调仓策略、回测区间、TopK 等，无需先改静态模板（亦可用 `qlib_yaml_generate` 落盘到 `factor_qlib_templates/`）。
+- **引擎**：`engines/qlib_workflow.py`（全量 `qrun`）、`engines/qlib_signal.py`（IC 快筛）；编排见 `pipelines/factor_evaluation.py`。
+- **模型资产**：`qrun` 完成后 workspace 会尝试导出 `fitted_model.pkl`（`scoring_model_export.py`），供 `strategy_backtest --mode=reuse_model` 与下方日频信号复用。
+- **日频交易信号**（`systems/backtest/live/` + `alphapilot daily_signals`）：加载已训练模型，在**昨日持仓 + 现金**基础上只推进 **一个交易日**（qlib 底层 `backtest`，非整段 `qrun`）；状态写入 `git_ignore_folder/portfolio_state/<策略>.json` 并自动滚动。Portal：**自动化 → 每日交易**。
+
+设计细节与路线图见 [docs/alphapilot-backtest.md](docs/alphapilot-backtest.md)。
 
 ### 3. 数据准备命令（`alphapilot prepare_data`）
 
@@ -71,6 +89,8 @@ TUSHARE_TOKEN=你的token alphapilot prepare_data --action download \
 
 ### 4. 回测与因子数据配置
 
+> **回测系统设计与演进规划**（当前实现、组合 vs 单因子语义、目标架构）：见 [docs/alphapilot-backtest.md](docs/alphapilot-backtest.md)。
+
 **Qlib 回测模板（`qrun` 实际加载）**
 
 | 优先级 | 目录 | 说明 |
@@ -92,8 +112,9 @@ TUSHARE_TOKEN=你的token alphapilot prepare_data --action download \
 | 命令 | 默认 yaml | 说明 |
 |------|-----------|------|
 | `alphapilot mine` | `.env` 中 `QLIB_FACTOR_QLIB_CONFIG_NAME`，未配置时多为 `conf_cn_combined_kdd_ver.yaml` | 通过 `AlphaPilotLoop` 读取 `QLIB_FACTOR_*` |
-| `alphapilot backtest` | 未传 `--qlib_config_name` 时，按实验结构自动选：有 `based_experiments` → `conf_cn_combined_kdd_ver.yaml`，否则 `conf.yaml` | 一般 backtest 也会落到 combined |
+| `alphapilot backtest` | 未传 `--qlib_config_name` 时，按实验结构自动选：有 `based_experiments` → `conf_cn_combined_kdd_ver.yaml`，否则 `conf.yaml` | 一般 backtest 也会落到 combined；可用 `--mode`（`single_ic` / `multi_sequential`）；`--yaml_params` 可运行时覆盖模型/策略/区间 |
 | `alphapilot strategy_backtest` | 策略 `metadata` 中的记录，否则 `.env` 的 `QLIB_FACTOR_*` | 与 mine 保存时写入的 yaml 名一致 |
+| `alphapilot daily_signals` | 策略 `metadata` 中的 `yaml_params`，或 `--yaml_params` | 日频一步调仓；不跑整段历史 `qrun` |
 
 模板目录默认优先 `important_data/factor_qlib_templates/`（目录存在时），与是否配置 `.env` 无关；`QLIB_FACTOR_QLIB_TEMPLATE_DIR` 用于显式指定或覆盖。
 
@@ -142,6 +163,8 @@ alphapilot qlib_yaml_validate \
 
 生成产物写入 `important_data/factor_qlib_templates/` 后，`mine` / `backtest` 会自动拾取（与手工编辑 yaml 等效）。详见 [important_data/factor_qlib_templates/README.md](important_data/factor_qlib_templates/README.md)。
 
+**一次性调参、不想改模板文件时**：直接在 `backtest` / `daily_signals` 上传 `--yaml_params='{"topk":30,...}'`（或 JSON/YAML 文件路径），由 `factor_runner` / `live/predict.py` 在当次运行渲染进 workspace，与上面「生成 yaml 落盘」二选一或组合使用。
+
 ### 5. 运行注意事项
 
 - 请在 **`AlphaPilot` 项目根目录** 下执行命令，确保 `.env` 能被正确加载
@@ -161,6 +184,8 @@ alphapilot qlib_yaml_validate \
 - `prepare_data` 统一由 `platform -> context.data() -> systems.data` 链路执行（单一调度入口）
 - `mine/backtest/strategy_backtest/qlib_yaml_generate/qlib_yaml_validate/factor_validate/factor_add/prepare_data/portal/data_viz/backtest_viz` 等由内置模块贡献命令（modules-only）；`ui` / `backtest_ui` 仅保留弃用提示
 - 回测产物解析收拢到 `alphapilot/systems/backtest/artifacts.py`；可视化 UI 在 `alphapilot/modules/backtest_viz/`（原 `app/backtest_viewer/` 已删除）
+- 回测引擎与多模式分派：`systems/backtest/engines/`（`QlibWorkflowEngine` / `QlibSignalEngine`）+ `pipelines/factor_evaluation.py`（`multi_combined` / `single_ic` / `multi_sequential`）
+- 日频交易信号：`systems/backtest/live/`（持仓 JSON、`predict`、单日 `rebalance`）+ CLI 模块 `modules/daily_trade/`（`daily_signals` / `daily_state`）
 - 策略复测编排收拢到 `alphapilot/systems/strategy/backtest.py`，经 `context.backtest()` 执行，**不再**经 `alpha_mining` 模块中转
 - 挖掘日志 UI（`alphapilot/log/ui/`）通过 `core.scenario.Scenario` 的 UI trait 分支渲染，**不再 import** `alpha_mining` 具体场景类
 - adapter 层仅保留 **LLM + 数据源** 可插拔边界；已移除未接入主路径的 backtest engine adapter（`get_backtest_engine`），回测统一经 `systems/backtest/` 执行（详见 [alphapilot/adapters/README.md](alphapilot/adapters/README.md)）
@@ -336,6 +361,12 @@ cd AlphaPilot
 # 1) 仅下载：除权行情（增量；已到 end_date 则零网络请求）+ 有缺口时窗口探测除权因子
 alphapilot prepare_data download --stock_csv important_data/stock_lists/main_stock_2026_4_27.csv --adjust_mode none
 
+# 可选：除权行情和复权因子分两个独立进程并行下载（默认关闭，可能触发数据源限流）
+alphapilot prepare_data download \
+  --stock_csv important_data/stock_lists/main_stock_2026_4_27.csv \
+  --adjust_mode none \
+  --parallel_price_factor True
+
 # 2) 合成为前复权或后复权 CSV（供训练 / convert）
 alphapilot prepare_data apply_adjust --adjust_mode backward
 # alphapilot prepare_data apply_adjust --adjust_mode forward
@@ -370,6 +401,13 @@ TUSHARE_TOKEN=你的token alphapilot prepare_data --action download \
   --source tushare_cn \
   --stock_csv important_data/stock_lists/main_stock_2026_4_27.csv \
   --adjust_mode none
+
+# Tushare 也可显式开启并行行情 + adj_factor 下载；默认关闭以避免积分/限流风险
+TUSHARE_TOKEN=你的token alphapilot prepare_data --action download \
+  --source tushare_cn \
+  --stock_csv important_data/stock_lists/main_stock_2026_4_27.csv \
+  --adjust_mode none \
+  --parallel_price_factor True
 
 # 1b) 会员可选：附带每日指标（daily_basic，需 Tushare 2000 积分）
 #     额外填充 turn/peTTM/pbMRQ/psTTM 到同一份行情 CSV
@@ -484,6 +522,7 @@ cn_data/
 | `--stock_csv` | `important_data/stock_lists/main_stock_2026_4_27.csv` |
 | `--market` | 与 `stock_csv` 文件名相同 |
 | `download` 默认 `--adjust_mode` | `none`（除权）；设为 `forward` / `backward` 则直接下载已复权 CSV |
+| `--parallel_price_factor` | 默认 `False`；仅 `adjust_mode=none` 时把除权行情和复权因子分独立进程并行下载，可能触发数据源限流 |
 | **baostock** CSV 除权 | `cn_data/baostock/raw_data_no_adjust` |
 | **baostock** CSV 前/后复权 | `cn_data/baostock/raw_data_forward_adjust` / `raw_data_back_adjust` |
 | **baostock** 复权因子 | `cn_data/baostock/adjust_factors` |
@@ -593,7 +632,7 @@ EMBEDDING_MAX_STR_NUM=10     # DashScope 等 embedding 接口的单次 batch 上
 alphapilot modules
 ```
 
-输出会列出当前内置模块与通过 `entry_points` 自动发现的第三方模块，以及每个模块暴露的命令（含 `qlib_yaml_generate` / `qlib_yaml_validate`、`factor_validate` / `factor_add`）。新增插件后，这里和 `alphapilot portal` 页面都会自动出现。
+输出会列出当前内置模块与通过 `entry_points` 自动发现的第三方模块，以及每个模块暴露的命令（含 `qlib_yaml_generate` / `qlib_yaml_validate`、`factor_validate` / `factor_add`、`daily_signals` / `daily_state`）。新增插件后，这里和 `alphapilot portal` 页面都会自动出现。
 
 ### 1. 因子挖掘（主流程）
 
@@ -640,7 +679,7 @@ alphapilot mine --direction "行为金融学假说" \
 4. Qlib + LightGBM 回测，输出 IC、收益等指标  
 5. 根据反馈进入下一轮；每轮成功结束后可将因子/模型/指标写入 `important_data/strategy_zoo/`（策略资产）
 
-回测工作区默认在 `git_ignore_folder/RD-Agent_workspace/`；挖掘日志在 `log/`。因子库 CSV 默认在 `important_data/factor_zoo/factor_zoo.csv`（与策略资产一样长期保留，可用 Portal 或 API 管理）。
+回测工作区默认在 `git_ignore_folder/RD-Agent_workspace/`；挖掘日志在 `log/`。因子库默认使用 SQLite，路径为 `important_data/factor_zoo/factor_zoo.db`（与策略资产一样长期保留，可用 Portal 或 API 管理）。
 
 **从挖掘日志批量导入因子库**（自动按名称/表达式去重）：
 
@@ -660,7 +699,7 @@ alphapilot factor_validate --expression="Ref(\$close, 1) / \$close - 1"
 # 示例：常量过多会被拒绝
 alphapilot factor_validate --expression="1 + 2 + 3"
 
-# 校验通过后写入 important_data/factor_zoo/factor_zoo.csv
+# 校验通过后写入 important_data/factor_zoo/factor_zoo.db
 alphapilot factor_add --factor_name=my_momentum --expression="Ref(\$close, 1) / \$close - 1"
 ```
 
@@ -676,7 +715,7 @@ alphapilot factor_add --factor_name=my_momentum --expression="Ref(\$close, 1) / 
 
 Portal「因子」标签页的「校验表达式」「添加到因子库」与上述 CLI 共用同一套逻辑；失败时会显示中文原因，并可展开查看 `details`（重复子树大小、匹配因子名等）。
 
-> **注意**：`factor_zoo.csv` 中含逗号的表达式须使用正确 CSV 引号（如 `Ref($close, 1)`）；通过 Portal 保存或 `pandas.to_csv` 会自动处理，手工编辑时请为含逗号字段加引号。
+> **注意**：默认 SQLite 因子库不需要手工处理 CSV 引号；只有显式导入/导出 CSV 时，含逗号的表达式才需要正确 CSV 引号（如 `Ref($close, 1)`）。通过 Portal 导出或 `pandas.to_csv` 会自动处理。
 
 **管理挖掘 log 会话（CLI，可选）**：
 
@@ -716,6 +755,8 @@ alphapilot mine_dso --instruments=test_stock_pool_80
 
 ### 2. 多因子回测
 
+默认模式是 `multi_combined`：把 CSV 里的多条因子合并成一套特征，训练模型并跑组合回测，产物可在 portal「回测分析 → 回测详情」查看。
+
 ```bash
 alphapilot backtest --factor_path /path/to/factors.csv
 ```
@@ -735,6 +776,49 @@ RSI_Factor,"RSI($close)"
 ```
 
 同样支持 `--qlib_template_dir`、`--qlib_config_name`。未传 `--qlib_config_name` 时按实验结构自动选择 yaml（通常为 `conf_cn_combined_kdd_ver.yaml`）；仅 `mine` 会默认读取 `.env` 中的 `QLIB_FACTOR_QLIB_CONFIG_NAME`。
+
+#### 回测模式
+
+`alphapilot backtest` 现在支持三种模式：
+
+| `--mode` | 用途 | 主要产物 |
+|----------|------|----------|
+| `multi_combined`（默认） | 多因子合并训练 + 组合回测；适合正式验证一组因子 | qlib workspace、`ret.pkl`、`qlib_res.csv`，可在「回测详情」查看收益/持仓/成交 |
+| `single_ic` | 不跑 qrun / 不训练模型，只逐因子计算 IC、RankIC、ICIR；适合快速筛选大量候选因子 | `factor_ic_leaderboard.csv`，可在「回测详情」的“因子排行榜”查看 |
+| `multi_sequential` | 对 CSV 中每个因子分别跑一次完整组合回测；适合少量终选因子的横向比较 | `factor_portfolio_leaderboard.csv`，可在“因子排行榜”查看；耗时明显更长 |
+
+示例：
+
+```bash
+# 快速逐因子 IC 排行
+alphapilot backtest --factor_path /path/to/factors.csv --mode=single_ic
+
+# 对每个因子分别跑完整组合回测（建议只用于少量因子）
+alphapilot backtest --factor_path /path/to/factors.csv --mode=multi_sequential
+```
+
+#### 覆盖模型、策略和区间参数
+
+`--yaml_params` 可传 JSON 字符串，也可传 `.json` / `.yaml` 文件路径，用于覆盖 `QlibYamlParams` 中的字段（模型、策略、数据区间、TopK、成本等）。未传时沿用静态模板路径，兼容旧行为。
+
+```bash
+alphapilot backtest \
+  --factor_path /path/to/factors.csv \
+  --mode=multi_combined \
+  --yaml_params='{"topk": 30, "n_drop": 5, "backtest_start": "2024-01-01", "backtest_end": "2026-05-22"}'
+```
+
+自定义模型 / 策略时使用 `model_class`、`model_module`、`model_kwargs`、`strategy_class`、`strategy_module`、`strategy_kwargs`：
+
+```bash
+alphapilot backtest \
+  --factor_path /path/to/factors.csv \
+  --yaml_params='{"model_class": "LGBModel", "model_module": "qlib.contrib.model.gbdt", "strategy_class": "TopkDropoutStrategy", "strategy_module": "qlib.contrib.strategy", "strategy_kwargs": {"topk": 20, "n_drop": 5, "signal": "<PRED>"}}'
+```
+
+Portal 中也可以使用：进入「回测分析 → 启动回测 → 因子 CSV」，填写 `Factor CSV path`，选择 `Backtest mode`，可选填写“模型与策略配置（JSON 补丁）”，提交后会生成后台 job。
+
+> **Portal 入口差异**：因子库页的「回测选中因子」「回测该类别」以及 AlphaForge 的 `--backtest` 仍走默认 `multi_combined`；要选 `single_ic` / `multi_sequential` 或填 `yaml_params`，请用「回测分析 → 启动回测」，或在「定时任务 → 高级 kwargs」里传 `{"mode":"single_ic", ...}`。
 
 ### 3. 策略资产复测（`strategy_backtest`）
 
@@ -777,6 +861,47 @@ alphapilot strategy_backtest \
 
 > **注意**：请在已安装本包且能 `import alphapilot` 的 Python 环境中运行（如 `conda activate alphapilot`）。因子代码默认使用**当前解释器**执行；失败的历史 pickle 缓存不会阻止重试（仅成功结果会被缓存）。
 
+### 3.5 每日交易信号（`daily_signals`）
+
+在已有策略资产（或手动指定因子 CSV + 模型 pkl）的前提下，根据**上一日收盘后的现金与持仓**，生成**指定交易日**的目标调仓与持仓，并自动滚动 JSON 状态文件。适用于「不重跑整段历史回测、只推进一天」的模拟/实盘前演练。
+
+**前提**：策略须含可用的 `fitted_model.pkl`（来自 `mine` 保存、`strategy_backtest` 或某次 `qrun` workspace 导出）；行情数据须已更新到目标日（可先 `prepare_data download`，或在命令/Portal 中勾选刷新数据）。
+
+**查看当前持仓状态：**
+
+```bash
+alphapilot daily_state --strategy_name='mine_round_01_...'
+```
+
+**生成今日（或指定日）交易计划：**
+
+```bash
+# 从 strategy_zoo 资产（推荐）
+alphapilot daily_signals --strategy_name='mine_round_01_...'
+
+# 首次运行可指定初始资金（无状态文件时）；之后自动读 git_ignore_folder/portfolio_state/<策略>.json
+alphapilot daily_signals --strategy_name='mine_round_01_...' --init_cash=500000
+
+# 指定日期、先增量更新行情、自定义状态文件路径
+alphapilot daily_signals \
+  --strategy_name='mine_round_01_...' \
+  --date=2026-06-18 \
+  --refresh_data=True \
+  --state_path=git_ignore_folder/portfolio_state/my_run.json
+
+# 手动指定模型与 yaml 补丁（不依赖 strategy_zoo）
+alphapilot daily_signals \
+  --factor_path=./factors.csv \
+  --model_pickle_path=important_data/strategy_zoo/.../artifacts/fitted_model.pkl \
+  --yaml_params='{"topk": 15, "n_drop": 5}'
+```
+
+终端会打印当日买卖列表、目标持仓、Top 模型打分等摘要；状态 JSON 含 `date`、`cash`、`positions`（instrument → 股数）。
+
+**Portal**：**自动化 → 每日交易** — 选择策略资产或手动填写模型 pkl / 因子 CSV / `yaml_params`，提交后作为后台 job 运行（与挖掘/回测 job 共用任务面板）。
+
+> 日频信号走 qlib **单日** `backtest` + 静态模型打分，**不是** `qrun` 全历史重跑；与 `strategy_backtest --mode=reuse_model` 共用同一套模型与 yaml 参数语义。
+
 ### 4. 可视化工具
 
 **推荐唯一入口**：`alphapilot portal`（统一门户，已整合原 `ui` 与 `backtest_ui` 的全部功能）。
@@ -817,12 +942,13 @@ alphapilot portal --port 19901
 - **🏠 首页**：关键状态一览（本地股票数、因子库/策略数量、回测记录数及最近一次回测）、**最近挖掘会话**列表，以及一键直达常用任务的快捷按钮（**因子挖掘**置顶）。
 - **研究** 分组
   - **🔬 因子挖掘**：含「LLM 挖掘」与「**AlphaForge（公式化）**」两个标签。LLM 标签输入市场假说、Start/Stop 挖掘（需后端服务可用）、查看每轮假说/因子代码/反馈与 Qlib 报告图，支持**删除当前 log 会话**；AlphaForge 标签以表单启动 GP/RL/AFF/DSO 公式化挖掘（无需 LLM），作为**后台任务**运行并在任务面板查看进度。
-  - **📊 回测分析**：**运行列表**（可**删除 workspace**）+ **回测详情**（内嵌 `backtest_viz`：收益曲线、持仓、成交）。
+  - **📊 回测分析**：**启动回测**（因子 CSV / 策略资产）、**运行列表**（可**删除 workspace**）+ **回测详情**（内嵌 `backtest_viz`：收益曲线、持仓、成交、因子排行榜）。
   - **📚 因子 / 策略库**：因子校验/添加（**失败时显示具体原因**：语法、与库内过于相似、重名等）、导入导出、删除单条因子；策略参数查看/保存/导出、删除整个策略资产。
 - **数据** 分组
   - **📈 行情数据**：**下载 / 管理** 子页（按数据源 baostock/tushare 下载、自定义下载参数、**单股删除/刷新/裁剪** + 「重建 daily_pv h5」）+ **K 线** 子页（内嵌 `data_viz`）。
 - **自动化** 分组
-  - **⏰ 定时任务**：创建/管理 cron 式后台任务（挖掘、回测、数据 pipeline、AlphaForge 等），可勾选「完成后通知」。
+  - **🧾 每日交易**：从策略资产 + 滚动持仓状态生成指定日调仓/持仓（`daily_signals` 后台 job）。
+  - **⏰ 定时任务**：创建/管理 cron 式后台任务（挖掘、回测、**每日交易**、数据 pipeline、AlphaForge 等），可勾选「完成后通知」。
   - **📣 通知**：配置 Telegram / 飞书 / 邮件频道并测试发送（凭证见 [§7 任务完成通知](#7-任务完成通知alphapilotsystemsnotify)）。
 - **系统** 分组
   - **⚙️ 高级**：原「概览」与「模块命令台」（系统/模块清单、JSON 命令调度）、运行时配置与「重新加载引擎」——日常交易无需使用，已默认收纳于此。
@@ -843,6 +969,13 @@ alphapilot portal --port 19901
 
 在 portal「回测」标签的「运行列表」子页可列出并**删除**含 `ret.pkl` 的 workspace；「回测详情」子页中选择 `git_ignore_folder/RD-Agent_workspace` 下的工作区，查看收益曲线、持仓、成交等。下拉列表会尽量显示 **`log/` 里对应的会话文件夹名**。数据由 backtest system 的 `BacktestResultStore` 加载，底层解析在 `systems/backtest/artifacts.py`。
 
+「回测详情」顶部还有 **因子排行榜** 面板，会扫描 workspace 根目录下的 `*_leaderboard.csv`：
+
+| 文件 | 来源 | 用途 |
+|------|------|------|
+| `factor_ic_leaderboard.csv` | `backtest --mode=single_ic` | 快速查看每个因子的 IC / RankIC / ICIR |
+| `factor_portfolio_leaderboard.csv` | `backtest --mode=multi_sequential` | 对比每个因子单独跑组合回测后的指标 |
+
 也可单独启动回测查看器（功能与 portal 子页相同）：
 
 ```bash
@@ -858,7 +991,7 @@ alphapilot backtest_viz --port 19903
 }
 ```
 
-说明：只有仍含 `ret.pkl` 的 workspace 会出现在列表中；`run01`/`run02` 若已清理旧 workspace，需重新跑完回测或用手动映射文件关联。
+说明：只有仍含 `ret.pkl` 的 workspace 会出现在收益详情的 workspace 下拉列表中；`single_ic` 只生成排行榜、不生成组合 `ret.pkl`，因此请在“因子排行榜”面板查看。`run01`/`run02` 若已清理旧 workspace，需重新跑完回测或用手动映射文件关联。
 
 > `alphapilot backtest_ui` 已弃用。如需修改默认路径，请在 `.env` 中设置 `ALPHAPILOT_WORKSPACE_ROOT`（或 `ALPHAPILOT_BACKTEST_ROOT`）与 `ALPHAPILOT_LOG_DIR`。
 
@@ -884,11 +1017,12 @@ alphapilot backtest_viz --port 19903
 | `pickle_cache/backtest/` | **`backtest` / `strategy_backtest`** 等一般回测缓存 | 改 yaml/因子后清此目录 |
 | `pickle_cache/`（旧版单目录） | 未设置 scope 时的回退路径 | 新项目建议用上面两个子目录 |
 | `important_data/strategy_zoo/` | `mine` 保存的策略资产与 `retests/` 复测记录 | Portal「策略」或 `delete_strategy` 可删；换策略或重导资产时再清理 |
-| `important_data/factor_zoo/` | 因子库 `factor_zoo.csv`（校验/去重参考库） | Portal「因子」、`factor_validate` / `factor_add` 或 `import_factors_from_log.py` 维护 |
+| `important_data/factor_zoo/` | 因子库 `factor_zoo.db`（校验/去重参考库；可显式导出 CSV） | Portal「因子」、`factor_validate` / `factor_add` 或 `import_factors_from_log.py` 维护 |
 | `important_data/factor_qlib_templates/` | 用户自定义 Qlib 模板（yaml + `read_exp_res.py`） | 修改回测区间、组合策略参数时编辑此目录 |
 | `log/` | 挖掘会话日志与 snapshot | Portal「挖掘日志」或 `delete_mine_log` 可删单会话；`clean_log_dirs.py` 可清理空目录/桩目录 |
 | `important_data/stock_lists/` | 股票池 CSV（`prepare_data` 默认列表等） | 换股票池后重新 `download` / `convert` / `h5`，并同步 yaml 中 `market` |
 | `git_ignore_folder/` | 工作区、回测产物、`daily_pv.h5` 副本等 | 更换股票池、重跑 `mine` / `backtest` |
+| `git_ignore_folder/portfolio_state/` | `daily_signals` 滚动持仓 JSON（`<策略名>.json`） | 换策略或想从空仓重跑时删除对应文件 |
 | `alphapilot/modules/alpha_mining/qlib/experiment/factor_data_template/daily_pv_*.h5` | 从 Qlib 导出的价量 h5 源文件 | 修改 `market`、股票池或 `generate.py` |
 | `prompt_cache.db`（可选） | LLM 对话/Embedding 本地缓存（`.env` 开启缓存时） | 更换模型或希望 LLM 输出不复用旧缓存 |
 
@@ -948,17 +1082,18 @@ AlphaPilot/
 │   ├── systems/                # 系统层（data/factor/strategy/backtest/notify）
 │   │   ├── data/               # 数据下载、复权、Qlib 转换、h5（prepare_data 实现）
 │   │   ├── factor/             # 因子库（factor_zoo）、结构化表达式校验（FactorValidationResult）
-│   │   ├── backtest/           # 回测执行与产物（artifacts.py、results.py、qlib_yaml/）
+│   │   ├── backtest/           # 回测：engines/、pipelines/、live/（日频信号）、artifacts、qlib_yaml/
 │   │   ├── strategy/           # 策略资产存储（strategy_zoo）、复测编排（backtest.py）
 │   │   └── notify/             # 任务完成通知（Telegram / 飞书 / 邮件 SMTP）
 │   ├── adapters/               # LLM/数据源可插拔适配层（回测见 systems/backtest/）
-│   ├── modules/                # 功能模块（alpha_mining/portal/platform/data_viz/backtest_viz/strategy_backtest/qlib_yaml/factor_cli + 插件）
+│   ├── modules/                # 功能模块（alpha_mining/portal/platform/data_viz/backtest_viz/strategy_backtest/daily_trade/qlib_yaml/factor_cli + 插件）
 │   │   ├── alpha_mining/       # 因子挖掘（qlib 场景 + loops + conf + registry）
 │   │   ├── platform/           # prepare_data、单股数据管理、modules 命令；ui/backtest_ui 弃用提示
 │   │   ├── portal/             # 统一 Web 门户（alphapilot portal）
 │   │   ├── data_viz/           # 股票 K 线（alphapilot data_viz）
 │   │   ├── backtest_viz/       # 回测详情 UI（alphapilot backtest_viz）
 │   │   ├── strategy_backtest/  # 策略资产列表与复测 CLI
+│   │   ├── daily_trade/        # 日频交易信号 CLI（daily_signals / daily_state）
 │   │   ├── qlib_yaml/          # Qlib qrun yaml 生成与校验（qlib_yaml_generate / qlib_yaml_validate）
 │   │   ├── factor/             # 因子库 CLI（factor_validate / factor_add）
 │   │   ├── alphaforge/         # AlphaForge 公共层（vendor 引擎 + translate/pipeline/data_adapter，非注册模块）
@@ -971,11 +1106,12 @@ AlphaPilot/
 ├── clean_log_dirs.py        # 清理 log 下空目录与失败桩目录
 ├── important_data/          # 用户数据（见 important_data/README.md；strategy_zoo 等已 gitignore）
 │   ├── strategy_zoo/        # mine 保存的策略与 retests/
-│   ├── factor_zoo/          # 因子库 factor_zoo.csv
+│   ├── factor_zoo/          # 因子库 factor_zoo.db
 │   ├── factor_qlib_templates/  # Qlib 回测模板（mine 默认，推荐在此改 yaml）
 │   └── stock_lists/         # 股票池 CSV（prepare_data 默认列表）
 └── git_ignore_folder/       # 运行产物（已 gitignore）
-    └── RD-Agent_workspace/     # 每轮回测工作区
+    ├── RD-Agent_workspace/     # 每轮回测工作区
+    └── portfolio_state/        # daily_signals 滚动持仓 JSON
 
 ~/.qlib/qlib_data/cn_data/   # 行情数据根目录（不在仓库内）
     ├── baostock/             # baostock CSV、download_state.csv、qlib 二进制

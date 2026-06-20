@@ -5,7 +5,7 @@
 | 子目录 | 说明 | 默认配置 |
 |--------|------|----------|
 | `strategy_zoo/` | `mine` 保存的策略资产、`strategy_backtest` 的 `retests/`（Portal 可删除整个策略文件夹） | `ALPHAPILOT_STRATEGY_PARAM_DIR`（默认本目录） |
-| `factor_zoo/` | 因子库 CSV（`factor_zoo.csv`；Portal 或 `factor_validate` / `factor_add` 校验/添加，失败时返回具体原因） | `ALPHAPILOT_FACTOR_ZOO_DIR`（默认本目录） |
+| `factor_zoo/` | 因子库 SQLite（`factor_zoo.db`；Portal 或 `factor_validate` / `factor_add` 校验/添加，失败时返回具体原因，可显式导出 CSV） | `ALPHAPILOT_FACTOR_ZOO_DIR`（默认本目录） |
 | `factor_qlib_templates/` | 自定义 Qlib 回测模板（yaml、`read_exp_res.py`） | `QLIB_FACTOR_QLIB_TEMPLATE_DIR` |
 | `stock_lists/` | 股票池 CSV（如 `main_stock_2026_4_27.csv`）、架构图等 | `prepare_data` 默认 `--stock_csv` |
 

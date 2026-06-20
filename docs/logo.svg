@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%" role="img" aria-label="Optimized A arrow project icon">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B1121" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+
+    <!-- Unified A gradient: keeps the left leg blue/teal and the right leg amber/bronze,
+         while making the right-side upper/lower edges share one continuous silhouette. -->
+    <linearGradient id="aGrad" x1="18%" y1="100%" x2="82%" y2="0%">
+      <stop offset="0%" stop-color="#1D4ED8" />
+      <stop offset="35%" stop-color="#06B6D4" />
+      <stop offset="52%" stop-color="#34D399" />
+      <stop offset="72%" stop-color="#F59E0B" />
+      <stop offset="100%" stop-color="#92400E" />
+    </linearGradient>
+
+    <linearGradient id="arrowGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#D97706" />
+      <stop offset="45%" stop-color="#F59E0B" />
+      <stop offset="100%" stop-color="#FEF08A" />
+    </linearGradient>
+
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="8" flood-color="#000000" flood-opacity="0.55" />
+    </filter>
+  </defs>
+
+  <rect width="100%" height="100%" fill="url(#bgGrad)" rx="64" />
+
+  <g transform="translate(0, -10)">
+    <!-- Optimized A body.
+         The original split right leg caused the upper and lower right-side joints to look misaligned.
+         This version uses one continuous A silhouette, so the exposed upper and lower right edges stay visually connected. -->
+    <path d="M 120 420
+             L 225 104
+             C 235 73, 244 48, 256 48
+             C 268 48, 278 73, 288 104
+             L 392 420
+             L 322 420
+             L 256 206
+             L 190 420
+             Z"
+          fill="url(#aGrad)"
+          stroke="url(#aGrad)"
+          stroke-width="4"
+          stroke-linejoin="round" />
+
+    <!-- Background-colored separator to create clean spacing between the A and the arrow. -->
+    <path d="M 70 330
+             C 160 380, 280 340, 380 200
+             L 410 220
+             L 450 100
+             L 330 140
+             L 355 160
+             C 280 280, 160 320, 70 330
+             Z"
+          fill="none"
+          stroke="#0B1121"
+          stroke-width="24"
+          stroke-linejoin="round" />
+
+    <!-- Main upward arrow. -->
+    <path d="M 70 330
+             C 160 380, 280 340, 380 200
+             L 410 220
+             L 450 100
+             L 330 140
+             L 355 160
+             C 280 280, 160 320, 70 330
+             Z"
+          fill="url(#arrowGrad)"
+          filter="url(#shadow)"
+          stroke="url(#arrowGrad)"
+          stroke-width="2"
+          stroke-linejoin="round" />
+  </g>
+</svg>

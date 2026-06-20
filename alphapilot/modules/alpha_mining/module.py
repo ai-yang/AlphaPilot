@@ -44,11 +44,13 @@ class AlphaMiningModule(BaseModule):
         scenario: str = "alpha_factor_mining",
         qlib_config_name: str | None = None,
         qlib_template_dir: str | None = None,
+        market: str | None = None,
     ) -> None:
         """Run the autonomous factor-mining loop."""
         from alphapilot.core.utils import import_class
         from alphapilot.log import logger
         from alphapilot.modules.alpha_mining.registry import get_scenario
+        from alphapilot.systems.data.factor_h5 import apply_context_env, prepare_factor_data_context
 
         use_local = self.context.config.backtest.use_local
         spec = get_scenario(scenario, command="mine")
@@ -58,10 +60,21 @@ class AlphaMiningModule(BaseModule):
         resolved_qlib_config = qlib_config_name or getattr(prop_setting, "qlib_config_name", None)
         resolved_template_dir = qlib_template_dir or getattr(prop_setting, "qlib_template_dir", None)
         bt_cfg = self.context.config.backtest
+
+        # Prepare this run's factor h5 context (market/spec cache) and publish it via env so the
+        # mining scenario's source-data description and every factor execution use this data.
+        factor_data_ctx = prepare_factor_data_context(
+            market=market,
+            qlib_dir=str(self.context.config.data.qlib_data_dir),
+            use_local=use_local,
+        )
+        apply_context_env(factor_data_ctx)
+
         logger.info(
             f"[alpha_mining] scenario={scenario} use_local={use_local} "
             f"qlib_config_name={resolved_qlib_config or 'default'} "
             f"qlib_template_dir={resolved_template_dir or 'factor_template (default)'} "
+            f"market={factor_data_ctx.spec.market} factor_data_spec={factor_data_ctx.fingerprint} "
             f"pickle_cache_mine={bt_cfg.pickle_cache_dir_mine}"
         )
         if path is None:
@@ -81,6 +94,7 @@ class AlphaMiningModule(BaseModule):
                 loop.qlib_config_name = resolved_qlib_config
             if resolved_template_dir:
                 loop.qlib_template_dir = resolved_template_dir
+        loop.factor_data_context = factor_data_ctx
         loop.run(step_n=step_n, stop_event=stop_event)
 
     def run_factor_backtest_request(self, request: "FactorBacktestRequest") -> "FactorBacktestResult":
@@ -102,6 +116,26 @@ class AlphaMiningModule(BaseModule):
 
         return run_saved_model_backtest_from_request(self.context, request)
 
+    @staticmethod
+    def _parse_yaml_params(raw: str | dict | None) -> dict | None:
+        """Parse ``--yaml_params`` (JSON string, ``.json``/``.yaml`` file path, or dict)."""
+        if raw is None or isinstance(raw, dict):
+            return raw
+        import json
+
+        text = str(raw).strip()
+        if not text:
+            return None
+        candidate = Path(text).expanduser()
+        if candidate.exists():
+            content = candidate.read_text(encoding="utf-8")
+            if candidate.suffix.lower() in (".yaml", ".yml"):
+                import yaml
+
+                return yaml.safe_load(content)
+            return json.loads(content)
+        return json.loads(text)
+
     def run_backtest(
         self,
         path: str | None = None,
@@ -110,8 +144,14 @@ class AlphaMiningModule(BaseModule):
         scenario: str = "factor_backtest",
         qlib_config_name: str | None = None,
         qlib_template_dir: str | None = None,
+        mode: str = "multi_combined",
+        yaml_params: str | None = None,
     ) -> None:
-        """Run a single-shot factor backtest from a factor CSV."""
+        """Run a single-shot factor backtest from a factor CSV.
+
+        ``mode``: ``multi_combined`` (default) | ``single_ic`` | ``multi_sequential``.
+        ``yaml_params``: optional JSON string / file path overriding model / strategy / dataset.
+        """
         from alphapilot.systems.backtest.types import FactorBacktestRequest
 
         if path is not None:
@@ -129,6 +169,8 @@ class AlphaMiningModule(BaseModule):
                 qlib_config_name=qlib_config_name,
                 qlib_template_dir=qlib_template_dir,
                 use_local=self.context.config.backtest.use_local,
+                mode=mode,
+                yaml_params=self._parse_yaml_params(yaml_params),
             )
         )
 

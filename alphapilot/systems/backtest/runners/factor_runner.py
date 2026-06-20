@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import pickle
 import shutil
 from pathlib import Path
@@ -20,6 +22,25 @@ from alphapilot.systems.backtest.qlib_pretrained import (
     PRETRAINED_ENV_VAR,
     patch_qlib_conf_for_pretrained,
 )
+from alphapilot.systems.data.factor_h5 import ENV_FINGERPRINT, ENV_MARKET
+
+
+def _factor_data_cache_parts(exp: Any) -> list[str]:
+    """Factor-data fingerprint pieces for the cache key (context object or env fallback)."""
+    ctx = getattr(exp, "factor_data_context", None)
+    if ctx is not None:
+        return [
+            f"factor_data_fingerprint:{ctx.fingerprint}",
+            f"market:{ctx.spec.market}",
+            f"qlib_dir:{ctx.spec.qlib_dir}",
+        ]
+    fingerprint = os.environ.get(ENV_FINGERPRINT)
+    if fingerprint:
+        return [
+            f"factor_data_fingerprint:{fingerprint}",
+            f"market:{os.environ.get(ENV_MARKET, '')}",
+        ]
+    return []
 
 
 _PORTFOLIO_ARTIFACT_NAMES = (
@@ -29,6 +50,48 @@ _PORTFOLIO_ARTIFACT_NAMES = (
     "indicators_normal_1day.pkl",
     "combined_factors_df.pkl",
 )
+
+
+def _coerce_yaml_params(yaml_params: Any) -> Any:
+    """Return a ``QlibYamlParams`` from an instance or plain dict."""
+    from alphapilot.systems.backtest.qlib_yaml.schema import QlibYamlParams
+
+    if isinstance(yaml_params, QlibYamlParams):
+        return yaml_params
+    return QlibYamlParams.model_validate(yaml_params)
+
+
+def _yaml_params_fingerprint(yaml_params: Any) -> str:
+    """Stable hash of the params so model/strategy/dataset changes bust the cache.
+
+    Round-trips through ``model_validate(model_dump())`` first so an instance and an
+    equivalent plain dict hash identically (pydantic does not coerce field *defaults*,
+    only validated input, e.g. ``account`` int-vs-float), avoiding spurious cache misses.
+    """
+    params = _coerce_yaml_params(yaml_params)
+    normalized = type(params).model_validate(params.model_dump())
+    return md5_hash(json.dumps(normalized.model_dump(mode="json"), sort_keys=True, default=str))
+
+
+def _render_yaml_params_to_workspace(yaml_params: Any, workspace_path: Path) -> str:
+    """Render ``QlibYamlParams`` into the workspace yaml; return the config filename.
+
+    ``template_type`` (baseline/combined) selects the filename explicitly, replacing the
+    implicit ``based_experiments`` rule for the rendered path.
+    """
+    from alphapilot.systems.backtest.qlib_yaml.generator import render_yaml_text
+
+    params = _coerce_yaml_params(yaml_params)
+    config_name = (
+        "conf.yaml" if params.template_type == "baseline" else "conf_cn_combined_kdd_ver.yaml"
+    )
+    rendered = render_yaml_text(params)
+    (Path(workspace_path) / config_name).write_text(rendered, encoding="utf-8")
+    logger.info(
+        f"[factor_runner] rendered qlib yaml from QlibYamlParams "
+        f"(model={params.model_class}, strategy={params.strategy_class}) -> {config_name}"
+    )
+    return config_name
 
 
 class QlibFactorRunner(CachedRunner[Any]):
@@ -55,6 +118,12 @@ class QlibFactorRunner(CachedRunner[Any]):
         run_env = kwargs.get("run_env") or getattr(exp, "run_env", None) or {}
         pretrained = run_env.get(PRETRAINED_ENV_VAR, "")
         parts.append(f"pretrained:{pretrained}")
+        yaml_params = getattr(exp, "yaml_params", None)
+        if yaml_params is not None:
+            parts.append(f"yaml_params:{_yaml_params_fingerprint(yaml_params)}")
+        # Bind the result to the factor data universe so switching markets/instruments does not
+        # reuse a stale combined_factors_df.pkl. Absent when no context/env (legacy behavior).
+        parts.extend(_factor_data_cache_parts(exp))
         return md5_hash("\n---\n".join(parts))
 
     def assign_cached_result(self, exp: Any, cached_res: Any) -> Any:
@@ -111,6 +180,10 @@ class QlibFactorRunner(CachedRunner[Any]):
         config_name = resolve_qlib_config_name(exp)
         exp.qlib_config_name = config_name
         workspace_path = Path(exp.experiment_workspace.workspace_path)
+        yaml_params = getattr(exp, "yaml_params", None)
+        if yaml_params is not None:
+            config_name = _render_yaml_params_to_workspace(yaml_params, workspace_path)
+            exp.qlib_config_name = config_name
         if run_env.get(PRETRAINED_ENV_VAR):
             patch_qlib_conf_for_pretrained(workspace_path, config_name)
             logger.info(
@@ -159,6 +232,12 @@ class QlibFactorRunner(CachedRunner[Any]):
 
         for exp in experiments:
             sub_workspaces = getattr(exp, "sub_workspace_list", None) or []
+            # Propagate the data context to each factor workspace so its execute()/hash_func use
+            # this task's h5 even under multiprocessing (pickled to spawned children).
+            ctx = getattr(exp, "factor_data_context", None)
+            if ctx is not None:
+                for implementation in sub_workspaces:
+                    implementation.factor_data_context = ctx
             message_and_df_list = multiprocessing_wrapper(
                 [(implementation.execute, ("All",)) for implementation in sub_workspaces],
                 n=RD_AGENT_SETTINGS.multi_proc_n,

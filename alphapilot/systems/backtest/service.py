@@ -72,6 +72,8 @@ class QlibBacktestSystem(BaseBacktestSystem):
 
         if request.qlib_config_name:
             request.experiment.qlib_config_name = request.qlib_config_name
+        if getattr(request, "yaml_params", None) is not None:
+            request.experiment.yaml_params = request.yaml_params
 
         scen = getattr(request.experiment, "scen", None)
         runner = QlibFactorRunner(scen)

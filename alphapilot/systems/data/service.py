@@ -149,16 +149,38 @@ class QlibDataSystem(BaseDataSystem):
 
     # ---- Single-stock management ----
 
-    def list_symbols(self, adjust_mode: Any = None) -> dict[str, list[str]]:
+    def _source_qlib_dir(self, source: str | None = None) -> Any:
         from alphapilot.systems.data import manage
 
-        return manage.list_symbols(adjust_mode)
+        if source in (None, "", "baostock", "baostock_cn"):
+            return self._storage.qlib_data_dir
+        return manage.existing_qlib_dir_for_source(source)
+
+    def _source_factor_dir(self, source: str | None = None) -> Any:
+        from alphapilot.systems.data import manage
+
+        if source in (None, "", "baostock", "baostock_cn"):
+            return self._storage.factor_dir
+        return manage.existing_factor_dir_for_source(source)
+
+    def _source_raw_dir(self, adjust_mode: str, source: str | None = None) -> Any:
+        from alphapilot.systems.data import manage
+
+        if source in (None, "", "baostock", "baostock_cn"):
+            return self._storage.raw_dir_for_mode(adjust_mode)
+        return manage.existing_raw_dir_for_source(adjust_mode, source)
+
+    def list_symbols(self, adjust_mode: Any = None, *, source: str | None = None) -> dict[str, list[str]]:
+        from alphapilot.systems.data import manage
+
+        return manage.list_symbols(adjust_mode, source=source)
 
     def delete_symbol(
         self,
         symbol: str,
         *,
         adjust_mode: Any = None,
+        source: str | None = None,
         remove_factor: bool = True,
         remove_qlib_features: bool = True,
         remove_from_instruments: bool = True,
@@ -168,9 +190,10 @@ class QlibDataSystem(BaseDataSystem):
 
         report = manage.delete_symbol(
             symbol,
-            qlib_dir=self._storage.qlib_data_dir,
-            factor_dir=self._storage.factor_dir,
+            qlib_dir=self._source_qlib_dir(source),
+            factor_dir=self._source_factor_dir(source),
             adjust_modes=adjust_mode,
+            source=source,
             remove_factor=remove_factor,
             remove_qlib_features=remove_qlib_features,
             remove_from_instruments=remove_from_instruments,
@@ -184,6 +207,7 @@ class QlibDataSystem(BaseDataSystem):
         symbol: str,
         *,
         target_mode: str = "forward",
+        source: str | None = None,
         raw_dir: str | None = None,
         factor_dir: str | None = None,
         output_dir: str | None = None,
@@ -194,6 +218,7 @@ class QlibDataSystem(BaseDataSystem):
         return manage.apply_adjust_symbol(
             symbol,
             target_mode=target_mode,
+            source=source,
             raw_dir=raw_dir,
             factor_dir=factor_dir,
             output_dir=output_dir,
@@ -205,6 +230,7 @@ class QlibDataSystem(BaseDataSystem):
         symbol: str,
         *,
         adjust_mode: Any = None,
+        source: str | None = None,
         start: str | None = None,
         end: str | None = None,
         drop_dates: Any = None,
@@ -213,11 +239,11 @@ class QlibDataSystem(BaseDataSystem):
         dry_run: bool = False,
     ) -> dict[str, Any]:
         from alphapilot.systems.data import manage
-        from alphapilot.systems.data.prepare_cn import existing_raw_dir
 
         report = manage.trim_symbol(
             symbol,
             adjust_modes=adjust_mode,
+            source=source,
             start=start,
             end=end,
             drop_dates=drop_dates,
@@ -226,8 +252,8 @@ class QlibDataSystem(BaseDataSystem):
         if resync_qlib:
             report["resync"] = manage.resync_symbol_to_qlib(
                 symbol,
-                raw_dir=existing_raw_dir(qlib_adjust_mode),
-                qlib_dir=self._storage.qlib_data_dir,
+                raw_dir=self._source_raw_dir(qlib_adjust_mode, source),
+                qlib_dir=self._source_qlib_dir(source),
                 op="trim",
                 dry_run=dry_run,
             )
@@ -239,6 +265,7 @@ class QlibDataSystem(BaseDataSystem):
         symbol: str,
         *,
         adjust_mode: Any = None,
+        source: str | None = None,
         start_date: str = "2016-12-31",
         end_date: str | None = None,
         resync_qlib: bool = True,
@@ -246,7 +273,6 @@ class QlibDataSystem(BaseDataSystem):
         **options: Any,
     ) -> dict[str, Any]:
         from alphapilot.systems.data import manage
-        from alphapilot.systems.data.prepare_cn import existing_raw_dir
 
         modes = manage.resolve_adjust_modes(adjust_mode if adjust_mode is not None else "backward")
         downloads: dict[str, Any] = {}
@@ -256,14 +282,21 @@ class QlibDataSystem(BaseDataSystem):
                 end_date=end_date,
                 symbols=[symbol],
                 adjust_mode=mode,
+                source=source,
                 **options,
             )
-        report: dict[str, Any] = {"symbol": symbol, "downloaded_modes": list(modes), "h5_stale": True}
+        report: dict[str, Any] = {
+            "symbol": symbol,
+            "source": source or "baostock_cn",
+            "downloaded_modes": list(modes),
+            "downloads": downloads,
+            "h5_stale": True,
+        }
         if resync_qlib:
             report["resync"] = manage.resync_symbol_to_qlib(
                 symbol,
-                raw_dir=existing_raw_dir(qlib_adjust_mode),
-                qlib_dir=self._storage.qlib_data_dir,
+                raw_dir=self._source_raw_dir(qlib_adjust_mode, source),
+                qlib_dir=self._source_qlib_dir(source),
                 op="refresh",
             )
         self._warn_h5_stale(report)

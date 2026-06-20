@@ -10,6 +10,10 @@ from filelock import FileLock
 
 from alphapilot.components.coder.CoSTEER.task import CoSTEERTask
 from alphapilot.components.coder.factor_coder.config import FACTOR_COSTEER_SETTINGS, resolve_factor_python_bin
+from alphapilot.components.coder.factor_coder.data import (
+    resolve_factor_data_dir,
+    resolve_factor_data_fingerprint,
+)
 from alphapilot.core.exception import CodeFormatError, CustomRuntimeError, NoOutputError
 from alphapilot.core.experiment import Experiment, FBWorkspace
 from alphapilot.core.utils import cache_with_pickle
@@ -103,8 +107,7 @@ class FactorFBWorkspace(FBWorkspace):
             data_type
             + self.code_dict["factor.py"]
             + resolve_factor_python_bin()
-            + FACTOR_COSTEER_SETTINGS.data_folder
-            + FACTOR_COSTEER_SETTINGS.data_folder_debug
+            + resolve_factor_data_fingerprint(self)
         )
 
     @staticmethod
@@ -141,15 +144,9 @@ class FactorFBWorkspace(FBWorkspace):
                 return self.FB_CODE_NOT_SET, None
         with FileLock(self.workspace_path / "execution.lock"):
             if self.target_task.version == 1:
-                source_data_path = (
-                    Path(
-                        FACTOR_COSTEER_SETTINGS.data_folder_debug,
-                    )
-                    if data_type == "Debug"  # FIXME: (yx) don't think we should use a debug tag for this.
-                    else Path(
-                        FACTOR_COSTEER_SETTINGS.data_folder,
-                    )
-                )
+                # Resolves to the task's FactorDataContext dir (attached or via env), falling
+                # back to the legacy global folders when no context is present.
+                source_data_path = resolve_factor_data_dir(self, data_type)
 
             source_data_path.mkdir(exist_ok=True, parents=True)
             code_path = self.workspace_path / f"factor.py"

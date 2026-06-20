@@ -3,16 +3,23 @@
 from __future__ import annotations
 
 import io
+import os
 import re
 import shutil
 import sys
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 from jinja2 import Environment, StrictUndefined
 
 from alphapilot.components.coder.factor_coder.config import FACTOR_COSTEER_SETTINGS
 from alphapilot.log import logger
+from alphapilot.systems.data.factor_h5 import (
+    ENV_DATA_DEBUG_DIR,
+    ENV_DATA_DIR,
+    ENV_FINGERPRINT,
+)
 from alphapilot.utils.env import QTDockerEnv
 
 
@@ -68,13 +75,53 @@ def generate_data_folder_from_qlib(
 
 
 def ensure_factor_data(use_local: bool = True) -> None:
-    """Ensure factor coder h5 folders exist (generates from qlib when missing)."""
+    """Ensure factor coder h5 folders exist (generates from qlib when missing).
+
+    Legacy global-folder fallback; task-level callers should prepare a ``FactorDataContext``
+    via ``alphapilot.systems.data.factor_h5.prepare_factor_data_context`` instead.
+    """
     if (
         Path(FACTOR_COSTEER_SETTINGS.data_folder).exists()
         and Path(FACTOR_COSTEER_SETTINGS.data_folder_debug).exists()
     ):
         return
     generate_data_folder_from_qlib(use_local=use_local)
+
+
+def resolve_factor_data_dir(workspace: Any, data_type: str) -> Path:
+    """Folder holding ``daily_pv.h5`` for *workspace*, by precedence:
+
+    attached ``factor_data_context`` → ``ALPHAPILOT_FACTOR_DATA*`` env → global fallback folders.
+    """
+    ctx = getattr(workspace, "factor_data_context", None)
+    if ctx is not None:
+        return Path(ctx.debug_dir if data_type == "Debug" else ctx.data_dir)
+
+    if data_type == "Debug":
+        env_debug = os.environ.get(ENV_DATA_DEBUG_DIR)
+        if env_debug:
+            return Path(env_debug)
+        return Path(FACTOR_COSTEER_SETTINGS.data_folder_debug)
+
+    env_all = os.environ.get(ENV_DATA_DIR)
+    if env_all:
+        return Path(env_all)
+    return Path(FACTOR_COSTEER_SETTINGS.data_folder)
+
+
+def resolve_factor_data_fingerprint(workspace: Any) -> str:
+    """Data fingerprint for *workspace* cache keys (same precedence as the data dir).
+
+    Falls back to the legacy ``data_folder + data_folder_debug`` string so cache keys are
+    unchanged when no context/env is present.
+    """
+    ctx = getattr(workspace, "factor_data_context", None)
+    if ctx is not None:
+        return str(getattr(ctx, "fingerprint", "") or "")
+    fingerprint = os.environ.get(ENV_FINGERPRINT)
+    if fingerprint:
+        return fingerprint
+    return FACTOR_COSTEER_SETTINGS.data_folder + FACTOR_COSTEER_SETTINGS.data_folder_debug
 
 
 def get_file_desc(p: Path, variable_list: list | None = None) -> str:
@@ -128,10 +175,21 @@ def get_data_folder_intro(
     flags: int = 0,
     variable_mapping: dict | None = None,
     use_local: bool = True,
+    data_folder_debug: str | Path | None = None,
 ) -> str:
-    ensure_factor_data(use_local=use_local)
+    env_debug = os.environ.get(ENV_DATA_DEBUG_DIR)
+    if data_folder_debug is not None:
+        # Explicit (task-level) debug dir from a FactorDataContext; already materialized.
+        debug_dir = Path(data_folder_debug)
+    elif env_debug:
+        # Task entry (mine/backtest/live) published its FactorDataContext via env before the
+        # scenario was built, so the LLM source-data description matches this task's data.
+        debug_dir = Path(env_debug)
+    else:
+        ensure_factor_data(use_local=use_local)
+        debug_dir = Path(FACTOR_COSTEER_SETTINGS.data_folder_debug)
     content_l: list[str] = []
-    for p in Path(FACTOR_COSTEER_SETTINGS.data_folder_debug).iterdir():
+    for p in debug_dir.iterdir():
         if re.match(fname_reg, p.name, flags) is not None:
             if variable_mapping:
                 content_l.append(get_file_desc(p, variable_mapping.get(p.stem, [])))

@@ -11,7 +11,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
-from alphapilot.components.coder.factor_coder.data import ensure_factor_data
 from alphapilot.systems.backtest.types import (
     FactorBacktestRequest,
     FactorBacktestResult,
@@ -50,14 +49,14 @@ def run_strategy_asset_backtest(
     qlib_data_dir: str | None = None,
     use_local: bool | None = None,
     model_pickle_path: str | None = None,
+    market: str | None = None,
 ) -> StrategyAssetBacktestRun:
     backtest = context.backtest()
-    use_local_resolved = (
-        use_local if use_local is not None else context.config.backtest.use_local
-    )
 
+    # The factor h5 context (incl. global-folder fallback) is prepared inside the evaluation
+    # pipeline (_build_experiment); binding ``market`` here keeps the strategy retest on the same
+    # instrument universe it was trained on.
     if mode == "retrain":
-        ensure_factor_data(use_local=use_local_resolved)
         result = backtest.run_factor_evaluation(
             FactorBacktestRequest(
                 factors=factors,
@@ -65,6 +64,7 @@ def run_strategy_asset_backtest(
                 qlib_config_name=qlib_config_name,
                 qlib_template_dir=qlib_template_dir,
                 use_local=use_local,
+                market=market,
             )
         )
     elif mode == "reuse_model":
@@ -79,6 +79,7 @@ def run_strategy_asset_backtest(
                 qlib_template_dir=qlib_template_dir,
                 qlib_data_dir=qlib_data_dir,
                 use_local=use_local,
+                market=market,
             )
         )
     else:

@@ -1118,6 +1118,7 @@ def _render_data_tab(engine: Any) -> None:
 
     output_dir = factor_dir = code_column = token = ""
     all_market = include_daily_basic = False
+    parallel_price_factor = False
     if is_download:
         with st.expander(t("download_custom_params")):
             output_dir = st.text_input(
@@ -1139,9 +1140,13 @@ def _render_data_tab(engine: Any) -> None:
                 include_daily_basic = st.checkbox(
                     t("include_daily_basic"), value=False, key="data_dl_daily_basic"
                 )
-    if is_download and is_tushare:
-        st.warning(t("tushare_manage_boundary"))
-
+    if action in ("download", "pipeline") and adjust_mode == "none":
+        parallel_price_factor = st.checkbox(
+            t("parallel_price_factor"),
+            value=False,
+            key=f"data_parallel_price_factor_{action}_{source}",
+        )
+        st.caption(t("parallel_price_factor_hint"))
     if st.button(t("run_data_action")):
         try:
             kwargs: dict[str, Any] = {}
@@ -1179,6 +1184,8 @@ def _render_data_tab(engine: Any) -> None:
                     kwargs["adjust_mode"] = "none"
                     if pipeline_token.strip():
                         kwargs["token"] = pipeline_token.strip()
+                if parallel_price_factor:
+                    kwargs["parallel_price_factor"] = True
 
             if is_download:
                 if not all_market and not stock_csv.strip():
@@ -1199,6 +1206,8 @@ def _render_data_tab(engine: Any) -> None:
                         kwargs["token"] = token.strip()
                     if include_daily_basic:
                         kwargs["include_daily_basic"] = True
+                if parallel_price_factor:
+                    kwargs["parallel_price_factor"] = True
 
             result = getattr(data_system, action)(**kwargs)
             st.success(t("data_action_finished", action=action))
@@ -1209,7 +1218,7 @@ def _render_data_tab(engine: Any) -> None:
     _render_stock_manage(data_system)
 
 
-def _render_h5_rebuild(data_system: Any) -> None:
+def _render_h5_rebuild(data_system: Any, *, source: str = "baostock_cn") -> None:
     """Deferred daily_pv h5 rebuild, shown once a modify/delete marks it stale."""
     if not st.session_state.get("portal_stock_h5_stale"):
         return
@@ -1219,8 +1228,15 @@ def _render_h5_rebuild(data_system: Any) -> None:
     )
     if st.button(t("stock_rebuild_h5_btn"), key="portal_stock_h5_btn"):
         try:
+            kwargs: dict[str, Any] = {}
+            if source == "tushare_cn":
+                from alphapilot.systems.data.data_paths import existing_tushare_qlib_dir
+
+                kwargs["qlib_dir"] = str(existing_tushare_qlib_dir())
             if market.strip():
-                data_system.rebuild_h5(market=market.strip())
+                kwargs["market"] = market.strip()
+            if kwargs:
+                data_system.rebuild_h5(**kwargs)
             else:
                 data_system.rebuild_h5()
             st.session_state["portal_stock_h5_stale"] = False
@@ -1234,8 +1250,14 @@ def _render_stock_manage(data_system: Any) -> None:
     st.markdown(f"#### {t('stock_manage_heading')}")
     st.info(t("stock_manage_baostock_only"))
     st.caption(t("stock_manage_caption"))
+    source = st.selectbox(
+        t("data_source"),
+        ["baostock_cn", "tushare_cn"],
+        key="portal_stock_manage_source",
+    )
+    is_tushare = source == "tushare_cn"
     try:
-        by_mode = data_system.list_symbols()
+        by_mode = data_system.list_symbols(source=source)
     except Exception as exc:  # noqa: BLE001
         st.error(t("data_action_failed", error=exc))
         return
@@ -1243,24 +1265,24 @@ def _render_stock_manage(data_system: Any) -> None:
     all_symbols = sorted({s for syms in by_mode.values() for s in syms})
     if not all_symbols:
         st.info(t("stock_manage_no_symbols"))
-        _render_h5_rebuild(data_system)
+        _render_h5_rebuild(data_system, source=source)
         return
 
     available_modes = [m for m, syms in by_mode.items() if syms]
     symbol = st.selectbox(
-        t("stock_select_symbol"), all_symbols, key="portal_stock_symbol"
+        t("stock_select_symbol"), all_symbols, key=f"portal_stock_symbol_{source}"
     )
     modes = st.multiselect(
         t("stock_adjust_modes"),
         list(by_mode.keys()),
         default=available_modes,
-        key="portal_stock_modes",
+        key=f"portal_stock_modes_{source}",
     )
     qlib_mode = st.selectbox(
         t("stock_qlib_adjust_mode"),
         ["backward", "forward", "none"],
         index=0,
-        key="portal_stock_qlib_mode",
+        key=f"portal_stock_qlib_mode_{source}",
     )
 
     # --- Delete ---
@@ -1271,7 +1293,11 @@ def _render_stock_manage(data_system: Any) -> None:
             st.warning(t("delete_confirm"))
         else:
             try:
-                report = data_system.delete_symbol(symbol, adjust_mode=modes or None)
+                report = data_system.delete_symbol(
+                    symbol,
+                    adjust_mode=modes or None,
+                    source=source,
+                )
                 st.session_state["portal_stock_h5_stale"] = True
                 st.cache_data.clear()
                 st.success(
@@ -1291,14 +1317,24 @@ def _render_stock_manage(data_system: Any) -> None:
         t("start_date"), value="2016-12-31", key="portal_stock_refresh_start"
     )
     refresh_end = st.text_input(t("end_date"), value="", key="portal_stock_refresh_end")
+    refresh_token = ""
+    if is_tushare:
+        refresh_token = st.text_input(
+            t("tushare_token"), "", type="password", key="portal_stock_refresh_token"
+        )
     if st.button(t("stock_refresh_btn"), key="portal_stock_refresh_btn"):
         try:
+            refresh_kwargs: dict[str, Any] = {}
+            if refresh_token.strip():
+                refresh_kwargs["token"] = refresh_token.strip()
             data_system.refresh_symbol(
                 symbol,
                 adjust_mode=modes or "backward",
+                source=source,
                 start_date=refresh_start.strip() or "2016-12-31",
                 end_date=refresh_end.strip() or None,
                 qlib_adjust_mode=qlib_mode,
+                **refresh_kwargs,
             )
             st.session_state["portal_stock_h5_stale"] = True
             st.cache_data.clear()
@@ -1317,7 +1353,11 @@ def _render_stock_manage(data_system: Any) -> None:
     )
     if st.button(t("stock_apply_adjust_btn"), key="portal_stock_apply_btn"):
         try:
-            report = data_system.apply_adjust_symbol(symbol, target_mode=apply_target)
+            report = data_system.apply_adjust_symbol(
+                symbol,
+                target_mode=apply_target,
+                source=source,
+            )
             st.cache_data.clear()
             st.success(t("stock_apply_adjusted", name=symbol, mode=apply_target))
             st.json(report)
@@ -1338,6 +1378,7 @@ def _render_stock_manage(data_system: Any) -> None:
             data_system.trim_symbol(
                 symbol,
                 adjust_mode=modes or None,
+                source=source,
                 start=trim_start.strip() or None,
                 end=trim_end.strip() or None,
                 drop_dates=drop_dates.strip() or None,
@@ -1349,13 +1390,90 @@ def _render_stock_manage(data_system: Any) -> None:
         except Exception as exc:  # noqa: BLE001
             st.error(t("stock_trim_failed", error=exc))
 
-    _render_h5_rebuild(data_system)
+    _render_h5_rebuild(data_system, source=source)
+
+
+def _factor_store_path(engine: Any, factor_system: Any) -> Path:
+    database = getattr(factor_system, "database", None)
+    for attr in ("db_path", "zoo_path", "csv_path"):
+        path = getattr(database, attr, None)
+        if path:
+            return Path(path)
+    backend = getattr(engine.config.factor, "database_backend", "")
+    filename = "factor_zoo.db" if backend == "sqlite" else "factor_zoo.csv"
+    return Path(engine.config.factor.zoo_dir) / filename
+
+
+def _render_factor_backtest_options(key_prefix: str) -> dict[str, Any]:
+    st.markdown(f"##### {t('factor_bt_options_heading')}")
+    st.info(t("factor_bt_launch_hint"))
+    st.caption(t("factor_bt_options_caption"))
+    c1, c2 = st.columns(2)
+    mode = c1.selectbox(
+        t("bt_factor_mode"),
+        ["multi_combined", "single_ic", "multi_sequential"],
+        index=0,
+        key=f"{key_prefix}_mode",
+        help=t("factor_bt_mode_help"),
+    )
+    scenario = c2.text_input(
+        t("bt_scenario"),
+        value="factor_backtest",
+        key=f"{key_prefix}_scenario",
+    )
+    qlib_config_name = c1.text_input(
+        t("qlib_config_name"),
+        value="",
+        key=f"{key_prefix}_qlib_config",
+    )
+    qlib_template_dir = c2.text_input(
+        t("qlib_template_dir"),
+        value="",
+        key=f"{key_prefix}_qlib_template",
+    )
+    yaml_params = st.text_area(
+        t("bt_yaml_params_json"),
+        value="",
+        height=110,
+        placeholder='{"topk": 30, "n_drop": 5, "backtest_start": "2024-01-01"}',
+        key=f"{key_prefix}_yaml_params",
+    )
+    return _nonempty_kwargs(
+        {
+            "scenario": scenario,
+            "qlib_config_name": qlib_config_name,
+            "qlib_template_dir": qlib_template_dir,
+            "mode": mode,
+            "yaml_params": yaml_params,
+        }
+    )
+
+
+def _remember_factor_backtest_job(job: dict[str, Any], kwargs: dict[str, Any]) -> None:
+    st.session_state["portal_factor_backtest_notice"] = {
+        "job_id": job.get("job_id", ""),
+        "mode": kwargs.get("mode", "multi_combined"),
+    }
+
+
+def _render_factor_backtest_notice() -> None:
+    notice = st.session_state.get("portal_factor_backtest_notice")
+    if not notice:
+        return
+    st.info(
+        t(
+            "factor_bt_running_notice",
+            job_id=notice.get("job_id", ""),
+            mode=notice.get("mode", "multi_combined"),
+        )
+    )
 
 
 def _render_factor_tab(engine: Any) -> None:
     st.subheader(t("factor_subheader"))
+    _render_factor_backtest_notice()
     factor_system = engine.get_system("factor")
-    zoo_path = Path(engine.config.factor.zoo_dir) / "factor_zoo.csv"
+    store_path = _factor_store_path(engine, factor_system)
     has_categories = bool(getattr(factor_system, "supports_categories", False))
 
     try:
@@ -1432,9 +1550,49 @@ def _render_factor_tab(engine: Any) -> None:
                 selected=len(selected_factor_names),
             )
         )
+        with st.expander(t("selected_backtest_settings"), expanded=False):
+            selected_backtest_kwargs = _render_factor_backtest_options("portal_sel_bt")
+        if st.button(
+            t("selected_backtest_btn"),
+            key="portal_sel_bt_btn",
+            disabled=not selected_factor_names,
+        ):
+            import tempfile
+            import time
+
+            import pandas as pd
+
+            from alphapilot.modules.portal import jobs as portal_jobs
+
+            tmp = (
+                Path(tempfile.gettempdir())
+                / f"alphapilot_selected_{int(time.time())}.csv"
+            )
+            try:
+                sel = [
+                    {
+                        "factor_name": rows[i]["factor_name"],
+                        "factor_expression": rows[i]["factor_expression"],
+                    }
+                    for i in (selected_rows or [])
+                    if 0 <= i < len(rows)
+                ]
+                if not sel:
+                    st.warning(t("selected_empty"))
+                else:
+                    pd.DataFrame(sel).to_csv(tmp, index=False)
+                    job_kwargs = {
+                        **selected_backtest_kwargs,
+                        "factor_path": str(tmp),
+                    }
+                    job = portal_jobs.start_job("factor_backtest", job_kwargs)
+                    _remember_factor_backtest_job(job, job_kwargs)
+                    st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                st.error(t("job_start_failed", error=exc))
     else:
         st.info(t("factor_zoo_missing"))
-    st.text_input(t("factor_zoo_csv"), str(zoo_path), disabled=True)
+    st.text_input(t("factor_zoo_csv"), str(store_path), disabled=True)
 
     # ---- Bulk category assignment/removal ----
     if has_categories and factors:
@@ -1608,9 +1766,11 @@ def _render_factor_tab(engine: Any) -> None:
         ec, bc = st.columns(2)
         exp_path = ec.text_input(
             t("category_export_path"),
-            value=str(zoo_path.parent / f"category_{safe_name}.csv"),
+            value=str(store_path.parent / f"category_{safe_name}.csv"),
             key="portal_cat_exp_path",
         )
+        with st.expander(t("category_backtest_settings"), expanded=False):
+            category_backtest_kwargs = _render_factor_backtest_options("portal_cat_bt")
         if ec.button(t("category_export_btn"), key="portal_cat_exp_btn"):
             try:
                 n = factor_system.export_category_csv(act_cat, exp_path.strip())
@@ -1628,10 +1788,13 @@ def _render_factor_tab(engine: Any) -> None:
                 if n == 0:
                     bc.warning(t("category_empty"))
                 else:
-                    job = portal_jobs.start_job(
-                        "factor_backtest", {"factor_path": str(tmp)}
-                    )
-                    bc.success(t("job_started", job_id=job["job_id"]))
+                    job_kwargs = {
+                        **category_backtest_kwargs,
+                        "factor_path": str(tmp),
+                    }
+                    job = portal_jobs.start_job("factor_backtest", job_kwargs)
+                    _remember_factor_backtest_job(job, job_kwargs)
+                    st.rerun()
             except Exception as exc:  # noqa: BLE001
                 bc.error(t("job_start_failed", error=exc))
 
@@ -1706,7 +1869,9 @@ def _render_factor_tab(engine: Any) -> None:
             st.write(result)
         except Exception as exc:  # noqa: BLE001
             st.error(t("import_failed", error=exc))
-    export_path = st.text_input(t("export_path"), value=str(zoo_path))
+    export_path = st.text_input(
+        t("export_path"), value=str(store_path.with_suffix(".csv"))
+    )
     if c4.button(t("export_factor_db")):
         try:
             factor_system.database.save(export_path.strip())
@@ -2291,6 +2456,7 @@ def _render_backtest_launcher(engine: Any) -> None:
 
     st.markdown(f"#### {t('bt_start_heading')}")
     st.info(t("jobs_resource_warning"))
+    _render_factor_backtest_notice()
     factor_tab, strategy_tab = st.tabs(
         [t("bt_start_factor_csv"), t("bt_start_strategy_asset")]
     )
@@ -2298,32 +2464,16 @@ def _render_backtest_launcher(engine: Any) -> None:
     with factor_tab:
         with st.form("portal_factor_backtest_form"):
             factor_path = st.text_input(t("factor_path"), value="")
-            c1, c2 = st.columns(2)
-            scenario = c1.text_input(
-                t("bt_scenario"), value="factor_backtest", key="factor_bt_scenario"
-            )
-            qlib_config_name = c2.text_input(
-                t("qlib_config_name"), value="", key="factor_bt_qlib_config"
-            )
-            qlib_template_dir = st.text_input(
-                t("qlib_template_dir"), value="", key="factor_bt_qlib_template"
-            )
+            backtest_kwargs = _render_factor_backtest_options("factor_bt")
             submitted = st.form_submit_button(t("bt_start_factor_btn"), type="primary")
         if submitted:
             if not factor_path.strip():
                 st.warning(t("factor_path_required"))
             else:
-                kwargs = _nonempty_kwargs(
-                    {
-                        "factor_path": factor_path,
-                        "scenario": scenario,
-                        "qlib_config_name": qlib_config_name,
-                        "qlib_template_dir": qlib_template_dir,
-                    }
-                )
+                kwargs = {**backtest_kwargs, "factor_path": factor_path.strip()}
                 try:
                     job = portal_jobs.start_job("factor_backtest", kwargs)
-                    st.success(t("job_started", job_id=job["job_id"]))
+                    _remember_factor_backtest_job(job, kwargs)
                     st.rerun()
                 except Exception as exc:  # noqa: BLE001
                     st.error(t("job_start_failed", error=exc))
@@ -2868,6 +3018,79 @@ def _page_notify() -> None:
     _render_notify_page()
 
 
+def _render_daily_trade(engine: Any) -> None:
+    from alphapilot.modules.portal import jobs as portal_jobs
+
+    st.markdown(f"#### {t('daily_trade_heading')}")
+    st.info(t("daily_trade_caption"))
+
+    try:
+        strategies = list(
+            engine.get_system("strategy").param_database.list_strategies()
+        )
+    except Exception:  # noqa: BLE001
+        strategies = []
+
+    with st.form("portal_daily_trade_form"):
+        use_asset = st.checkbox(t("daily_trade_use_asset"), value=bool(strategies))
+        strategy_name = (
+            st.selectbox(t("strategy_name"), strategies)
+            if strategies
+            else st.text_input(t("strategy_name"), value="")
+        )
+        c1, c2 = st.columns(2)
+        date = c1.text_input(t("daily_trade_date"), value="", placeholder="YYYY-MM-DD")
+        init_cash = c2.text_input(t("daily_trade_init_cash"), value="")
+        state_path = st.text_input(t("daily_trade_state_path"), value="")
+        with st.expander(t("daily_trade_manual"), expanded=not strategies):
+            factor_path = st.text_input(
+                t("factor_path"), value="", key="daily_factor_path"
+            )
+            model_pickle_path = st.text_input(t("daily_trade_model_pkl"), value="")
+            yaml_params = st.text_area(
+                t("bt_yaml_params_json"), value="", height=100, key="daily_yaml"
+            )
+        refresh_data = st.checkbox(t("daily_trade_refresh"), value=False)
+        submitted = st.form_submit_button(t("daily_trade_btn"), type="primary")
+
+    if submitted:
+        kwargs: dict[str, Any] = {}
+        if use_asset and strategy_name.strip():
+            kwargs["strategy_name"] = strategy_name.strip()
+        if factor_path.strip():
+            kwargs["factor_path"] = factor_path.strip()
+        if model_pickle_path.strip():
+            kwargs["model_pickle_path"] = model_pickle_path.strip()
+        if yaml_params.strip():
+            kwargs["yaml_params"] = yaml_params
+        if date.strip():
+            kwargs["date"] = date.strip()
+        if state_path.strip():
+            kwargs["state_path"] = state_path.strip()
+        if init_cash.strip():
+            try:
+                kwargs["init_cash"] = float(init_cash)
+            except ValueError:
+                st.warning(t("daily_trade_bad_cash"))
+                return
+        if refresh_data:
+            kwargs["refresh_data"] = True
+
+        if "strategy_name" not in kwargs and "model_pickle_path" not in kwargs:
+            st.warning(t("daily_trade_need_source"))
+            return
+        try:
+            job = portal_jobs.start_job("daily_signals", kwargs)
+            st.success(t("job_started", job_id=job["job_id"]))
+            st.rerun()
+        except Exception as exc:  # noqa: BLE001
+            st.error(t("job_start_failed", error=exc))
+
+
+def _page_daily_trade() -> None:
+    _render_daily_trade(_load_engine())
+
+
 def main() -> None:
     with st.spinner(t("loading_engine")):
         _load_engine()
@@ -2878,6 +3101,7 @@ def main() -> None:
     backtest_page = st.Page(_page_backtest, title=t("page_backtest"), icon="📊")
     library_page = st.Page(_page_library, title=t("page_library"), icon="📚")
     market_page = st.Page(_page_market, title=t("page_market"), icon="📈")
+    daily_trade_page = st.Page(_page_daily_trade, title=t("page_daily_trade"), icon="🧾")
     scheduler_page = st.Page(_page_scheduler, title=t("page_scheduler"), icon="⏰")
     notify_page = st.Page(_page_notify, title=t("page_notify"), icon="📣")
     advanced_page = st.Page(_page_advanced, title=t("page_advanced"), icon="⚙️")
@@ -2889,6 +3113,7 @@ def main() -> None:
         "backtest": backtest_page,
         "library": library_page,
         "market": market_page,
+        "daily_trade": daily_trade_page,
         "scheduler": scheduler_page,
         "notify": notify_page,
         "advanced": advanced_page,
@@ -2899,7 +3124,7 @@ def main() -> None:
             t("nav_group_overview"): [home_page],
             t("nav_group_data"): [market_page],
             t("nav_group_research"): [mining_page, backtest_page, library_page],
-            t("nav_group_automation"): [scheduler_page, notify_page],
+            t("nav_group_automation"): [daily_trade_page, scheduler_page, notify_page],
             t("nav_group_system"): [advanced_page],
         }
     ).run()

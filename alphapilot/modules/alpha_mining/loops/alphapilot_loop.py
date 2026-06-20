@@ -38,7 +38,7 @@ from tqdm.auto import tqdm
 
 from alphapilot.core.exception import CoderError
 from alphapilot.log import logger
-from alphapilot.log.mine_paths import scoring_model_log_dir
+from alphapilot.log.mine_paths import qlib_template_log_dir, scoring_model_log_dir
 from functools import wraps
 
 # 定义装饰器：在函数调用前检查stop_event
@@ -154,6 +154,11 @@ class AlphaPilotLoop(LoopBase, metaclass=LoopMeta):
             experiment = prev_out["factor_calculate"]
             experiment.mining_round = self.loop_idx + 1
             experiment.persist_scoring_model_log = True
+            # Bind this run's factor data context so the runner's cache key and factor execution
+            # use the right h5 universe (env already published in run_mining as a fallback).
+            factor_data_ctx = getattr(self, "factor_data_context", None)
+            if factor_data_ctx is not None:
+                experiment.factor_data_context = factor_data_ctx
             if self.qlib_config_name:
                 experiment.qlib_config_name = self.qlib_config_name
             if self.context is None:
@@ -254,6 +259,7 @@ class AlphaPilotLoop(LoopBase, metaclass=LoopMeta):
                     "hypothesis": getattr(prev_out.get("factor_propose"), "hypothesis", None),
                     "qlib_config_name": getattr(result, "qlib_config_name", None) or self.qlib_config_name,
                     "qlib_template_dir": getattr(result, "qlib_template_dir", None) or self.qlib_template_dir,
+                    "qlib_template_source_dir": str(qlib_template_log_dir(logger.log_trace_path, round_no)),
                 },
             )
             self.context.strategy().register_strategy(record)

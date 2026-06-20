@@ -49,14 +49,19 @@ class PlatformModule(BaseModule):
 
     # ---- Single-stock data management ----
 
-    def list_stocks(self, adjust_mode: str | None = None) -> dict[str, Any]:
+    def list_stocks(
+        self,
+        adjust_mode: str | None = None,
+        source: str = "baostock_cn",
+    ) -> dict[str, Any]:
         """List local stock symbols (optionally for one adjust mode)."""
-        return self.context.data().list_symbols(adjust_mode)
+        return self.context.data().list_symbols(adjust_mode, source=source)
 
     def delete_stock(
         self,
         symbol: str,
         adjust_mode: str = "all",
+        source: str = "baostock_cn",
         dry_run: bool = False,
     ) -> Any:
         """Delete one stock across raw CSVs, factor, Qlib features and instruments.
@@ -65,13 +70,14 @@ class PlatformModule(BaseModule):
         combined ``daily_pv`` h5 must be rebuilt afterwards (see ``prepare_data h5``).
         """
         return self.context.data().delete_symbol(
-            symbol, adjust_mode=adjust_mode, dry_run=dry_run
+            symbol, adjust_mode=adjust_mode, source=source, dry_run=dry_run
         )
 
     def trim_stock(
         self,
         symbol: str,
         adjust_mode: str = "all",
+        source: str = "baostock_cn",
         start_date: str | None = None,
         end_date: str | None = None,
         drop_dates: str | None = None,
@@ -90,6 +96,7 @@ class PlatformModule(BaseModule):
         result = data.trim_symbol(
             symbol,
             adjust_mode=adjust_mode,
+            source=source,
             start=start_date,
             end=end_date,
             drop_dates=drop_dates,
@@ -105,6 +112,7 @@ class PlatformModule(BaseModule):
         self,
         symbol: str,
         adjust_mode: str = "backward",
+        source: str = "baostock_cn",
         start_date: str = "2016-12-31",
         end_date: str | None = None,
         qlib_adjust_mode: str = "backward",
@@ -117,6 +125,7 @@ class PlatformModule(BaseModule):
         result = data.refresh_symbol(
             symbol,
             adjust_mode=adjust_mode,
+            source=source,
             start_date=start_date,
             end_date=end_date,
             resync_qlib=resync_qlib,

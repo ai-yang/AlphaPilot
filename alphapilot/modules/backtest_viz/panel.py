@@ -49,6 +49,7 @@ _DEFAULT_ZH: dict[str, str] = {
     "bt_no_metrics": "无 qlib_res.csv 指标文件。",
     "bt_data_paths": "数据路径",
     "bt_filters_expander": "回测筛选条件",
+    "bt_leaderboard_expander": "因子排行榜（single_ic / multi_sequential）",
     "bt_sidebar_header": "回测 workspace",
     "bt_detail_title": "回测详情",
 }
@@ -114,6 +115,11 @@ def render_backtest_panel(
     with ctrl:
         root = Path(_text_input(_msg(translate, "bt_workspace_root"), str(default_root)))
         log_path = Path(_text_input(_msg(translate, "bt_log_root"), str(default_log)))
+
+    from alphapilot.modules.backtest_viz.leaderboard import render_factor_leaderboard
+
+    with st.expander(_msg(translate, "bt_leaderboard_expander"), expanded=False):
+        render_factor_leaderboard(workspace_root=root, key_prefix=f"{key_prefix}_lb")
 
     log_titles = _cached_log_titles(str(log_path.resolve()), str(root.resolve()))
     workspaces = list_workspaces(root)

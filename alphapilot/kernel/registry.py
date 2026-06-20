@@ -115,6 +115,10 @@ def _register_builtin_defaults() -> None:
         "alphapilot.modules.qlib_yaml.module.QlibYamlModule",
     )
     register_module(
+        "daily_trade",
+        "alphapilot.modules.daily_trade.module.DailyTradeModule",
+    )
+    register_module(
         "factor_cli",
         "alphapilot.modules.factor.module.FactorModule",
     )

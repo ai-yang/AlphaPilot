@@ -13,6 +13,14 @@ from alphapilot.adapters.base import (
 from alphapilot.adapters.registry import DATA_SOURCE_REGISTRY
 
 
+def _parse_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return bool(value)
+
+
 @DATA_SOURCE_REGISTRY.register("baostock_cn", is_default=True)
 class BaostockDataSourceAdapter(BaseDataSourceAdapter):
     """Download A-share daily CSV via baostock."""
@@ -34,6 +42,7 @@ class BaostockDataSourceAdapter(BaseDataSourceAdapter):
         max_workers = options.pop("max_workers", 1)
         factor_dir = options.pop("factor_dir", None)
         download_state_path = options.pop("download_state_path", None)
+        parallel_price_factor = _parse_bool(options.pop("parallel_price_factor", False))
 
         raw_dir = (
             Path(request.output_dir).expanduser()
@@ -53,6 +62,7 @@ class BaostockDataSourceAdapter(BaseDataSourceAdapter):
             factor_dir=factor_dir,
             symbols=request.symbols,
             download_state_path=download_state_path,
+            parallel_price_factor=parallel_price_factor,
         )
         return DataDownloadResult(
             output_dir=Path(raw_dir),

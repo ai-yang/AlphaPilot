@@ -27,12 +27,17 @@ import pandas as pd
 
 from alphapilot.core.path_safety import ensure_child_path
 from alphapilot.log import logger
-from alphapilot.systems.data.prepare_cn import (
-    BAOSTOCK_RAW_DIR_BY_MODE,
-    existing_factor_dir,
-    existing_raw_dir,
-    normalize_adjust_mode,
+from alphapilot.systems.data.data_paths import (
+    BAOSTOCK_SOURCE,
+    TUSHARE_SOURCE,
+    existing_baostock_factor_dir,
+    existing_baostock_qlib_dir,
+    existing_baostock_raw_dir,
+    existing_tushare_factor_dir,
+    existing_tushare_qlib_dir,
+    existing_tushare_raw_dir,
 )
+from alphapilot.systems.data.prepare_cn import normalize_adjust_mode
 from alphapilot.systems.data.qlib_convert import DEFAULT_INCLUDE_FIELDS
 from alphapilot.systems.data.stock_list import (
     baostock_to_csv_stem,
@@ -41,6 +46,7 @@ from alphapilot.systems.data.stock_list import (
 )
 
 INSTRUMENTS_SEP = "\t"
+_ADJUST_MODES = ("none", "forward", "backward")
 
 
 # ---------------------------------------------------------------------------
@@ -56,6 +62,15 @@ def _resolve_codes(symbol: str) -> tuple[str, str, str]:
     return code, baostock_to_csv_stem(code), baostock_to_qlib_instrument(code)
 
 
+def _resolve_source(source: str | None = None) -> str:
+    text = (source or BAOSTOCK_SOURCE).strip().lower()
+    if text in {"baostock", BAOSTOCK_SOURCE}:
+        return BAOSTOCK_SOURCE
+    if text in {"tushare", TUSHARE_SOURCE}:
+        return TUSHARE_SOURCE
+    raise ValueError(f"不支持的数据源: {source!r}。请使用 baostock_cn 或 tushare_cn。")
+
+
 def _resolve_adjust_modes(value: str | Iterable[str] | None) -> list[str]:
     """Normalize an adjust-mode selector to a deduped list of modes.
 
@@ -63,7 +78,7 @@ def _resolve_adjust_modes(value: str | Iterable[str] | None) -> list[str]:
     dedupes; any other value is normalized via :func:`normalize_adjust_mode`.
     """
     if value is None:
-        return list(BAOSTOCK_RAW_DIR_BY_MODE)
+        return list(_ADJUST_MODES)
     if isinstance(value, (list, tuple, set)):
         seen: set[str] = set()
         out: list[str] = []
@@ -75,7 +90,7 @@ def _resolve_adjust_modes(value: str | Iterable[str] | None) -> list[str]:
         return out
     text = str(value).strip().lower()
     if text in ("", "all"):
-        return list(BAOSTOCK_RAW_DIR_BY_MODE)
+        return list(_ADJUST_MODES)
     return [normalize_adjust_mode(text)]
 
 
@@ -83,8 +98,28 @@ def _resolve_adjust_modes(value: str | Iterable[str] | None) -> list[str]:
 resolve_adjust_modes = _resolve_adjust_modes
 
 
-def _raw_dir(mode: str) -> Path:
-    return existing_raw_dir(mode)
+def existing_raw_dir_for_source(mode: str, source: str | None = None) -> Path:
+    normalized_mode = normalize_adjust_mode(mode)
+    resolved_source = _resolve_source(source)
+    if resolved_source == TUSHARE_SOURCE:
+        return existing_tushare_raw_dir(normalized_mode)
+    return existing_baostock_raw_dir(normalized_mode)
+
+
+def existing_factor_dir_for_source(source: str | None = None) -> Path:
+    if _resolve_source(source) == TUSHARE_SOURCE:
+        return existing_tushare_factor_dir()
+    return existing_baostock_factor_dir()
+
+
+def existing_qlib_dir_for_source(source: str | None = None) -> Path:
+    if _resolve_source(source) == TUSHARE_SOURCE:
+        return existing_tushare_qlib_dir()
+    return existing_baostock_qlib_dir()
+
+
+def _raw_dir(mode: str, source: str | None = None) -> Path:
+    return existing_raw_dir_for_source(mode, source)
 
 
 def _instruments_dir(qlib_dir: str | Path) -> Path:
@@ -184,11 +219,15 @@ def upsert_instrument(
 # ---------------------------------------------------------------------------
 
 
-def list_symbols(adjust_mode: str | Iterable[str] | None = None) -> dict[str, list[str]]:
+def list_symbols(
+    adjust_mode: str | Iterable[str] | None = None,
+    *,
+    source: str | None = None,
+) -> dict[str, list[str]]:
     """Return ``{mode: [stem, ...]}`` for raw CSVs that exist on disk."""
     result: dict[str, list[str]] = {}
     for mode in _resolve_adjust_modes(adjust_mode):
-        root = _raw_dir(mode)
+        root = _raw_dir(mode, source)
         if root.is_dir():
             result[mode] = sorted(p.stem for p in root.glob("*.csv") if p.is_file())
     return result
@@ -215,6 +254,7 @@ def delete_symbol(
     qlib_dir: str | Path,
     factor_dir: str | Path | None = None,
     adjust_modes: str | Iterable[str] | None = None,
+    source: str | None = None,
     remove_factor: bool = True,
     remove_qlib_features: bool = True,
     remove_from_instruments: bool = True,
@@ -229,6 +269,7 @@ def delete_symbol(
     qlib_dir = Path(qlib_dir).expanduser()
     report: dict[str, Any] = {
         "symbol": code,
+        "source": _resolve_source(source),
         "stem": stem,
         "qlib_id": qlib_id,
         "deleted": [],
@@ -239,11 +280,11 @@ def delete_symbol(
     }
 
     for mode in _resolve_adjust_modes(adjust_modes):
-        root = _raw_dir(mode)
+        root = _raw_dir(mode, source)
         _safe_unlink(root / f"{stem}.csv", root, report, dry_run=dry_run)
 
     if remove_factor:
-        fdir = Path(factor_dir).expanduser() if factor_dir else existing_factor_dir()
+        fdir = Path(factor_dir).expanduser() if factor_dir else existing_factor_dir_for_source(source)
         _safe_unlink(fdir / f"{stem}.csv", fdir, report, dry_run=dry_run)
 
     if remove_qlib_features:
@@ -276,6 +317,7 @@ def apply_adjust_symbol(
     symbol: str,
     *,
     target_mode: str = "forward",
+    source: str | None = None,
     raw_dir: str | Path | None = None,
     factor_dir: str | Path | None = None,
     output_dir: str | Path | None = None,
@@ -289,9 +331,9 @@ def apply_adjust_symbol(
     if mode == "none":
         raise ValueError("target_mode 须为 forward 或 backward")
 
-    raw_root = Path(raw_dir).expanduser() if raw_dir else _raw_dir("none")
-    factor_root = Path(factor_dir).expanduser() if factor_dir else existing_factor_dir()
-    out_root = Path(output_dir).expanduser() if output_dir else _raw_dir(mode)
+    raw_root = Path(raw_dir).expanduser() if raw_dir else _raw_dir("none", source)
+    factor_root = Path(factor_dir).expanduser() if factor_dir else existing_factor_dir_for_source(source)
+    out_root = Path(output_dir).expanduser() if output_dir else _raw_dir(mode, source)
     csv = raw_root / f"{stem}.csv"
     factor_csv = factor_root / f"{stem}.csv"
 
@@ -307,6 +349,7 @@ def apply_adjust_symbol(
 
     report: dict[str, Any] = {
         "symbol": code,
+        "source": _resolve_source(source),
         "stem": stem,
         "target_mode": mode,
         "rows": len(adjusted),
@@ -329,6 +372,7 @@ def trim_symbol(
     symbol: str,
     *,
     adjust_modes: str | Iterable[str] | None = None,
+    source: str | None = None,
     start: str | None = None,
     end: str | None = None,
     drop_dates: str | Iterable[str] | None = None,
@@ -349,6 +393,7 @@ def trim_symbol(
 
     report: dict[str, Any] = {
         "symbol": code,
+        "source": _resolve_source(source),
         "stem": stem,
         "modes": {},
         "dry_run": dry_run,
@@ -356,7 +401,7 @@ def trim_symbol(
     }
 
     for mode in _resolve_adjust_modes(adjust_modes):
-        root = _raw_dir(mode)
+        root = _raw_dir(mode, source)
         csv = root / f"{stem}.csv"
         if not csv.is_file():
             report["modes"][mode] = {"status": "missing"}

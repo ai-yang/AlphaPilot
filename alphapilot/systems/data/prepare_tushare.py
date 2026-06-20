@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import multiprocessing as mp
+import queue
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -409,12 +411,16 @@ def _merge_factor_csv(factor_file: Path, new_factor_df: pd.DataFrame) -> pd.Data
     combined_df = combined_df.dropna(subset=["dividOperateDate", "adjustFactor"])
     combined_df = combined_df.drop_duplicates(subset=["dividOperateDate"], keep="last")
     combined_df = combined_df.sort_values("dividOperateDate")
-    latest_factor = combined_df["adjustFactor"].iloc[-1] if not combined_df.empty else 1.0
+    latest_factor = (
+        combined_df["adjustFactor"].iloc[-1] if not combined_df.empty else 1.0
+    )
     if pd.isna(latest_factor) or latest_factor == 0:
         latest_factor = 1.0
     combined_df["foreAdjustFactor"] = combined_df["adjustFactor"] / latest_factor
     combined_df["backAdjustFactor"] = combined_df["adjustFactor"]
-    combined_df["dividOperateDate"] = combined_df["dividOperateDate"].dt.strftime("%Y-%m-%d")
+    combined_df["dividOperateDate"] = combined_df["dividOperateDate"].dt.strftime(
+        "%Y-%m-%d"
+    )
     for column in FACTOR_COLUMNS:
         if column not in combined_df.columns:
             combined_df[column] = pd.NA
@@ -431,6 +437,90 @@ def _get_all_tushare_stocks(client: Any) -> list[str]:
         raise ValueError("Tushare stock_basic 未返回有效 ts_code")
     codes = [tushare_to_baostock(value) for value in stock_df["ts_code"].dropna()]
     return list(dict.fromkeys(codes))
+
+
+def _download_tushare_factor_only(
+    client: Any,
+    code: str,
+    factor_path: Path,
+    start_date: str,
+    end_date: str,
+) -> bool:
+    ts_code = baostock_to_tushare(code)
+    adj_df = client.adj_factor(
+        ts_code=ts_code,
+        start_date=_to_tushare_date(start_date),
+        end_date=_to_tushare_date(end_date),
+    )
+    new_factor_df = _normalize_factor_frame(adj_df, code)
+    factor_file = factor_path / f"{_csv_stem(code)}.csv"
+    combined_factor_df = _merge_factor_csv(factor_file, new_factor_df)
+    combined_factor_df.to_csv(factor_file, index=False, encoding="utf-8")
+    return not combined_factor_df.empty
+
+
+def _parallel_tushare_factor_worker(
+    codes: list[str],
+    start_date: str,
+    end_date: str,
+    factor_dir: str,
+    token: str | None,
+    result_queue: Any,
+) -> None:
+    stats = _TushareDownloadStats()
+    try:
+        client = _get_tushare_client(token)
+        factor_path = Path(factor_dir).expanduser()
+        factor_path.mkdir(parents=True, exist_ok=True)
+        for code in tqdm(codes, desc="Tushare复权因子"):
+            try:
+                if _download_tushare_factor_only(
+                    client, code, factor_path, start_date, end_date
+                ):
+                    stats.incr("factor_updated")
+            except Exception as exc:  # noqa: BLE001
+                stats.incr("errors")
+                logger.warning(f"Tushare 并行下载 {code} 复权因子失败: {exc}")
+        result_queue.put(
+            {"factor_updated": stats.factor_updated, "errors": stats.errors}
+        )
+    except BaseException as exc:  # noqa: BLE001
+        result_queue.put({"error": f"{type(exc).__name__}: {exc}"})
+        raise
+
+
+def _start_parallel_tushare_factor_process(
+    codes: list[str],
+    start_date: str,
+    end_date: str,
+    factor_dir: Path,
+    token: str | None,
+) -> tuple[Any, Any]:
+    ctx = mp.get_context("spawn")
+    result_queue = ctx.Queue()
+    process = ctx.Process(
+        target=_parallel_tushare_factor_worker,
+        args=(codes, start_date, end_date, str(factor_dir), token, result_queue),
+        daemon=False,
+    )
+    process.start()
+    return process, result_queue
+
+
+def _finish_parallel_tushare_factor_process(
+    process: Any, result_queue: Any
+) -> dict[str, Any]:
+    process.join()
+    result: dict[str, Any] = {}
+    try:
+        result = result_queue.get_nowait()
+    except queue.Empty:
+        result = {}
+    if result.get("error"):
+        raise RuntimeError(f"Tushare 并行复权因子下载失败: {result['error']}")
+    if getattr(process, "exitcode", 0) not in (0, None):
+        raise RuntimeError(f"Tushare 并行复权因子下载进程异常退出: exitcode={process.exitcode}")
+    return result
 
 
 def _query_daily_bars(
@@ -480,6 +570,7 @@ def download_tushare_data(
     token: str | None = None,
     include_daily_basic: bool = False,
     client: Any | None = None,
+    parallel_price_factor: bool = False,
 ) -> list[str]:
     """
     Download Tushare daily bars into AlphaPilot-compatible per-symbol CSV files.
@@ -506,14 +597,15 @@ def download_tushare_data(
     # 以便复权行情也能附带 factor 列、且不复权行情可在后续离线复权时复用。
     factor_path = resolve_tushare_factor_dir(factor_dir)
     factor_path.mkdir(parents=True, exist_ok=True)
+    parallel_factors_enabled = bool(parallel_price_factor and mode == "none")
+    if parallel_price_factor and not parallel_factors_enabled:
+        logger.info("parallel_price_factor 仅在 adjust_mode=none 时生效，当前保持原下载流程。")
     state_path = resolve_download_state_path(download_state_path, output_path)
     state_store = DownloadStateStore(state_path)
     pro = client or _get_tushare_client(token)
 
     if max_workers != 1:
-        logger.warning(
-            f"Tushare 下载默认按单线程执行以避免限流，已忽略 max_workers={max_workers}"
-        )
+        logger.warning(f"Tushare 下载默认按单线程执行以避免限流，已忽略 max_workers={max_workers}")
         max_workers = 1
 
     if symbols:
@@ -564,12 +656,29 @@ def download_tushare_data(
 
     try:
         active_starts = [
-            date for date in download_starts.values() if date is not None and date <= end_date
+            date
+            for date in download_starts.values()
+            if date is not None and date <= end_date
         ]
         trading_dates: set[str] | None = None
         if active_starts:
             trading_dates = _query_trade_dates(pro, min(active_starts), end_date)
             logger.info(f"Tushare 下载状态表: {state_path}")
+        factor_process = factor_queue = None
+        if parallel_factors_enabled and active_starts:
+            logger.info("启用 Tushare 并行下载: 行情 CSV 与复权因子将在独立进程中同时执行。")
+            active_codes = [
+                code
+                for code, start in download_starts.items()
+                if start is not None and start <= end_date
+            ]
+            factor_process, factor_queue = _start_parallel_tushare_factor_process(
+                active_codes,
+                start_date,
+                end_date,
+                factor_path,
+                token,
+            )
 
         def download_single_stock(code: str) -> None:
             start = download_starts.get(code)
@@ -577,7 +686,11 @@ def download_tushare_data(
                 return
 
             output_file = output_path / f"{_csv_stem(code)}.csv"
-            factor_file = factor_path / f"{_csv_stem(code)}.csv" if factor_path else None
+            factor_file = (
+                factor_path / f"{_csv_stem(code)}.csv"
+                if factor_path and not parallel_factors_enabled
+                else None
+            )
 
             if not _has_trading_day(trading_dates, start, end_date):
                 state_store.upsert(
@@ -602,11 +715,13 @@ def download_tushare_data(
                     end_date=_to_tushare_date(end_date),
                     mode=mode,
                 )
-                adj_df = pro.adj_factor(
-                    ts_code=ts_code,
-                    start_date=_to_tushare_date(start_date),
-                    end_date=_to_tushare_date(end_date),
-                )
+                adj_df = None
+                if factor_file is not None or mode != "none":
+                    adj_df = pro.adj_factor(
+                        ts_code=ts_code,
+                        start_date=_to_tushare_date(start_date),
+                        end_date=_to_tushare_date(end_date),
+                    )
             except Exception as exc:  # noqa: BLE001 - record API failures per symbol
                 logger.warning(f"Tushare 获取 {code} 失败: {exc}")
                 state_store.upsert(
@@ -691,9 +806,20 @@ def download_tushare_data(
             )
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [executor.submit(download_single_stock, code) for code in all_stocks]
-            for future in tqdm(as_completed(futures), total=len(futures), desc="Tushare下载"):
+            futures = [
+                executor.submit(download_single_stock, code) for code in all_stocks
+            ]
+            for future in tqdm(
+                as_completed(futures), total=len(futures), desc="Tushare下载"
+            ):
                 future.result()
+
+        if factor_process is not None:
+            factor_result = _finish_parallel_tushare_factor_process(
+                factor_process, factor_queue
+            )
+            stats.incr("factor_updated", int(factor_result.get("factor_updated", 0)))
+            stats.incr("errors", int(factor_result.get("errors", 0)))
 
         basic_summary = (
             f"每日指标更新={stats.basic_updated}, 每日指标失败={stats.basic_failed}, "
@@ -731,15 +857,14 @@ def download_cn_data(
     token: str | None = None,
     include_daily_basic: bool = False,
     client: Any | None = None,
+    parallel_price_factor: bool = False,
 ) -> list[str]:
     """Tushare-flavoured CN data downloader with the same shape as prepare_cn."""
     if end_date is None:
         end_date = datetime.now().strftime("%Y-%m-%d")
     mode = normalize_adjust_mode(adjust_mode)
     raw_dir = resolve_tushare_raw_dir(data_dir, mode)
-    logger.info(
-        f"开始下载 Tushare A 股数据 ({mode}): {start_date} ~ {end_date} -> {raw_dir}"
-    )
+    logger.info(f"开始下载 Tushare A 股数据 ({mode}): {start_date} ~ {end_date} -> {raw_dir}")
     if mode != "none":
         logger.info(f"Tushare 复权模式: {_TUSHARE_ADJ_BY_MODE[mode]} (pro_bar)")
     logger.info(f"Tushare 复权因子目录: {resolve_tushare_factor_dir(factor_dir)}")
@@ -760,6 +885,7 @@ def download_cn_data(
         token=token,
         include_daily_basic=include_daily_basic,
         client=client,
+        parallel_price_factor=parallel_price_factor,
     )
     logger.info("Tushare CSV 下载完成。")
     return codes

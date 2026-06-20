@@ -70,6 +70,72 @@ class FileStrategyParamDatabase(BaseStrategyParamDatabase):
         return self.param_dir / f"{strategy_name}.json"
 
     @staticmethod
+    def _copy_qlib_template_snapshot(
+        record_dict: dict[str, Any],
+        sdir: Path,
+        *,
+        artifact_uri_hint: str | None = None,
+    ) -> None:
+        metadata = record_dict.setdefault("metadata", {})
+        if not isinstance(metadata, dict):
+            return
+
+        config_name = metadata.get("qlib_config_name")
+        if not isinstance(config_name, str) or not config_name:
+            model = record_dict.get("model")
+            if isinstance(model, dict):
+                hyper_params = model.get("hyper_params")
+                if isinstance(hyper_params, dict):
+                    config_name = hyper_params.get("qlib_config")
+        if not isinstance(config_name, str) or not config_name:
+            return
+
+        candidate_dirs: list[Path] = []
+        for key in ("qlib_template_source_dir", "qlib_template_dir"):
+            raw = metadata.get(key)
+            if isinstance(raw, str) and raw:
+                candidate_dirs.append(Path(raw).expanduser())
+
+        model = record_dict.get("model")
+        artifact_candidates = [artifact_uri_hint]
+        artifact_candidates.append(model.get("trained_artifact_uri") if isinstance(model, dict) else None)
+        for artifact_uri in artifact_candidates:
+            if not isinstance(artifact_uri, str) or not artifact_uri:
+                continue
+            artifact_path = Path(artifact_uri).expanduser()
+            candidate_dirs.append(artifact_path.parent.parent / "qlib_template")
+
+        source_dir = next(
+            (path for path in candidate_dirs if path.exists() and (path / config_name).exists()),
+            None,
+        )
+        if source_dir is None:
+            return
+
+        dst_dir = sdir / "qlib_template"
+        dst_dir.mkdir(parents=True, exist_ok=True)
+
+        copied: list[str] = []
+        for filename in (config_name, "read_exp_res.py", "manifest.json"):
+            src = source_dir / filename
+            if not src.exists() or not src.is_file():
+                continue
+            dst = dst_dir / filename
+            if src.resolve() == dst.resolve():
+                copied.append(filename)
+                continue
+            shutil.copy2(src, dst)
+            copied.append(filename)
+
+        if not copied:
+            return
+
+        metadata["qlib_config_path"] = f"qlib_template/{config_name}"
+        metadata["qlib_template_snapshot_dir"] = "qlib_template"
+        metadata["qlib_template_source_dir"] = str(source_dir.resolve())
+        metadata["qlib_template_files"] = copied
+
+    @staticmethod
     def _record_from_dict(data: dict[str, Any]) -> StrategyRecord:
         model_raw = data.get("model")
         metrics_raw = data.get("metrics")
@@ -89,6 +155,7 @@ class FileStrategyParamDatabase(BaseStrategyParamDatabase):
         record_dict = asdict(record)
 
         model = record_dict.get("model")
+        original_artifact_uri = model.get("trained_artifact_uri") if isinstance(model, dict) else None
         if isinstance(model, dict):
             uri = model.get("trained_artifact_uri")
             if isinstance(uri, str) and uri:
@@ -99,6 +166,12 @@ class FileStrategyParamDatabase(BaseStrategyParamDatabase):
                     dst = dst_dir / src.name
                     shutil.copy2(src, dst)
                     model["trained_artifact_uri"] = str(dst)
+
+        self._copy_qlib_template_snapshot(
+            record_dict,
+            sdir,
+            artifact_uri_hint=original_artifact_uri if isinstance(original_artifact_uri, str) else None,
+        )
 
         with (sdir / "factors.json").open("w", encoding="utf-8") as f:
             json.dump({"factor_formulas": record_dict.get("factor_formulas", [])}, f, ensure_ascii=False, indent=2)

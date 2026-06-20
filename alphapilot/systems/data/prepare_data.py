@@ -7,7 +7,6 @@ from pathlib import Path
 
 from alphapilot.log import logger
 from alphapilot.systems.data.adjust_prices import apply_adjust_directory
-from alphapilot.systems.data.generate_h5 import generate_daily_pv_h5
 from alphapilot.systems.data.prepare_cn import (
     DEFAULT_STOCK_CSV,
     FACTOR_HISTORY_START_DATE,
@@ -67,6 +66,7 @@ class PrepareDataCLI:
         adjust_mode: str = "none",
         factor_dir: str | None = None,
         download_state_path: str | None = None,
+        parallel_price_factor: bool = False,
     ) -> None:
         """
         下载行情 CSV（默认除权/不复权 + 复权因子），不转 Qlib、不生成 h5。
@@ -83,7 +83,9 @@ class PrepareDataCLI:
             alphapilot prepare_data convert --data_path ~/.qlib/.../raw_data_forward_adjust --market pools
         """
         end = end_date or datetime.now().strftime("%Y-%m-%d")
-        pool = _resolve_market(stock_csv if not all_market else None, market, all_market)
+        pool = _resolve_market(
+            stock_csv if not all_market else None, market, all_market
+        )
         raw_dir = resolve_raw_dir(data_dir, adjust_mode)
 
         if all_market:
@@ -97,6 +99,7 @@ class PrepareDataCLI:
                 adjust_mode=adjust_mode,
                 factor_dir=factor_dir,
                 download_state_path=download_state_path,
+                parallel_price_factor=parallel_price_factor,
             )
         else:
             codes = download_cn_data(
@@ -110,6 +113,7 @@ class PrepareDataCLI:
                 adjust_mode=adjust_mode,
                 factor_dir=factor_dir,
                 download_state_path=download_state_path,
+                parallel_price_factor=parallel_price_factor,
             )
 
         if sync_instruments and not all_market:
@@ -126,8 +130,7 @@ class PrepareDataCLI:
                 f"conf.yaml 中 market 请设为 {pool!r}"
             )
         logger.info(
-            "下载完成。下一步: apply_adjust -> convert；"
-            "一键全流程请使用 prepare_data pipeline"
+            "下载完成。下一步: apply_adjust -> convert；" "一键全流程请使用 prepare_data pipeline"
         )
 
     def refresh_factors(
@@ -194,9 +197,9 @@ class PrepareDataCLI:
             refresh_factors_if_needed: 检测到因子不全时是否自动联网刷新（默认 False）.
         """
         if target_mode is not None:
-            if adjust_mode != "forward" and normalize_adjust_mode(adjust_mode) != normalize_adjust_mode(
-                target_mode
-            ):
+            if adjust_mode != "forward" and normalize_adjust_mode(
+                adjust_mode
+            ) != normalize_adjust_mode(target_mode):
                 logger.warning(
                     f"同时指定 adjust_mode={adjust_mode!r} 与 target_mode={target_mode!r}，"
                     f"以 adjust_mode 为准。"
@@ -208,11 +211,11 @@ class PrepareDataCLI:
 
         mode = normalize_adjust_mode(adjust_mode)
         raw_path = Path(raw_dir).expanduser() if raw_dir else existing_raw_dir("none")
-        factor_path = Path(factor_dir).expanduser() if factor_dir else existing_factor_dir()
+        factor_path = (
+            Path(factor_dir).expanduser() if factor_dir else existing_factor_dir()
+        )
         out_path = (
-            Path(output_dir).expanduser()
-            if output_dir
-            else default_raw_dir(mode)
+            Path(output_dir).expanduser() if output_dir else default_raw_dir(mode)
         )
 
         if refresh_factors_if_needed:
@@ -261,7 +264,11 @@ class PrepareDataCLI:
         max_workers: int = 16,
     ) -> None:
         """Convert CSV directory to Qlib binary format."""
-        path = resolve_raw_dir(data_path, adjust_mode) if data_path is None else Path(data_path).expanduser()
+        path = (
+            resolve_raw_dir(data_path, adjust_mode)
+            if data_path is None
+            else Path(data_path).expanduser()
+        )
         dump_csv_to_qlib(
             data_path=path,
             qlib_dir=qlib_dir,
@@ -307,9 +314,23 @@ class PrepareDataCLI:
         market: str | None = None,
         start_date: str = "2015-01-01",
     ) -> None:
-        """Generate daily_pv_all.h5 / daily_pv_debug.h5 for factor code."""
+        """Warm the factor h5 cache (daily_pv.h5) for the given market.
+
+        Builds / reuses the content-addressed cache under
+        ``git_ignore_folder/factor_h5_cache/<spec_hash>/`` that mine/backtest/live consume.
+        """
+        from alphapilot.systems.data.factor_h5 import prepare_factor_data_context
+
         pool = market or default_market_name(DEFAULT_STOCK_CSV)
-        generate_daily_pv_h5(qlib_dir=qlib_dir, market=pool, start_date=start_date)
+        ctx = prepare_factor_data_context(market=pool, qlib_dir=qlib_dir, start_date=start_date)
+        logger.info(f"factor h5 cache ready: spec_hash={ctx.fingerprint} dir={ctx.cache_dir}")
+
+    def clean_h5_cache(self, market: str | None = None) -> None:
+        """Delete factor h5 cache entries (all, or only those matching ``--market``)."""
+        from alphapilot.systems.data.factor_h5 import clean_factor_h5_cache
+
+        removed = clean_factor_h5_cache(market=market)
+        logger.info(f"removed {removed} factor h5 cache entr{'y' if removed == 1 else 'ies'}")
 
     def convert(
         self,
@@ -330,9 +351,15 @@ class PrepareDataCLI:
     ) -> None:
         """Run dump + calendar + benchmark + h5 (skip download)."""
         end = end_date or datetime.now().strftime("%Y-%m-%d")
-        pool = _resolve_market(stock_csv if not all_market else None, market, all_market)
+        pool = _resolve_market(
+            stock_csv if not all_market else None, market, all_market
+        )
 
-        path = Path(data_path).expanduser() if data_path else resolve_raw_dir(None, adjust_mode)
+        path = (
+            Path(data_path).expanduser()
+            if data_path
+            else resolve_raw_dir(None, adjust_mode)
+        )
 
         if sync_instruments and not all_market:
             codes = load_stocks_from_file(stock_csv, code_column=code_column)
@@ -383,6 +410,7 @@ class PrepareDataCLI:
         apply_adjust_after_download: bool = True,
         source: str = "baostock_cn",
         token: str | None = None,
+        parallel_price_factor: bool = False,
     ) -> None:
         """
         全流程: download -> (可选 apply_adjust) -> convert，支持 baostock / tushare。
@@ -392,7 +420,9 @@ class PrepareDataCLI:
         最终复权由 ``target_mode`` 决定，且各目录默认落在 ``cn_data/tushare/`` 下。
         """
         is_tushare = source == "tushare_cn"  # adapter registry name
-        pool = _resolve_market(stock_csv if not all_market else None, market, all_market)
+        pool = _resolve_market(
+            stock_csv if not all_market else None, market, all_market
+        )
         end = end_date or datetime.now().strftime("%Y-%m-%d")
 
         if is_tushare:
@@ -406,8 +436,16 @@ class PrepareDataCLI:
             if normalize_adjust_mode(adjust_mode) != "none":
                 logger.warning("Tushare 仅支持除权下载，已将 adjust_mode 调整为 none。")
             adjust_mode = "none"
-            raw_none_dir = Path(data_dir).expanduser() if data_dir else canonical_tushare_raw_dir("none")
-            factor_path = Path(factor_dir).expanduser() if factor_dir else canonical_tushare_factor_dir()
+            raw_none_dir = (
+                Path(data_dir).expanduser()
+                if data_dir
+                else canonical_tushare_raw_dir("none")
+            )
+            factor_path = (
+                Path(factor_dir).expanduser()
+                if factor_dir
+                else canonical_tushare_factor_dir()
+            )
             resolved_qlib = qlib_dir or str(canonical_tushare_qlib_dir())
             codes = prepare_tushare.download_cn_data(
                 start_date=start_date,
@@ -420,11 +458,16 @@ class PrepareDataCLI:
                 factor_dir=factor_path,
                 download_state_path=download_state_path,
                 token=token,
+                parallel_price_factor=parallel_price_factor,
             )
             if sync_instruments and not all_market:
                 write_qlib_instruments(
-                    codes, resolved_qlib, pool,
-                    start_date=start_date, end_date=end, data_dir=raw_none_dir,
+                    codes,
+                    resolved_qlib,
+                    pool,
+                    start_date=start_date,
+                    end_date=end,
+                    data_dir=raw_none_dir,
                 )
         else:
             resolved_qlib = qlib_dir or str(DEFAULT_QLIB_DIR)
@@ -442,6 +485,7 @@ class PrepareDataCLI:
                 adjust_mode=adjust_mode,
                 factor_dir=factor_dir,
                 download_state_path=download_state_path,
+                parallel_price_factor=parallel_price_factor,
             )
 
         convert_mode = adjust_mode

@@ -35,5 +35,6 @@ def run_saved_model_evaluation(
             qlib_template_dir=request.qlib_template_dir,
             use_local=request.use_local,
             run_env=run_env,
+            market=request.market,
         ),
     )

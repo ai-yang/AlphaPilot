@@ -4,7 +4,7 @@ Provides a small storage-agnostic facade over the factor zoo. Two backends:
 
 - ``file``   — the legacy CSV zoo wrapping ``FactorRegulator`` (no categories).
 - ``sqlite`` — SQLite store supporting a many-to-many factor↔category registry,
-  while still re-materializing ``factor_zoo.csv`` so CSV consumers keep working.
+  with optional CSV export/mirror support for compatibility.
 
 Both expose the same :class:`BaseFactorDatabase` interface; category methods have
 safe defaults on the base so the ``file`` backend stays valid.
@@ -159,8 +159,8 @@ class SqliteFactorDatabase(BaseFactorDatabase):
     """SQLite-backed zoo with a many-to-many factor↔category registry.
 
     Validation/dedup reuse the existing ``FactorRegulator`` (fed a 2-column
-    DataFrame of DB rows, so ``match_alphazoo`` is unaffected). Every write
-    re-materializes ``factor_zoo.csv`` so CSV consumers keep working.
+    DataFrame of DB rows, so ``match_alphazoo`` is unaffected). ``save()`` can
+    export a two-column CSV mirror for compatibility.
     """
 
     supports_categories = True
@@ -173,7 +173,6 @@ class SqliteFactorDatabase(BaseFactorDatabase):
         self._duplication_threshold = duplication_threshold
         self._regulator: Any | None = None
         self._ensure_schema()
-        self._maybe_migrate_csv()
 
     # ---- connection / schema ----
 
@@ -186,27 +185,6 @@ class SqliteFactorDatabase(BaseFactorDatabase):
     def _ensure_schema(self) -> None:
         with closing(self._connect()) as conn, conn:
             conn.executescript(_SCHEMA_SQL)
-
-    def _maybe_migrate_csv(self) -> None:
-        """One-time import of an existing factor_zoo.csv when the DB is empty."""
-        with closing(self._connect()) as conn:
-            count = conn.execute("SELECT COUNT(*) FROM factors").fetchone()[0]
-        if count or not self.csv_path.exists():
-            return
-        import pandas as pd
-
-        df = pd.read_csv(self.csv_path)
-        if not {"factor_name", "factor_expression"} <= set(df.columns):
-            return
-        with closing(self._connect()) as conn, conn:
-            for _, row in df.iterrows():
-                conn.execute(
-                    "INSERT OR IGNORE INTO factors(name, expression) VALUES (?, ?)",
-                    (str(row["factor_name"]), str(row["factor_expression"])),
-                )
-        logger.info(
-            f"[factor zoo] migrated {len(df)} factors from {self.csv_path} into {self.db_path}"
-        )
 
     # ---- validation / dedup (reuse FactorRegulator over a 2-col frame) ----
 

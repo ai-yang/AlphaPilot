@@ -25,6 +25,7 @@ from alphapilot.systems.strategy.base import (
 from alphapilot.components.coder.factor_coder.config import resolve_factor_python_bin
 from alphapilot.kernel.paths import remap_legacy_relative_path
 from alphapilot.log import logger
+from alphapilot.systems.data.factor_h5 import ENV_FINGERPRINT, ENV_MARKET
 from alphapilot.systems.strategy.backtest import run_strategy_asset_backtest
 from alphapilot.systems.strategy.database import build_strategy_param_database
 
@@ -175,6 +176,19 @@ class StrategySystem(BaseStrategySystem):
         Train strategy and persist full strategy asset in one call.
         """
         result = self.train(experiment=experiment, use_local=use_local)
+        # Record the factor data context active during training (market + h5 fingerprint) so
+        # daily signals can later bind to the same instrument universe / data snapshot. Read from
+        # the experiment's context when present, else from the env published at task entry.
+        base_metadata: dict[str, Any] = {"train_result_type": type(result).__name__}
+        ctx = getattr(experiment, "factor_data_context", None)
+        if ctx is not None:
+            base_metadata["market"] = ctx.spec.market
+            base_metadata["factor_data_fingerprint"] = ctx.fingerprint
+        else:
+            env_market = os.environ.get(ENV_MARKET)
+            if env_market:
+                base_metadata["market"] = env_market
+                base_metadata["factor_data_fingerprint"] = os.environ.get(ENV_FINGERPRINT, "")
         record = StrategyRecord(
             strategy_name=strategy_name,
             factor_formulas=factor_formulas,
@@ -185,7 +199,7 @@ class StrategySystem(BaseStrategySystem):
                 fitted_params=fitted_params or {},
             ),
             metrics=self._extract_metrics(result),
-            metadata={"train_result_type": type(result).__name__, **(metadata or {})},
+            metadata={**base_metadata, **(metadata or {})},
         )
         self.register_strategy(record)
         return record
@@ -205,6 +219,8 @@ class StrategySystem(BaseStrategySystem):
         qlib_template_dir = remap_legacy_relative_path(
             request.qlib_template_dir or (record.metadata or {}).get("qlib_template_dir")
         )
+        # Re-test on the same instrument universe the strategy was trained on.
+        asset_market = (record.metadata or {}).get("market")
         use_local = (
             request.use_local
             if request.use_local is not None
@@ -239,6 +255,7 @@ class StrategySystem(BaseStrategySystem):
                     qlib_data_dir=request.qlib_data_dir,
                     use_local=use_local,
                     model_pickle_path=model_uri,
+                    market=asset_market,
                 )
                 metrics = self._extract_metrics(run.result.experiment)
                 details: dict[str, Any] = {
