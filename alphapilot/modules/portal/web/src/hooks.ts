@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { buildParams, defaultValuesFor, FieldSpec, FieldValue } from "./paramSpecs";
 
 export function useAsync<T>(loader: () => Promise<T>, deps: unknown[] = []) {
   const [data, setData] = useState<T | null>(null);
@@ -35,4 +36,39 @@ export function useJsonInput(initial = "{}") {
     return value as Record<string, unknown>;
   };
   return { raw, setRaw, parse };
+}
+
+export function useParamForm(specs: FieldSpec[], advancedJson = "{}") {
+  const [values, setValues] = useState<Record<string, FieldValue>>(() => defaultValuesFor(specs));
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const signature = specs.map((field) => `${field.key}:${String(field.defaultValue ?? "")}`).join("|");
+
+  useEffect(() => {
+    setValues(defaultValuesFor(specs));
+    setErrors({});
+  }, [signature]);
+
+  function setValue(key: string, value: FieldValue) {
+    setValues((current) => ({ ...current, [key]: value }));
+    setErrors((current) => {
+      if (!current[key]) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }
+
+  function parse() {
+    try {
+      setErrors({});
+      return buildParams(specs, values, advancedJson);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setErrors({ _form: message });
+      throw err;
+    }
+  }
+
+  return { values, setValue, setValues, errors, parse };
 }

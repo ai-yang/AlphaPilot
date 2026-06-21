@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 
 import pandas as pd
 from tqdm import tqdm
 
 from alphapilot.log import logger
+try:
+    from alphapilot.modules.portal.jobs import update_current_job_progress
+except Exception:  # pragma: no cover - portal is optional for CLI data tools
+    def update_current_job_progress(*_args, **_kwargs) -> None:  # type: ignore[no-redef]
+        return None
 from alphapilot.systems.data.prepare_cn import default_raw_dir, normalize_adjust_mode
 
 _PRICE_COLS = ("open", "high", "low", "close", "preclose")
@@ -204,11 +209,59 @@ def apply_adjust_directory(
         return True
 
     written = 0
+    total_files = len(csv_files)
+    update_current_job_progress(
+        78,
+        f"adjust:{mode}",
+        f"准备复权 {total_files} 个 CSV",
+        total=total_files,
+        completed=0,
+        written=0,
+    )
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {executor.submit(_process_one, f): f for f in csv_files}
-        for fut in tqdm(as_completed(futures), total=len(futures), desc=f"复权({mode})"):
-            if fut.result():
-                written += 1
+        completed = 0
+        pending = set(futures)
+        with tqdm(total=len(futures), desc=f"复权({mode})") as pbar:
+            while pending:
+                done, pending = wait(pending, timeout=5, return_when=FIRST_COMPLETED)
+                percent = 78 + (completed / max(total_files, 1)) * 10
+                if not done:
+                    update_current_job_progress(
+                        percent,
+                        f"adjust:{mode}",
+                        f"复权仍在进行 {completed}/{total_files}，等待 {len(pending)} 个文件",
+                        total=total_files,
+                        completed=completed,
+                        pending=len(pending),
+                        written=written,
+                    )
+                    continue
+                pbar.update(len(done))
+                for fut in done:
+                    completed += 1
+                    csv_file = futures[fut]
+                    if fut.result():
+                        written += 1
+                    percent = 78 + (completed / max(total_files, 1)) * 10
+                    update_current_job_progress(
+                        percent,
+                        f"adjust:{mode}",
+                        f"复权进度 {completed}/{total_files}，当前完成 {csv_file.name}",
+                        total=total_files,
+                        completed=completed,
+                        pending=len(pending),
+                        written=written,
+                        current_file=csv_file.name,
+                    )
 
     logger.info(f"复权完成: {written}/{len(csv_files)} -> {out_path}")
+    update_current_job_progress(
+        88,
+        f"adjust:{mode}",
+        f"复权完成 {written}/{total_files}",
+        total=total_files,
+        completed=total_files,
+        written=written,
+    )
     return written

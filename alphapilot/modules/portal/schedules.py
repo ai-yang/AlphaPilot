@@ -32,7 +32,20 @@ from typing import Any, Callable
 from alphapilot.modules.portal import jobs as portal_jobs
 
 # Task kinds a schedule may run. ``data`` additionally expects ``kwargs["action"]``.
-SCHEDULE_KINDS = ("data", "mine", "factor_backtest", "strategy_backtest")
+# Kept in sync with the portal job kinds (and the scheduler UI's dropdown) so that
+# every offered kind — including ``daily_signals`` and the AlphaForge miners —
+# actually dispatches instead of being rejected at create time.
+SCHEDULE_KINDS = (
+    "data",
+    "mine",
+    "mine_aff",
+    "mine_gp",
+    "mine_rl",
+    "mine_dso",
+    "factor_backtest",
+    "strategy_backtest",
+    "daily_signals",
+)
 
 # A heartbeat older than this (seconds) means the daemon is considered dead even
 # if a stale pid file remains.

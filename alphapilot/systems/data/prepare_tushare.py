@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import multiprocessing as mp
 import queue
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +15,11 @@ import pandas as pd
 from tqdm import tqdm
 
 from alphapilot.log import logger
+try:
+    from alphapilot.modules.portal.jobs import update_current_job_progress
+except Exception:  # pragma: no cover - portal is optional for CLI data tools
+    def update_current_job_progress(*_args, **_kwargs) -> None:  # type: ignore[no-redef]
+        return None
 from alphapilot.systems.data.download_state import (
     DownloadStateStore,
     resolve_download_state_path,
@@ -805,21 +810,80 @@ def download_tushare_data(
                 mark_success=True,
             )
 
+        total_stocks = len(all_stocks)
+        update_current_job_progress(
+            8,
+            "download:tushare",
+            f"准备下载 {total_stocks} 只股票",
+            total=total_stocks,
+            completed=0,
+            updated=0,
+        )
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [
-                executor.submit(download_single_stock, code) for code in all_stocks
-            ]
-            for future in tqdm(
-                as_completed(futures), total=len(futures), desc="Tushare下载"
-            ):
-                future.result()
+            futures = {
+                executor.submit(download_single_stock, code): code for code in all_stocks
+            }
+            completed = 0
+            pending = set(futures)
+            with tqdm(total=len(futures), desc="Tushare下载") as pbar:
+                while pending:
+                    done, pending = wait(pending, timeout=5, return_when=FIRST_COMPLETED)
+                    percent = 8 + (completed / max(total_stocks, 1)) * 62
+                    if not done:
+                        update_current_job_progress(
+                            percent,
+                            "download:tushare",
+                            f"Tushare 下载仍在进行 {completed}/{total_stocks}，等待 {len(pending)} 个任务返回",
+                            total=total_stocks,
+                            completed=completed,
+                            pending=len(pending),
+                            price_updated=stats.price_updated,
+                            errors=stats.errors,
+                        )
+                        continue
+                    pbar.update(len(done))
+                    for future in done:
+                        completed += 1
+                        code = futures[future]
+                        future.result()
+                        percent = 8 + (completed / max(total_stocks, 1)) * 62
+                        update_current_job_progress(
+                            percent,
+                            "download:tushare",
+                            f"Tushare 下载进度 {completed}/{total_stocks}，当前完成 {code}",
+                            total=total_stocks,
+                            completed=completed,
+                            pending=len(pending),
+                            current_symbol=code,
+                            price_updated=stats.price_updated,
+                            errors=stats.errors,
+                        )
 
         if factor_process is not None:
+            update_current_job_progress(
+                72,
+                "download:factors",
+                "等待 Tushare 并行复权因子下载完成",
+                total=total_stocks,
+                completed=total_stocks,
+                price_updated=stats.price_updated,
+                errors=stats.errors,
+            )
             factor_result = _finish_parallel_tushare_factor_process(
                 factor_process, factor_queue
             )
             stats.incr("factor_updated", int(factor_result.get("factor_updated", 0)))
             stats.incr("errors", int(factor_result.get("errors", 0)))
+
+        update_current_job_progress(
+            78,
+            "download:tushare",
+            f"Tushare 下载完成，补行情 {stats.price_updated}/{total_stocks}",
+            total=total_stocks,
+            completed=total_stocks,
+            price_updated=stats.price_updated,
+            errors=stats.errors,
+        )
 
         basic_summary = (
             f"每日指标更新={stats.basic_updated}, 每日指标失败={stats.basic_failed}, "

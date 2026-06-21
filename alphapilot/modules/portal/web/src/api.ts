@@ -48,6 +48,23 @@ export type Job = {
   error?: string | null;
   result_summary?: string | null;
   params?: Record<string, unknown>;
+  progress?: JobProgress;
+};
+
+export type JobProgress = {
+  job_id?: string;
+  status?: string;
+  percent: number;
+  stage: string;
+  message?: string;
+  updated_at?: string;
+  completed?: number;
+  total?: number;
+  pending?: number;
+  current_symbol?: string;
+  current_file?: string;
+  latest_data_date?: string;
+  progress_source?: string;
 };
 
 export type Factor = {

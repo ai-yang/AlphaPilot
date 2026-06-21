@@ -8,26 +8,41 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+try:
+    from alphapilot.modules.portal.jobs import update_current_job_progress
+except Exception:  # pragma: no cover - portal is optional for CLI data tools
+    def update_current_job_progress(*_args, **_kwargs) -> None:  # type: ignore[no-redef]
+        return None
+
 
 def convert_data(**options: Any) -> Any:
     """Convert raw CSV to qlib binary via system-level PrepareDataCLI."""
     from alphapilot.systems.data.prepare_data import PrepareDataCLI
 
-    return PrepareDataCLI().convert(**options)
+    update_current_job_progress(15, "convert:start", "开始转换 Qlib 数据")
+    result = PrepareDataCLI().convert(**options)
+    update_current_job_progress(95, "convert:done", "Qlib 数据转换完成")
+    return result
 
 
 def build_h5_data(**options: Any) -> Any:
     """Build ``daily_pv.h5`` via system-level generator implementation."""
     from alphapilot.systems.data.generate_h5 import generate_daily_pv_h5
 
-    return generate_daily_pv_h5(**options)
+    update_current_job_progress(15, "h5:start", "开始构建 daily_pv.h5")
+    result = generate_daily_pv_h5(**options)
+    update_current_job_progress(95, "h5:done", "daily_pv.h5 构建完成")
+    return result
 
 
 def run_pipeline(**options: Any) -> Any:
     """Run download -> adjust -> convert data pipeline."""
     from alphapilot.systems.data.prepare_data import PrepareDataCLI
 
-    return PrepareDataCLI().pipeline(**options)
+    update_current_job_progress(2, "pipeline:start", "启动数据流水线")
+    result = PrepareDataCLI().pipeline(**options)
+    update_current_job_progress(99, "pipeline:done", "数据流水线完成")
+    return result
 
 
 def load_universe(*, stock_csv: str | None = None, code_column: str | None = None) -> Any:

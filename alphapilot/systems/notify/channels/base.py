@@ -62,7 +62,8 @@ def render_html(message: Message) -> str:
     esc = html.escape
     parts: list[str] = [f"<b>{esc(message.emoji())} {esc(message.title)}</b>"]
     if message.body:
-        parts.append(f"<p>{esc(message.body)}</p>")
+        # Preserve the body's line breaks (buy/sell/holdings lists) in HTML mail.
+        parts.append(f"<p>{esc(message.body).replace(chr(10), '<br>')}</p>")
     if message.fields:
         rows = "".join(
             f"<tr><td><b>{esc(k)}</b></td><td>{esc(str(v))}</td></tr>" for k, v in message.fields.items()

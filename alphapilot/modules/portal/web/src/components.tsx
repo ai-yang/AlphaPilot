@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { api, Job } from "./api";
 import { useI18n } from "./i18n";
+import { FieldSpec, FieldValue, visibleFields } from "./paramSpecs";
 import { useToast } from "./toast";
 
 const NAV: [string, string][] = [
@@ -122,6 +123,64 @@ export function JsonTextArea({
   return <textarea className="mono" rows={rows} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />;
 }
 
+export function DynamicForm({
+  specs,
+  values,
+  onChange,
+  errors = {},
+  columns = 2
+}: {
+  specs: FieldSpec[];
+  values: Record<string, FieldValue>;
+  onChange: (key: string, value: FieldValue) => void;
+  errors?: Record<string, string>;
+  columns?: 1 | 2;
+}) {
+  const visible = visibleFields(specs, values);
+  return (
+    <div className={`dynamic-form cols-${columns}`}>
+      {errors._form ? <Alert tone="error">{errors._form}</Alert> : null}
+      {visible.map((field) => {
+        const value = values[field.key];
+        const error = errors[field.key];
+        const inputId = `field-${field.key}`;
+        if (field.type === "checkbox") {
+          return (
+            <label className="inline-check dynamic-check" key={field.key} htmlFor={inputId}>
+              <input id={inputId} type="checkbox" checked={Boolean(value)} onChange={(e) => onChange(field.key, e.target.checked)} />
+              <span>{field.label}</span>
+              {field.helpText ? <small>{field.helpText}</small> : null}
+              {error ? <small className="field-error">{error}</small> : null}
+            </label>
+          );
+        }
+        return (
+          <label key={field.key} htmlFor={inputId}>
+            {field.label}
+            {field.type === "select" ? (
+              <select id={inputId} value={String(value ?? "")} onChange={(e) => onChange(field.key, e.target.value)}>
+                {(field.options || []).map((option) => <option key={String(option.value)} value={String(option.value)}>{option.label}</option>)}
+              </select>
+            ) : field.type === "textarea" ? (
+              <textarea id={inputId} rows={4} value={String(value ?? "")} placeholder={field.placeholder} onChange={(e) => onChange(field.key, e.target.value)} />
+            ) : (
+              <input
+                id={inputId}
+                type={field.type === "password" ? "password" : field.type === "date" ? "date" : field.type === "number" ? "number" : "text"}
+                value={String(value ?? "")}
+                placeholder={field.placeholder}
+                onChange={(e) => onChange(field.key, e.target.value)}
+              />
+            )}
+            {field.helpText ? <small>{field.helpText}</small> : null}
+            {error ? <small className="field-error">{error}</small> : null}
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
 export function StatusPill({ status }: { status?: string }) {
   const s = status || "unknown";
   return (
@@ -129,6 +188,21 @@ export function StatusPill({ status }: { status?: string }) {
       <span className="pill-dot" />
       {s}
     </span>
+  );
+}
+
+export function ProgressBar({ percent, label, active = false }: { percent: number; label?: string; active?: boolean }) {
+  const value = Math.max(0, Math.min(100, Math.round(percent || 0)));
+  return (
+    <div className={`progress-block ${active ? "active" : ""}`}>
+      <div className="progress-head">
+        <span>{label || "Progress"}</span>
+        <strong>{value}%</strong>
+      </div>
+      <div className="progress-track">
+        <div className="progress-fill" style={{ width: `${value}%` }} />
+      </div>
+    </div>
   );
 }
 
@@ -274,6 +348,14 @@ export function JobsPanel({ compact = false }: { compact?: boolean }) {
         columns={[
           { key: "kind", label: "Kind" },
           { key: "status", label: "Status", render: (row) => <StatusPill status={String(row.status)} /> },
+          {
+            key: "progress",
+            label: "Progress",
+            render: (row) => {
+              const progress = row.progress as { percent?: number; stage?: string; message?: string } | undefined;
+              return progress ? <ProgressBar percent={progress.percent || 0} label={progress.message || progress.stage} /> : "";
+            }
+          },
           { key: "result_summary", label: "Summary" },
           {
             key: "job_id",

@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 import multiprocessing as mp
 import queue
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +15,12 @@ import baostock as bs
 import pandas as pd
 from dateutil.relativedelta import relativedelta
 from tqdm import tqdm
+
+try:
+    from alphapilot.modules.portal.jobs import update_current_job_progress
+except Exception:  # pragma: no cover - portal is optional for CLI data tools
+    def update_current_job_progress(*_args, **_kwargs) -> None:  # type: ignore[no-redef]
+        return None
 
 from alphapilot.kernel.paths import default_stock_csv_path
 from alphapilot.log import logger
@@ -736,16 +742,64 @@ def download_stock_data(
             return code
 
         updated_codes: list[str] = []
+        total_stocks = len(all_stocks)
+        update_current_job_progress(
+            8,
+            "download:baostock",
+            f"准备下载 {total_stocks} 只股票",
+            total=total_stocks,
+            completed=0,
+            updated=0,
+        )
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [
-                executor.submit(download_single_stock, code) for code in all_stocks
-            ]
-            for future in tqdm(as_completed(futures), total=len(futures), desc="下载进度"):
-                updated_code = future.result()
-                if updated_code is not None:
-                    updated_codes.append(updated_code)
+            futures = {
+                executor.submit(download_single_stock, code): code for code in all_stocks
+            }
+            completed = 0
+            pending = set(futures)
+            with tqdm(total=len(futures), desc="下载进度") as pbar:
+                while pending:
+                    done, pending = wait(pending, timeout=5, return_when=FIRST_COMPLETED)
+                    percent = 8 + (completed / max(total_stocks, 1)) * 62
+                    if not done:
+                        update_current_job_progress(
+                            percent,
+                            "download:baostock",
+                            f"下载仍在进行 {completed}/{total_stocks}，等待 {len(pending)} 个任务返回",
+                            total=total_stocks,
+                            completed=completed,
+                            pending=len(pending),
+                            updated=len(updated_codes),
+                        )
+                        continue
+                    pbar.update(len(done))
+                    for future in done:
+                        completed += 1
+                        code = futures[future]
+                        updated_code = future.result()
+                        if updated_code is not None:
+                            updated_codes.append(updated_code)
+                        percent = 8 + (completed / max(total_stocks, 1)) * 62
+                        update_current_job_progress(
+                            percent,
+                            "download:baostock",
+                            f"下载进度 {completed}/{total_stocks}，当前完成 {code}",
+                            total=total_stocks,
+                            completed=completed,
+                            pending=len(pending),
+                            updated=len(updated_codes),
+                            current_symbol=code,
+                        )
 
         if factor_process is not None:
+            update_current_job_progress(
+                72,
+                "download:factors",
+                "等待并行复权因子下载完成",
+                total=total_stocks,
+                completed=total_stocks,
+                updated=len(updated_codes),
+            )
             factor_result = _finish_parallel_adjust_factor_process(
                 factor_process, factor_queue
             )
@@ -763,6 +817,15 @@ def download_stock_data(
             )
             if coverage_refreshed:
                 stats.incr("factor_refreshed", coverage_refreshed)
+
+        update_current_job_progress(
+            78,
+            "download:baostock",
+            f"下载完成，更新 {len(updated_codes)}/{total_stocks}",
+            total=total_stocks,
+            completed=total_stocks,
+            updated=len(updated_codes),
+        )
 
         logger.info(
             "下载统计: "

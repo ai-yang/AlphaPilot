@@ -1,9 +1,19 @@
 import Plot from "react-plotly.js";
 import { Link } from "react-router-dom";
-import { api, Factor, Job, qs, Schedule } from "./api";
-import { Alert, DataTable, JobsPanel, JsonTextArea, PageTitle, Spinner, StatusPill } from "./components";
-import { useAsync, useJsonInput } from "./hooks";
+import { api, Factor, Job, JobProgress, qs, Schedule } from "./api";
+import { Alert, DataTable, DynamicForm, JobsPanel, JsonTextArea, PageTitle, ProgressBar, Spinner, StatusPill } from "./components";
+import { useAsync, useJsonInput, useParamForm } from "./hooks";
 import { useI18n } from "./i18n";
+import {
+  alphaForgeSpecs,
+  dailyTradeSpecs,
+  dataActionSpecs,
+  factorBacktestSpecs,
+  llmMiningSpecs,
+  scheduleSpecsFor,
+  strategyBacktestSpecs,
+  withStrategyOptions,
+} from "./paramSpecs";
 import { useAction, useToast } from "./toast";
 import React, { useMemo, useState } from "react";
 
@@ -69,18 +79,28 @@ export function HomePage() {
 
 export function MiningPage() {
   const { t } = useI18n();
-  const llmKwargs = useJsonInput(JSON.stringify({ step_n: 5, scenario: "alpha_factor_mining", direction: "" }, null, 2));
-  const afKwargs = useJsonInput(JSON.stringify({ instruments: "test_stock_pool_80", top_n: 50, raw: true }, null, 2));
+  const llmAdvanced = useJsonInput("{}");
+  const llmForm = useParamForm(llmMiningSpecs, llmAdvanced.raw);
+  const afAdvanced = useJsonInput("{}");
+  const afForm = useParamForm(alphaForgeSpecs, afAdvanced.raw);
   const sessions = useAsync(() => api.get<Array<Record<string, unknown>>>("/api/mining/sessions"), []);
-  const [method, setMethod] = useState("mine_aff");
   const { busy, run } = useAction();
   const [sessionDetail, setSessionDetail] = useState<Record<string, unknown> | null>(null);
   const [sessionFile, setSessionFile] = useState<Record<string, unknown> | null>(null);
 
-  function startMining(kind: string, kwargs: Record<string, unknown>) {
+  function startLlmMining() {
     void run(async () => {
-      const job = await api.post<Job>("/api/jobs", { kind, kwargs });
-      void job;
+      const kwargs = llmForm.parse();
+      await api.post<Job>("/api/jobs", { kind: "mine", kwargs });
+    }, t("started"));
+  }
+
+  function startAlphaForge() {
+    void run(async () => {
+      const kwargs = afForm.parse();
+      const method = String(kwargs.method || "mine_aff");
+      delete kwargs.method;
+      await api.post<Job>("/api/jobs", { kind: method, kwargs });
     }, t("started"));
   }
 
@@ -109,22 +129,21 @@ export function MiningPage() {
       <div className="grid two">
         <section className="panel">
           <h2>{t("llmMining")}</h2>
-          <JsonTextArea value={llmKwargs.raw} onChange={llmKwargs.setRaw} />
-          <button className="button primary" disabled={busy} onClick={() => startMining("mine", llmKwargs.parse())}>{busy ? <Spinner /> : null}{t("run")}</button>
+          <DynamicForm specs={llmMiningSpecs} values={llmForm.values} onChange={llmForm.setValue} errors={llmForm.errors} />
+          <details>
+            <summary>{t("advancedJson")}</summary>
+            <JsonTextArea value={llmAdvanced.raw} onChange={llmAdvanced.setRaw} rows={5} />
+          </details>
+          <button className="button primary" disabled={busy} onClick={() => startLlmMining()}>{busy ? <Spinner /> : null}{t("run")}</button>
         </section>
         <section className="panel">
           <h2>AlphaForge</h2>
-          <label>
-            Method
-            <select value={method} onChange={(e) => setMethod(e.target.value)}>
-              <option value="mine_aff">AFF</option>
-              <option value="mine_gp">GP</option>
-              <option value="mine_rl">RL</option>
-              <option value="mine_dso">DSO</option>
-            </select>
-          </label>
-          <JsonTextArea value={afKwargs.raw} onChange={afKwargs.setRaw} />
-          <button className="button primary" disabled={busy} onClick={() => startMining(method, afKwargs.parse())}>{busy ? <Spinner /> : null}{t("run")}</button>
+          <DynamicForm specs={alphaForgeSpecs} values={afForm.values} onChange={afForm.setValue} errors={afForm.errors} />
+          <details>
+            <summary>{t("advancedJson")}</summary>
+            <JsonTextArea value={afAdvanced.raw} onChange={afAdvanced.setRaw} rows={5} />
+          </details>
+          <button className="button primary" disabled={busy} onClick={() => startAlphaForge()}>{busy ? <Spinner /> : null}{t("run")}</button>
         </section>
       </div>
       <section className="panel">
@@ -182,15 +201,27 @@ export function MiningPage() {
 
 export function BacktestPage() {
   const { t } = useI18n();
-  const factorKwargs = useJsonInput(JSON.stringify({ factor_path: "", scenario: "factor_backtest" }, null, 2));
-  const strategyKwargs = useJsonInput(JSON.stringify({ strategy_name: "", mode: "retrain", scenario: "factor_backtest" }, null, 2));
+  const factorAdvanced = useJsonInput("{}");
+  const factorForm = useParamForm(factorBacktestSpecs, factorAdvanced.raw);
+  const strategies = useAsync(() => api.get<{ names: string[] }>("/api/strategies"), []);
+  const strategySpecs = useMemo(() => withStrategyOptions(strategyBacktestSpecs, strategies.data?.names || []), [strategies.data]);
+  const strategyAdvanced = useJsonInput("{}");
+  const strategyForm = useParamForm(strategySpecs, strategyAdvanced.raw);
   const list = useAsync(() => api.get<Array<Record<string, unknown>>>("/api/backtests"), []);
   const [detail, setDetail] = useState<Record<string, unknown> | null>(null);
   const { busy, run } = useAction();
 
-  function start(kind: string, kwargs: Record<string, unknown>) {
+  function startFactorBacktest() {
     void run(async () => {
-      await api.post<Job>("/api/jobs", { kind, kwargs });
+      const kwargs = factorForm.parse();
+      await api.post<Job>("/api/jobs", { kind: "factor_backtest", kwargs });
+    }, t("started"));
+  }
+
+  function startStrategyBacktest() {
+    void run(async () => {
+      const kwargs = strategyForm.parse();
+      await api.post<Job>("/api/jobs", { kind: "strategy_backtest", kwargs });
     }, t("started"));
   }
 
@@ -220,13 +251,22 @@ export function BacktestPage() {
       <div className="grid two">
         <section className="panel">
           <h2>{t("factorBacktest")}</h2>
-          <JsonTextArea value={factorKwargs.raw} onChange={factorKwargs.setRaw} />
-          <button className="button primary" disabled={busy} onClick={() => start("factor_backtest", factorKwargs.parse())}>{busy ? <Spinner /> : null}{t("run")}</button>
+          <DynamicForm specs={factorBacktestSpecs} values={factorForm.values} onChange={factorForm.setValue} errors={factorForm.errors} />
+          <details>
+            <summary>{t("advancedJson")}</summary>
+            <JsonTextArea value={factorAdvanced.raw} onChange={factorAdvanced.setRaw} rows={5} />
+          </details>
+          <button className="button primary" disabled={busy} onClick={() => startFactorBacktest()}>{busy ? <Spinner /> : null}{t("run")}</button>
         </section>
         <section className="panel">
           <h2>{t("strategyBacktest")}</h2>
-          <JsonTextArea value={strategyKwargs.raw} onChange={strategyKwargs.setRaw} />
-          <button className="button primary" disabled={busy} onClick={() => start("strategy_backtest", strategyKwargs.parse())}>{busy ? <Spinner /> : null}{t("run")}</button>
+          {strategies.error ? <Alert tone="error">{strategies.error}</Alert> : null}
+          <DynamicForm specs={strategySpecs} values={strategyForm.values} onChange={strategyForm.setValue} errors={strategyForm.errors} />
+          <details>
+            <summary>{t("advancedJson")}</summary>
+            <JsonTextArea value={strategyAdvanced.raw} onChange={strategyAdvanced.setRaw} rows={5} />
+          </details>
+          <button className="button primary" disabled={busy} onClick={() => startStrategyBacktest()}>{busy ? <Spinner /> : null}{t("run")}</button>
         </section>
       </div>
       <section className="panel">
@@ -560,17 +600,13 @@ export function LibraryPage() {
 export function MarketPage() {
   const { t } = useI18n();
   const sources = useAsync(() => api.get<Array<Record<string, unknown>>>("/api/market/sources"), []);
-  const [actionName, setActionName] = useState("pipeline");
-  const [provider, setProvider] = useState("baostock_cn");
-  const [startDate, setStartDate] = useState("2005-01-01");
-  const [endDate, setEndDate] = useState("");
-  const [stockCsv, setStockCsv] = useState("important_data/stock_lists/main_stock_2026_4_27.csv");
-  const [adjustMode, setAdjustMode] = useState("backward");
-  const [targetMode, setTargetMode] = useState("forward");
-  const [token, setToken] = useState("");
-  const [includeDailyBasic, setIncludeDailyBasic] = useState(false);
+  const dataJobs = useAsync(() => api.get<Job[]>("/api/jobs"), []);
+  const dataAdvanced = useJsonInput("{}");
+  const dataForm = useParamForm(dataActionSpecs, dataAdvanced.raw);
   const [universe, setUniverse] = useState<string[]>([]);
   const [dataMessage, setDataMessage] = useState<string | null>(null);
+  const [activeDataJob, setActiveDataJob] = useState<Job | null>(null);
+  const [dataProgress, setDataProgress] = useState<JobProgress | null>(null);
   const [dataDir, setDataDir] = useState("");
   const [symbol, setSymbol] = useState("");
   const [symbols, setSymbols] = useState<string[]>([]);
@@ -588,6 +624,29 @@ export function MarketPage() {
   const [h5Market, setH5Market] = useState("");
   const { busy, run } = useAction();
 
+  React.useEffect(() => {
+    if (!activeDataJob?.job_id) return;
+    let alive = true;
+    const poll = async () => {
+      try {
+        const progress = await api.get<JobProgress>(`/api/jobs/${activeDataJob.job_id}/progress`);
+        if (!alive) return;
+        setDataProgress(progress);
+        if (progress.status && ["succeeded", "failed", "cancelled", "lost"].includes(progress.status)) {
+          await dataJobs.refresh();
+        }
+      } catch (err) {
+        if (alive) setDataMessage(err instanceof Error ? err.message : String(err));
+      }
+    };
+    void poll();
+    const id = window.setInterval(poll, 2000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [activeDataJob?.job_id]);
+
   async function loadSymbols(path: string) {
     setDataDir(path);
     setSymbols(await api.get<string[]>(`/api/market/symbols${qs({ data_dir: path })}`));
@@ -600,27 +659,12 @@ export function MarketPage() {
   }
 
   async function runDataActionImpl() {
-    const options: Record<string, unknown> = {};
-    if (["pipeline", "download"].includes(actionName)) {
-      options.source = provider;
-      options.start_date = startDate;
-      if (endDate) options.end_date = endDate;
-      if (stockCsv) options.stock_csv = stockCsv;
-      options.adjust_mode = provider === "tushare_cn" && actionName === "pipeline" ? "none" : adjustMode;
-      if (provider === "tushare_cn" && token) options.token = token;
-      if (provider === "tushare_cn" && includeDailyBasic) options.include_daily_basic = true;
-      if (actionName === "pipeline" && adjustMode === "none") options.target_mode = targetMode;
-    } else if (actionName === "convert") {
-      options.stock_csv = stockCsv;
-      options.adjust_mode = adjustMode;
-    } else if (actionName === "apply_adjust") {
-      options.source = provider;
-      options.adjust_mode = targetMode;
-    } else if (actionName === "build_h5") {
-      if (startDate) options.start_date = startDate;
-    }
-    const result = await api.post("/api/data/actions", { action: actionName, options });
-    setDataMessage(JSON.stringify(result, null, 2));
+    const kwargs = dataForm.parse();
+    const job = await api.post<Job>("/api/jobs", { kind: "data", kwargs });
+    setActiveDataJob(job);
+    setDataProgress(job.progress || { job_id: job.job_id, status: job.status, percent: 0, stage: "queued", message: "queued" });
+    setDataMessage(`已启动数据任务：${job.job_id}`);
+    await dataJobs.refresh();
   }
 
   function runDataAction() {
@@ -629,7 +673,7 @@ export function MarketPage() {
 
   function loadUniverse() {
     void run(async () => {
-      const result = await api.get<{ count: number; symbols: string[] }>(`/api/data/universe${qs({ stock_csv: stockCsv })}`);
+      const result = await api.get<{ count: number; symbols: string[] }>(`/api/data/universe${qs({ stock_csv: dataForm.values.stock_csv })}`);
       setUniverse(result.symbols || []);
     });
   }
@@ -650,7 +694,18 @@ export function MarketPage() {
     });
   }
 
+  async function startBuildH5Job() {
+    const kwargs: Record<string, unknown> = { action: "build_h5" };
+    if (h5Market) kwargs.market = h5Market;
+    const job = await api.post<Job>("/api/jobs", { kind: "data", kwargs });
+    setActiveDataJob(job);
+    setDataProgress(job.progress || { job_id: job.job_id, status: job.status, percent: 0, stage: "queued", message: "queued" });
+    setDataMessage(`已启动 H5 重建任务：${job.job_id}`);
+    await dataJobs.refresh();
+  }
+
   const rows = (kline?.rows as Array<Record<string, unknown>> | undefined) || [];
+  const recentDataJobs = (dataJobs.data || []).filter((job) => job.kind === "data").slice(0, 5);
   return (
     <>
       <PageTitle title={t("market")} subtitle={t("marketSubtitle")} />
@@ -658,37 +713,38 @@ export function MarketPage() {
       <div className="grid side">
         <section className="panel">
           <h2>{t("dataActions")}</h2>
-          <div className="form-grid">
-            <label>Action<select value={actionName} onChange={(e) => setActionName(e.target.value)}>
-              <option value="pipeline">pipeline</option>
-              <option value="download">download</option>
-              <option value="apply_adjust">apply_adjust</option>
-              <option value="convert">convert</option>
-              <option value="build_h5">build_h5</option>
-            </select></label>
-            <label>Data Source<select value={provider} onChange={(e) => setProvider(e.target.value)}>
-              <option value="baostock_cn">baostock_cn</option>
-              <option value="tushare_cn">tushare_cn</option>
-            </select></label>
-            <label>Start Date<input value={startDate} onChange={(e) => setStartDate(e.target.value)} /></label>
-            <label>End Date<input value={endDate} onChange={(e) => setEndDate(e.target.value)} /></label>
-            <label>Stock CSV<input value={stockCsv} onChange={(e) => setStockCsv(e.target.value)} /></label>
-            <label>Adjust Mode<select value={adjustMode} onChange={(e) => setAdjustMode(e.target.value)}>
-              <option value="backward">backward</option>
-              <option value="forward">forward</option>
-              <option value="none">none</option>
-            </select></label>
-            <label>Target Mode<select value={targetMode} onChange={(e) => setTargetMode(e.target.value)}>
-              <option value="forward">forward</option>
-              <option value="backward">backward</option>
-            </select></label>
-            <label>Tushare Token<input type="password" value={token} onChange={(e) => setToken(e.target.value)} /></label>
-          </div>
-          <label className="inline-check"><input type="checkbox" checked={includeDailyBasic} onChange={(e) => setIncludeDailyBasic(e.target.checked)} /> Include daily_basic</label>
+          <DynamicForm specs={dataActionSpecs} values={dataForm.values} onChange={dataForm.setValue} errors={dataForm.errors} />
+          <details>
+            <summary>{t("advancedJson")}</summary>
+            <JsonTextArea value={dataAdvanced.raw} onChange={dataAdvanced.setRaw} rows={5} />
+          </details>
           <div className="row-actions left">
             <button className="button primary" disabled={busy} onClick={() => runDataAction()}>{busy ? <Spinner /> : null}{t("run")}</button>
             <button className="button" disabled={busy} onClick={() => loadUniverse()}>{t("loadUniverse")}</button>
           </div>
+          {dataProgress ? (
+            <div className="progress-card">
+              <div className="panel-head compact">
+                <h3>当前数据任务</h3>
+                <StatusPill status={dataProgress.status || activeDataJob?.status} />
+              </div>
+              <ProgressBar
+                percent={dataProgress.percent}
+                label={dataProgress.message || dataProgress.stage}
+                active={dataProgress.status === "running"}
+              />
+              <code>{activeDataJob?.job_id}</code>
+              <div className="progress-meta">
+                {typeof dataProgress.completed === "number" && typeof dataProgress.total === "number" ? <span>完成 {dataProgress.completed}/{dataProgress.total}</span> : null}
+                {typeof dataProgress.pending === "number" ? <span>等待 {dataProgress.pending}</span> : null}
+                {dataProgress.current_symbol ? <span>股票 {dataProgress.current_symbol}</span> : null}
+                {dataProgress.current_file ? <span>文件 {dataProgress.current_file}</span> : null}
+                {dataProgress.updated_at ? <span>更新 {new Date(dataProgress.updated_at).toLocaleTimeString()}</span> : null}
+                {dataProgress.latest_data_date ? <span>最新日期 {dataProgress.latest_data_date}</span> : null}
+                {dataProgress.progress_source ? <span>{dataProgress.progress_source}</span> : null}
+              </div>
+            </div>
+          ) : null}
           {universe.length ? <div className="tag-list">{universe.slice(0, 80).map((s) => <span className="tag" key={s}>{s}</span>)}{universe.length > 80 ? <span className="tag">+{universe.length - 80}</span> : null}</div> : null}
         </section>
         <aside className="panel">
@@ -725,9 +781,33 @@ export function MarketPage() {
           <button className="button" disabled={busy || !manageSymbol} onClick={() => symbolAction("/api/data/symbols/trim", { adjust_mode: manageMode, start: trimStart || null, end: trimEnd || null, drop_dates: dropDates || null, qlib_adjust_mode: manageMode })}>{t("trimSymbol")}</button>
           <h3>daily_pv h5</h3>
           <input placeholder="market optional" value={h5Market} onChange={(e) => setH5Market(e.target.value)} />
-          <button className="button" disabled={busy} onClick={() => void run(async () => { const result = await api.post("/api/data/h5/rebuild", h5Market ? { market: h5Market } : {}); setDataMessage(JSON.stringify(result, null, 2)); })}>{t("rebuildH5")}</button>
+          <button className="button" disabled={busy} onClick={() => void run(startBuildH5Job)}>{t("rebuildH5")}</button>
         </aside>
       </div>
+      <section className="panel">
+        <div className="panel-head">
+          <h2>最近数据任务</h2>
+          <button className="button small" onClick={() => void dataJobs.refresh()}>{t("refresh")}</button>
+        </div>
+        <DataTable
+          rows={recentDataJobs as unknown as Record<string, unknown>[]}
+          empty={t("empty")}
+          loading={dataJobs.loading}
+          columns={[
+            { key: "job_id", label: "Job" },
+            { key: "status", label: "Status", render: (row) => <StatusPill status={String(row.status)} /> },
+            { key: "params", label: "Action", render: (row) => <code>{String((row.params as Record<string, unknown> | undefined)?.action || "")}</code> },
+            {
+              key: "progress",
+              label: "Progress",
+              render: (row) => {
+                const progress = row.progress as JobProgress | undefined;
+                return progress ? <ProgressBar percent={progress.percent} label={progress.message || progress.stage} /> : "";
+              }
+            }
+          ]}
+        />
+      </section>
       <section className="panel">
           <h2>{t("kline")}</h2>
           {sources.error ? <Alert tone="error">{sources.error}</Alert> : null}
@@ -768,27 +848,15 @@ export function MarketPage() {
 export function DailyTradePage() {
   const { t } = useI18n();
   const strategies = useAsync(() => api.get<{ strategies: Array<Record<string, unknown>>; names: string[] }>("/api/strategies"), []);
-  const [strategyName, setStrategyName] = useState("");
-  const [date, setDate] = useState("");
-  const [initCash, setInitCash] = useState("1000000");
-  const [statePath, setStatePath] = useState("");
-  const [factorPath, setFactorPath] = useState("");
-  const [modelPicklePath, setModelPicklePath] = useState("");
-  const [refreshData, setRefreshData] = useState(false);
+  const dailySpecs = useMemo(() => withStrategyOptions(dailyTradeSpecs, strategies.data?.names || []), [strategies.data]);
   const params = useJsonInput("{}");
+  const dailyForm = useParamForm(dailySpecs, params.raw);
   const [result, setResult] = useState<unknown>(null);
   const { busy, run } = useAction();
 
   function runDailyTrade() {
     void run(async () => {
-      const payload: Record<string, unknown> = { ...params.parse(), refresh_data: refreshData };
-      if (strategyName) payload.strategy_name = strategyName;
-      if (date) payload.date = date;
-      if (statePath) payload.state_path = statePath;
-      if (factorPath) payload.factor_path = factorPath;
-      if (modelPicklePath) payload.model_pickle_path = modelPicklePath;
-      const cash = Number(initCash);
-      if (Number.isFinite(cash) && initCash.trim()) payload.init_cash = cash;
+      const payload = dailyForm.parse();
       setResult(await api.post("/api/daily-trade", payload));
     }, t("started"));
   }
@@ -799,39 +867,7 @@ export function DailyTradePage() {
       <div className="grid side">
         <section className="panel">
           {strategies.error ? <Alert tone="error">{strategies.error}</Alert> : null}
-          <div className="form-grid">
-            <label>
-              {t("strategyAsset")}
-              <select value={strategyName} onChange={(e) => setStrategyName(e.target.value)}>
-                <option value="">{t("manualModelFactor")}</option>
-                {(strategies.data?.names || []).map((name) => <option key={name} value={name}>{name}</option>)}
-              </select>
-            </label>
-            <label>
-              {t("dateLabel")}
-              <input placeholder={t("datePh")} value={date} onChange={(e) => setDate(e.target.value)} />
-            </label>
-            <label>
-              {t("initCash")}
-              <input value={initCash} onChange={(e) => setInitCash(e.target.value)} />
-            </label>
-            <label>
-              {t("statePath")}
-              <input value={statePath} onChange={(e) => setStatePath(e.target.value)} />
-            </label>
-            <label>
-              {t("factorPath")}
-              <input value={factorPath} onChange={(e) => setFactorPath(e.target.value)} />
-            </label>
-            <label>
-              {t("modelPicklePath")}
-              <input value={modelPicklePath} onChange={(e) => setModelPicklePath(e.target.value)} />
-            </label>
-          </div>
-          <label className="inline-check">
-            <input type="checkbox" checked={refreshData} onChange={(e) => setRefreshData(e.target.checked)} />
-            {t("refreshBeforeRun")}
-          </label>
+          <DynamicForm specs={dailySpecs} values={dailyForm.values} onChange={dailyForm.setValue} errors={dailyForm.errors} />
           <details>
             <summary>{t("advancedParams")}</summary>
             <JsonTextArea value={params.raw} onChange={params.setRaw} rows={7} />
@@ -850,18 +886,26 @@ export function DailyTradePage() {
 export function SchedulerPage() {
   const { t } = useI18n();
   const schedules = useAsync(() => api.get<Schedule[]>("/api/schedules"), []);
+  const strategies = useAsync(() => api.get<{ names: string[] }>("/api/strategies"), []);
   const [name, setName] = useState("");
   const [kind, setKind] = useState("data");
   const [time, setTime] = useState("18:00");
   const [enabled, setEnabled] = useState(true);
   const [notify, setNotify] = useState(false);
-  const params = useJsonInput(JSON.stringify({ action: "download" }, null, 2));
+  const scheduleAdvanced = useJsonInput("{}");
+  const scheduleFields = useMemo(() => scheduleSpecsFor(kind, strategies.data?.names || []), [kind, strategies.data]);
+  const scheduleForm = useParamForm(scheduleFields, scheduleAdvanced.raw);
+
+  function changeKind(next: string) {
+    setKind(next);
+    scheduleAdvanced.setRaw("{}");
+  }
   const daemon = useAsync(() => api.get<Record<string, unknown>>("/api/schedules/daemon"), []);
   const { busy, run } = useAction();
 
   function create() {
     void run(async () => {
-      const kwargs = params.parse();
+      const kwargs = scheduleForm.parse();
       if (notify) kwargs.notify = true;
       await api.post("/api/schedules", {
         name: name || `${kind}-${time}`,
@@ -922,11 +966,13 @@ export function SchedulerPage() {
           <div className="form-grid">
             <label>
               {t("typeLabel")}
-              <select value={kind} onChange={(e) => setKind(e.target.value)}>
+              <select value={kind} onChange={(e) => changeKind(e.target.value)}>
                 <option value="data">{t("kindData")}</option>
                 <option value="mine">{t("kindMine")}</option>
                 <option value="mine_aff">{t("kindAff")}</option>
                 <option value="mine_gp">{t("kindGp")}</option>
+                <option value="mine_rl">AlphaForge RL</option>
+                <option value="mine_dso">AlphaForge DSO</option>
                 <option value="factor_backtest">{t("factorBacktest")}</option>
                 <option value="strategy_backtest">{t("strategyBacktest")}</option>
                 <option value="daily_signals">{t("kindDaily")}</option>
@@ -945,7 +991,11 @@ export function SchedulerPage() {
             <input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} />
             {t("notifyOnComplete")}
           </label>
-          <JsonTextArea value={params.raw} onChange={params.setRaw} />
+          <DynamicForm specs={scheduleFields} values={scheduleForm.values} onChange={scheduleForm.setValue} errors={scheduleForm.errors} />
+          <details>
+            <summary>{t("advancedJson")}</summary>
+            <JsonTextArea value={scheduleAdvanced.raw} onChange={scheduleAdvanced.setRaw} rows={5} />
+          </details>
           <button className="button primary" disabled={busy} onClick={() => create()}>{busy ? <Spinner /> : null}{t("save")}</button>
         </aside>
       </div>

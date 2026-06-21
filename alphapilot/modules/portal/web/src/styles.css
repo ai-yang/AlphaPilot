@@ -115,6 +115,7 @@ nav a.active::before {
   gap: 12px;
   margin-bottom: 12px;
 }
+.panel-head.compact { margin-bottom: 8px; }
 .panel h2 { font-size: 16px; margin: 0 0 12px; letter-spacing: 0; }
 .panel h3 { font-size: 14px; margin: 18px 0 8px; }
 
@@ -172,6 +173,88 @@ nav a.active::before {
 .row-actions { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
 .row-actions.left { justify-content: flex-start; }
 
+.progress-card {
+  border: 1px solid #dce2ea;
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 12px;
+  background: #f8fafc;
+}
+.progress-card code {
+  display: block;
+  margin-top: 8px;
+  color: #475467;
+  word-break: break-all;
+}
+.progress-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.progress-meta span {
+  border: 1px solid #dce2ea;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #475467;
+  padding: 3px 8px;
+  font-size: 12px;
+}
+.progress-latest {
+  margin-top: 8px;
+  color: #475467;
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+.progress-block {
+  min-width: 160px;
+}
+.progress-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: #475467;
+  font-size: 12px;
+}
+.progress-head span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.progress-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e4e8ef;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: #0f766e;
+  transition: width 0.25s ease;
+}
+.progress-block.active .progress-fill {
+  background-image: linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.28) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgba(255, 255, 255, 0.28) 50%,
+    rgba(255, 255, 255, 0.28) 75%,
+    transparent 75%,
+    transparent
+  );
+  background-size: 18px 18px;
+  animation: progress-stripes 0.8s linear infinite;
+}
+
+@keyframes progress-stripes {
+  from { background-position: 0 0; }
+  to { background-position: 18px 0; }
+}
+
 .toolbar {
   display: flex;
   align-items: center;
@@ -193,6 +276,39 @@ nav a.active::before {
   gap: 10px;
 }
 .form-grid label { margin-bottom: 0; }
+.dynamic-form {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.dynamic-form.cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.dynamic-form.cols-1 {
+  grid-template-columns: 1fr;
+}
+.dynamic-form > .alert {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}
+.dynamic-form textarea {
+  min-height: 88px;
+}
+.dynamic-form small {
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.dynamic-form .field-error {
+  color: #b42318;
+}
+.dynamic-check {
+  align-self: end;
+  min-height: 38px;
+}
+.dynamic-check small {
+  margin-left: 24px;
+}
 .inline-check {
   display: flex;
   align-items: center;
@@ -353,7 +469,7 @@ summary { cursor: pointer; font-weight: 650; }
   nav { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
   nav a { white-space: nowrap; padding: 8px 12px; }
   nav a.active::before { display: none; }
-  .grid.two, .grid.side, .split, .metric-grid, .form-grid { grid-template-columns: 1fr; }
+  .grid.two, .grid.side, .split, .metric-grid, .form-grid, .dynamic-form.cols-2 { grid-template-columns: 1fr; }
   .content { padding: 16px; }
 }
 

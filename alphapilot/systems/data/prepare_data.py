@@ -6,6 +6,11 @@ from datetime import datetime
 from pathlib import Path
 
 from alphapilot.log import logger
+try:
+    from alphapilot.modules.portal.jobs import update_current_job_progress
+except Exception:  # pragma: no cover - portal is optional for CLI data tools
+    def update_current_job_progress(*_args, **_kwargs) -> None:  # type: ignore[no-redef]
+        return None
 from alphapilot.systems.data.adjust_prices import apply_adjust_directory
 from alphapilot.systems.data.prepare_cn import (
     DEFAULT_STOCK_CSV,
@@ -424,6 +429,15 @@ class PrepareDataCLI:
             stock_csv if not all_market else None, market, all_market
         )
         end = end_date or datetime.now().strftime("%Y-%m-%d")
+        update_current_job_progress(
+            3,
+            "pipeline:start",
+            f"准备数据流水线 source={source} market={pool}",
+            source=source,
+            market=pool,
+            start_date=start_date,
+            end_date=end,
+        )
 
         if is_tushare:
             from alphapilot.systems.data import prepare_tushare
@@ -461,6 +475,13 @@ class PrepareDataCLI:
                 parallel_price_factor=parallel_price_factor,
             )
             if sync_instruments and not all_market:
+                update_current_job_progress(
+                    76,
+                    "pipeline:instruments",
+                    "写入 instruments",
+                    source=source,
+                    market=pool,
+                )
                 write_qlib_instruments(
                     codes,
                     resolved_qlib,
@@ -491,6 +512,13 @@ class PrepareDataCLI:
         convert_mode = adjust_mode
         convert_path = data_dir
         if normalize_adjust_mode(adjust_mode) == "none" and apply_adjust_after_download:
+            update_current_job_progress(
+                78,
+                "pipeline:adjust",
+                f"生成 {target_mode} 复权 CSV",
+                source=source,
+                market=pool,
+            )
             if is_tushare:
                 out_dir = canonical_tushare_raw_dir(normalize_adjust_mode(target_mode))
                 self.apply_adjust(
@@ -509,6 +537,14 @@ class PrepareDataCLI:
                 convert_path = None
             convert_mode = target_mode
 
+        update_current_job_progress(
+            90,
+            "pipeline:convert",
+            f"转换 Qlib 数据 adjust_mode={convert_mode}",
+            source=source,
+            market=pool,
+            adjust_mode=convert_mode,
+        )
         self.convert(
             stock_csv=stock_csv,
             code_column=code_column,
@@ -523,6 +559,13 @@ class PrepareDataCLI:
             end_date=end,
             sync_instruments=False,
             max_workers=dump_workers,
+        )
+        update_current_job_progress(
+            98,
+            "pipeline:finalize",
+            "数据流水线即将完成",
+            source=source,
+            market=pool,
         )
         logger.info(f"全流程完成。source={source} market={pool!r}，请确认 conf.yaml 一致。")
 

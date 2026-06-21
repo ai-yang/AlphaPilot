@@ -254,6 +254,13 @@ def create_app(*, static_dir: str | Path | None = None, engine: Any | None = Non
         except Exception as exc:  # noqa: BLE001
             raise _api_error(exc) from exc
 
+    @app.get("/api/jobs/{job_id}/progress")
+    def job_progress(job_id: str, max_chars: int = 50000) -> dict[str, Any]:
+        try:
+            return _jsonable(jobs.read_progress(job_id, max_chars=max_chars))
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
     @app.get("/api/jobs/{job_id}/result")
     def job_result(job_id: str) -> dict[str, Any] | None:
         try:
@@ -708,7 +715,23 @@ def create_app(*, static_dir: str | Path | None = None, engine: Any | None = Non
     @app.post("/api/daily-trade")
     def daily_trade(payload: dict[str, Any]) -> dict[str, Any]:
         try:
-            return _jsonable(_engine(app).get_module("daily_trade").daily_signals(**payload))
+            kwargs = dict(payload)
+            notify_flag = bool(kwargs.pop("notify", False))  # control key, not a task arg
+            result = _engine(app).get_module("daily_trade").daily_signals(**kwargs)
+            if notify_flag and isinstance(result, dict):
+                # Best-effort push of today's positions/trades; never fail the request on it.
+                try:
+                    from alphapilot.log import logger
+                    from alphapilot.systems import notify as notify_pkg
+
+                    message = notify_pkg.build_job_message(
+                        kind="daily_signals", job_id="manual", status="succeeded",
+                        result=result, kwargs=kwargs,
+                    )
+                    result.setdefault("info", {})["notify"] = notify_pkg.send(message)
+                except Exception as notify_exc:  # noqa: BLE001 - notify is best-effort
+                    logger.warning(f"[daily-trade] notify skipped: {notify_exc}")
+            return _jsonable(result)
         except Exception as exc:  # noqa: BLE001
             raise _api_error(exc) from exc
 
