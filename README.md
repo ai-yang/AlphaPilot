@@ -28,7 +28,7 @@ AlphaPilot 通过三个 Agent 协作完成因子挖掘：
 
 ### 2. 回测结果可视化（`alphapilot/modules/backtest_viz/` + `systems/backtest/artifacts.py`）
 
-在原版 `alphapilot ui`（运行日志总览）之外，新增回测查看器（`backtest_viz` / portal「回测详情」），支持：
+在原版 `alphapilot ui`（运行日志总览）之外，新增回测查看器（`backtest_viz` / portal「回测」页），支持：
 
 - 收益曲线、超额收益、回撤
 - 日换手与成本
@@ -50,9 +50,21 @@ AlphaPilot 通过三个 Agent 协作完成因子挖掘：
 - **可配置 yaml**：`--yaml_params`（JSON / 文件）在运行时渲染 `QlibYamlParams` 到 workspace，可改模型、调仓策略、回测区间、TopK 等，无需先改静态模板（亦可用 `qlib_yaml_generate` 落盘到 `factor_qlib_templates/`）。
 - **引擎**：`engines/qlib_workflow.py`（全量 `qrun`）、`engines/qlib_signal.py`（IC 快筛）；编排见 `pipelines/factor_evaluation.py`。
 - **模型资产**：`qrun` 完成后 workspace 会尝试导出 `fitted_model.pkl`（`scoring_model_export.py`），供 `strategy_backtest --mode=reuse_model` 与下方日频信号复用。
-- **日频交易信号**（`systems/backtest/live/` + `alphapilot daily_signals`）：加载已训练模型，在**昨日持仓 + 现金**基础上只推进 **一个交易日**（qlib 底层 `backtest`，非整段 `qrun`）；状态写入 `git_ignore_folder/portfolio_state/<策略>.json` 并自动滚动。Portal：**自动化 → 每日交易**。
+- **日频交易信号**（`systems/backtest/live/` + `alphapilot daily_signals`）：加载已训练模型，在**昨日持仓 + 现金**基础上只推进 **一个交易日**（qlib 底层 `backtest`，非整段 `qrun`）；状态写入 `git_ignore_folder/portfolio_state/<策略>.json` 并自动滚动。Portal：**每日交易**页。
 
 设计细节与路线图见 [docs/alphapilot-backtest.md](docs/alphapilot-backtest.md)。
+
+### 2.6 统一 Web 门户（React/FastAPI）
+
+原 Streamlit 统一门户已重写为 **FastAPI 后端 + React/TypeScript (Vite) 前端**：
+
+| 组件 | 路径 | 说明 |
+|------|------|------|
+| API | `alphapilot/modules/portal/api.py` | REST 后端，驱动页面与后台 job |
+| 前端 | `alphapilot/modules/portal/web/` | React 源码；`npm run build` → `web/dist/` |
+| 旧版 | `alphapilot/modules/portal/app.py` | Streamlit 门户，经 `alphapilot portal_legacy` 启动 |
+
+`alphapilot portal` 由 Python 托管 `dist/` 静态文件并暴露 `/api/*`；`ui` / `backtest_ui` 能力已整合进新版各导航页。旧版 Streamlit 保留作回退。
 
 ### 3. 数据准备命令（`alphapilot prepare_data`）
 
@@ -189,7 +201,8 @@ alphapilot qlib_yaml_validate \
 - 策略复测编排收拢到 `alphapilot/systems/strategy/backtest.py`，经 `context.backtest()` 执行，**不再**经 `alpha_mining` 模块中转
 - 挖掘日志 UI（`alphapilot/log/ui/`）通过 `core.scenario.Scenario` 的 UI trait 分支渲染，**不再 import** `alpha_mining` 具体场景类
 - adapter 层仅保留 **LLM + 数据源** 可插拔边界；已移除未接入主路径的 backtest engine adapter（`get_backtest_engine`），回测统一经 `systems/backtest/` 执行（详见 [alphapilot/adapters/README.md](alphapilot/adapters/README.md)）
-- 任务完成通知收拢到 `alphapilot/systems/notify/`（Telegram / 飞书 / 邮件）；Portal「自动化 → 通知」配置凭证，后台 job 结束时由 `modules/portal/jobs.py` 触发推送
+- 统一 Web 门户：`modules/portal/api.py`（FastAPI）+ `modules/portal/web/`（React/Vite 前端）；旧 Streamlit 版保留为 `app.py` / `alphapilot portal_legacy`
+- 任务完成通知收拢到 `alphapilot/systems/notify/`（Telegram / 飞书 / 邮件）；Portal「通知」页配置凭证，后台 job 结束时由 `modules/portal/jobs.py` 触发推送
 
 **数据系统代码位置（供二开参考）**
 
@@ -239,13 +252,13 @@ data.run_download(DataDownloadCommand(
 - **`daily_pv_*.h5` 无增量模式**，默认**延后重建**：上述命令会提示「h5 已过期」。请在改动完成后运行 `alphapilot prepare_data h5`（或给 `refresh/trim` 加 `--rebuild_h5 True`）让因子数据同步。
 - 所有破坏性操作支持 `--dry_run True` 先预览将改动的文件 / instruments 行。
 - 单股重 dump 依赖已存在的 `instruments/all.txt` 与 `calendars/day.txt`；若缺失会提示改跑全量 `alphapilot prepare_data convert`。
-- Portal「数据」标签也内嵌了同一套删除 / 刷新 / 裁剪控件与「重建 daily_pv h5」按钮。
+- Portal「市场数据」页也内嵌了同一套删除 / 刷新 / 裁剪控件与「重建 daily_pv h5」按钮。
 
 ### 7. 任务完成通知（`alphapilot/systems/notify/`）
 
 因子挖掘、因子/策略回测、数据任务、AlphaForge 等**后台任务**完成后，可推送摘要到 **Telegram**、**飞书** 或 **邮件 SMTP**。
 
-- **配置入口**：`alphapilot portal` → **自动化** → **通知**
+- **配置入口**：`alphapilot portal` → **通知**
 - **凭证文件**：`~/.alphapilot/credentials/notify.json`（仓库外，权限 `0600`；勿提交 git）
 - **触发方式**：在「定时任务」创建任务时勾选「完成后通知」；或在通知页开启「所有后台任务完成都通知」
 - **环境变量覆盖**（服务器部署）：`ALPHAPILOT_NOTIFY_*`（如 `ALPHAPILOT_NOTIFY_TELEGRAM_BOT_TOKEN`、`ALPHAPILOT_NOTIFY_FEISHU_WEBHOOK`）；**运行时 env 优先于文件**
@@ -278,6 +291,29 @@ conda activate alphapilot
 cd AlphaPilot
 pip install -e .
 ```
+
+**Portal（React/FastAPI）额外说明**
+
+新版 `alphapilot portal` 使用 **FastAPI 后端 + React/TypeScript (Vite) 前端**：
+
+- Python 后端依赖 `fastapi`、`uvicorn`，已写入 `requirements.txt`，执行 `pip install -e .` 时会安装到当前 conda 环境（例如 `conda activate alphapilot` 后的 `alphapilot` 环境）。
+- 前端构建需要 **Node.js/npm**。Node 不需要装进 conda 虚拟环境，推荐用 Homebrew 安装系统级 Node：
+
+```bash
+brew install node
+```
+
+如果 conda 环境里的旧 Node 在 `PATH` 前面，构建时可显式使用 Homebrew Node：
+
+```bash
+cd alphapilot/modules/portal/web
+PATH=/opt/homebrew/bin:$PATH npm install --registry=https://registry.npmmirror.com
+PATH=/opt/homebrew/bin:$PATH npm run build
+```
+
+构建完成后会生成 `alphapilot/modules/portal/web/dist/`。运行 `alphapilot portal` 只需要这个 `dist/` 和 Python 后端依赖；不需要每次启动都运行 npm。旧版 Streamlit 门户保留为 `alphapilot portal_legacy`。
+
+本地开发前端时，可在一个终端运行 `alphapilot portal --port 19901`，另一个终端在 `alphapilot/modules/portal/web` 下执行 `npm run dev`（Vite 默认 `http://localhost:5173`，`/api` 代理到后端）。仅改 Python 后端时可用 `alphapilot portal --reload --port 19901`（需配合 `npm run dev` 或已构建的 `dist/`）。
 
 **可选：AlphaForge 公式化挖掘依赖**
 
@@ -749,13 +785,13 @@ alphapilot mine_dso --instruments=test_stock_pool_80
 
 常用参数：`--instruments`（股票池）、`--train_end_year`（默认 2020：train=[2010,end]、valid=end+1、test=end+2）、`--device`（`cpu`/`mps`/`cuda`，省略自动探测）、`--save`（加入因子库，默认 True）、`--backtest`（回测通过的因子，默认 False）；其余训练超参经 `**kwargs` 透传（如 `--top_n=50`、`--num_epochs_g=50`）。
 
-也可在 **Portal「因子挖掘」页 → 「AlphaForge（公式化）」标签** 以表单方式启动：选择方法、股票池（自动列出本地可用 instrument set）、设备与超参，**作为后台任务运行**，并在下方任务面板查看日志 / 进度 / 取消。
+也可在 **Portal「因子挖掘」页** 以 JSON kwargs 启动 AlphaForge（GP/RL/AFF/DSO）**后台任务**，并在任务面板查看日志 / 进度 / 取消。
 
 详见模块文档 [alphapilot/modules/alphaforge/README.md](alphapilot/modules/alphaforge/README.md)。
 
 ### 2. 多因子回测
 
-默认模式是 `multi_combined`：把 CSV 里的多条因子合并成一套特征，训练模型并跑组合回测，产物可在 portal「回测分析 → 回测详情」查看。
+默认模式是 `multi_combined`：把 CSV 里的多条因子合并成一套特征，训练模型并跑组合回测，产物可在 portal「回测」页查看。
 
 ```bash
 alphapilot backtest --factor_path /path/to/factors.csv
@@ -816,9 +852,9 @@ alphapilot backtest \
   --yaml_params='{"model_class": "LGBModel", "model_module": "qlib.contrib.model.gbdt", "strategy_class": "TopkDropoutStrategy", "strategy_module": "qlib.contrib.strategy", "strategy_kwargs": {"topk": 20, "n_drop": 5, "signal": "<PRED>"}}'
 ```
 
-Portal 中也可以使用：进入「回测分析 → 启动回测 → 因子 CSV」，填写 `Factor CSV path`，选择 `Backtest mode`，可选填写“模型与策略配置（JSON 补丁）”，提交后会生成后台 job。
+Portal 中也可以使用：进入「回测」页，在因子回测或策略回测表单的 JSON kwargs 中填写 `factor_path`、`mode`、`yaml_params` 等，提交后会生成后台 job。
 
-> **Portal 入口差异**：因子库页的「回测选中因子」「回测该类别」以及 AlphaForge 的 `--backtest` 仍走默认 `multi_combined`；要选 `single_ic` / `multi_sequential` 或填 `yaml_params`，请用「回测分析 → 启动回测」，或在「定时任务 → 高级 kwargs」里传 `{"mode":"single_ic", ...}`。
+> **Portal 入口差异**：因子库页的「回测选中因子」「回测该类别」以及 AlphaForge 的 `--backtest` 仍走默认 `multi_combined`；要选 `single_ic` / `multi_sequential` 或填 `yaml_params`，请用「回测」页的 JSON kwargs，或在「定时任务」高级 kwargs 里传 `{"mode":"single_ic", ...}`。
 
 ### 3. 策略资产复测（`strategy_backtest`）
 
@@ -898,7 +934,7 @@ alphapilot daily_signals \
 
 终端会打印当日买卖列表、目标持仓、Top 模型打分等摘要；状态 JSON 含 `date`、`cash`、`positions`（instrument → 股数）。
 
-**Portal**：**自动化 → 每日交易** — 选择策略资产或手动填写模型 pkl / 因子 CSV / `yaml_params`，提交后作为后台 job 运行（与挖掘/回测 job 共用任务面板）。
+**Portal**：**每日交易**页 — 选择策略资产或手动填写模型 pkl / 因子 CSV / `yaml_params`，提交后作为后台 job 运行（与挖掘/回测 job 共用任务面板）。
 
 > 日频信号走 qlib **单日** `backtest` + 静态模型打分，**不是** `qrun` 全历史重跑；与 `strategy_backtest --mode=reuse_model` 共用同一套模型与 yaml 参数语义。
 
@@ -908,11 +944,12 @@ alphapilot daily_signals \
 
 | 命令 | 状态 | 主要用途 |
 |------|------|----------|
-| `alphapilot portal` | **推荐** | 一站式 Web 门户：数据/因子/策略/回测、**挖掘日志**、**回测详情**、K 线、**定时任务 / 通知**、模块命令等 |
-| `alphapilot data_viz` | 可选独立 | 查看已下载股票 CSV：**K 线图**（门户「股票 K 线」标签已内嵌，通常无需单独启动） |
-| `alphapilot backtest_viz` | 可选独立 | 查看回测 workspace 产物（门户「回测 → 回测详情」已内嵌，通常无需单独启动） |
+| `alphapilot portal` | **推荐** | 新版 FastAPI + React 一站式 Web 门户：数据/因子/策略/回测、K 线、**定时任务 / 通知**、模块命令等 |
+| `alphapilot portal_legacy` | 旧版回退 | Streamlit 版旧门户；用于新版前端未构建或需要临时回退时使用 |
+| `alphapilot data_viz` | 可选独立 | 查看已下载股票 CSV：**K 线图**（portal「市场数据」页已内嵌，通常无需单独启动） |
+| `alphapilot backtest_viz` | 可选独立 | 查看回测 workspace 产物（portal「回测」页已内嵌，通常无需单独启动） |
 | `alphapilot ui` | **已弃用** | 打印重定向提示 → 请使用 portal「因子挖掘」页 |
-| `alphapilot backtest_ui` | **已弃用** | 打印重定向提示 → 请使用 portal「回测分析 → 回测详情」或 `backtest_viz` |
+| `alphapilot backtest_ui` | **已弃用** | 打印重定向提示 → 请使用 portal「回测」页或 `backtest_viz` |
 
 > 说明：CLI 入口已改为 **modules-only** 分发；新增第三方模块后会自动出现在 `alphapilot modules` 与 `alphapilot portal` 页面中。
 
@@ -933,41 +970,68 @@ alphapilot data_viz --port 19902
 
 #### 4.1 统一 Web 门户（推荐）
 
+首次从源码运行新版门户前，请先确认前端已构建：
+
+```bash
+cd alphapilot/modules/portal/web
+PATH=/opt/homebrew/bin:$PATH npm install --registry=https://registry.npmmirror.com
+PATH=/opt/homebrew/bin:$PATH npm run build
+cd -
+```
+
+然后启动 FastAPI 后端并托管前端静态文件：
+
 ```bash
 alphapilot portal --port 19901
 ```
 
-浏览器打开 `http://localhost:19901`。门户已按**交易者工作流**重组为**左侧分组导航**（不再是开发者风格的「系统/模块/命令」概览页）：
+浏览器打开 `http://localhost:19901`。如果只想临时使用旧版 Streamlit 门户，可运行：
 
-- **🏠 首页**：关键状态一览（本地股票数、因子库/策略数量、回测记录数及最近一次回测）、**最近挖掘会话**列表，以及一键直达常用任务的快捷按钮（**因子挖掘**置顶）。
-- **研究** 分组
-  - **🔬 因子挖掘**：含「LLM 挖掘」与「**AlphaForge（公式化）**」两个标签。LLM 标签输入市场假说、Start/Stop 挖掘（需后端服务可用）、查看每轮假说/因子代码/反馈与 Qlib 报告图，支持**删除当前 log 会话**；AlphaForge 标签以表单启动 GP/RL/AFF/DSO 公式化挖掘（无需 LLM），作为**后台任务**运行并在任务面板查看进度。
-  - **📊 回测分析**：**启动回测**（因子 CSV / 策略资产）、**运行列表**（可**删除 workspace**）+ **回测详情**（内嵌 `backtest_viz`：收益曲线、持仓、成交、因子排行榜）。
-  - **📚 因子 / 策略库**：因子校验/添加（**失败时显示具体原因**：语法、与库内过于相似、重名等）、导入导出、删除单条因子；策略参数查看/保存/导出、删除整个策略资产。
-- **数据** 分组
-  - **📈 行情数据**：**下载 / 管理** 子页（按数据源 baostock/tushare 下载、自定义下载参数、**单股删除/刷新/裁剪** + 「重建 daily_pv h5」）+ **K 线** 子页（内嵌 `data_viz`）。
-- **自动化** 分组
-  - **🧾 每日交易**：从策略资产 + 滚动持仓状态生成指定日调仓/持仓（`daily_signals` 后台 job）。
-  - **⏰ 定时任务**：创建/管理 cron 式后台任务（挖掘、回测、**每日交易**、数据 pipeline、AlphaForge 等），可勾选「完成后通知」。
-  - **📣 通知**：配置 Telegram / 飞书 / 邮件频道并测试发送（凭证见 [§7 任务完成通知](#7-任务完成通知alphapilotsystemsnotify)）。
-- **系统** 分组
-  - **⚙️ 高级**：原「概览」与「模块命令台」（系统/模块清单、JSON 命令调度）、运行时配置与「重新加载引擎」——日常交易无需使用，已默认收纳于此。
+```bash
+alphapilot portal_legacy --port 19901
+```
+
+新版门户使用 **扁平左侧导航**（支持中/英切换；顶栏显示定时任务守护进程状态；各页共用后台任务面板）：
+
+| 菜单 | 路径 | 主要功能 |
+|------|------|----------|
+| 首页 | `/` | 关键指标、最近挖掘会话、快捷入口、最近任务 |
+| 因子挖掘 | `/mining` | 启动 LLM / AlphaForge 挖掘；浏览/查看/删除 `log/` 会话 |
+| 回测 | `/backtest` | 因子/策略回测表单、workspace 列表（可删除）、收益曲线与明细 |
+| 因子/策略库 | `/library` | 因子校验/增删改、分类、导入导出；策略资产查看/导出/删除 |
+| 市场数据 | `/market` | 数据下载/转换/h5、单股管理、K 线查看 |
+| 每日交易 | `/daily-trade` | `daily_signals` 后台 job |
+| 定时任务 | `/scheduler` | cron 式任务与「完成后通知」 |
+| 通知 | `/notifications` | Telegram / 飞书 / 邮件配置与测试 |
+| 高级 | `/advanced` | 系统/模块清单、JSON 命令调度、重新加载引擎 |
+
+**本地开发**（前端热更新）：
+
+```bash
+# 终端 1
+alphapilot portal --port 19901
+
+# 终端 2
+cd alphapilot/modules/portal/web && npm run dev
+# 浏览器打开 http://localhost:5173
+```
 
 门户使用 `.env` 中的 `ALPHAPILOT_LOG_DIR`、`ALPHAPILOT_WORKSPACE_ROOT`、`ALPHAPILOT_FACTOR_ZOO_DIR`、`ALPHAPILOT_STRATEGY_PARAM_DIR` 等作为默认路径。
 
 #### 4.2 挖掘日志（portal「因子挖掘」页，原 `alphapilot ui`）
 
-用于监控 `alphapilot mine` 的完整迭代过程。在 portal 的「因子挖掘」页中：
-- 选择 `log/` 下的会话目录并刷新
-- 查看每轮假说、因子表达式、代码演化、回测反馈与指标图表
-- 支持 Start/Stop Mining API（若后端服务可用）
-- 勾选确认后可删除当前 log 会话目录（**不**会连带删除 `strategy_zoo` 或回测 workspace）
+在 portal「因子挖掘」页中：
 
-> `alphapilot ui` 已弃用，执行后仅打印 portal 重定向提示。
+- 以 JSON kwargs 启动 LLM 挖掘或 AlphaForge（GP/RL/AFF/DSO）后台 job
+- 浏览 `log/` 下挖掘会话列表，打开会话内文件查看文本内容
+- 删除单个 log 会话目录（**不**连带删除 `strategy_zoo` 或回测 workspace）
+- 页面底部任务面板可查看 job 进度 / 日志 / 取消
 
-#### 4.3 回测详情（portal「回测分析 → 回测详情」，原 `alphapilot backtest_ui`）
+> 带 Qlib 报告图、多轮假说迭代的完整 Streamlit 挖掘面板仍可通过 `alphapilot portal_legacy` 访问。`alphapilot ui` 已弃用，执行后仅打印 portal 重定向提示。
 
-在 portal「回测」标签的「运行列表」子页可列出并**删除**含 `ret.pkl` 的 workspace；「回测详情」子页中选择 `git_ignore_folder/RD-Agent_workspace` 下的工作区，查看收益曲线、持仓、成交等。下拉列表会尽量显示 **`log/` 里对应的会话文件夹名**。数据由 backtest system 的 `BacktestResultStore` 加载，底层解析在 `systems/backtest/artifacts.py`。
+#### 4.3 回测详情（portal「回测」页，原 `alphapilot backtest_ui`）
+
+portal「回测」页在同一屏幕内提供：上方因子/策略回测启动表单；下方 workspace 列表（可**删除**含 `ret.pkl` 的工作区）；选中 workspace 后展示收益曲线、指标、成交与持仓。列表会尽量显示 **`log/` 里对应的会话文件夹名**。数据由 backtest system 的 `BacktestResultStore` 加载，底层解析在 `systems/backtest/artifacts.py`。
 
 「回测详情」顶部还有 **因子排行榜** 面板，会扫描 workspace 根目录下的 `*_leaderboard.csv`：
 
@@ -995,11 +1059,11 @@ alphapilot backtest_viz --port 19903
 
 > `alphapilot backtest_ui` 已弃用。如需修改默认路径，请在 `.env` 中设置 `ALPHAPILOT_WORKSPACE_ROOT`（或 `ALPHAPILOT_BACKTEST_ROOT`）与 `ALPHAPILOT_LOG_DIR`。
 
-#### 4.4 任务完成通知（portal「自动化 → 通知」）
+#### 4.4 任务完成通知（portal「通知」页）
 
 后台任务（定时任务、AlphaForge、Portal 触发的挖掘/回测/数据 job 等）结束时会推送标题、状态、Job ID 与结果摘要。支持 **Telegram**、**飞书自定义机器人 Webhook**、**SMTP 邮件** 三个频道，可并行启用。
 
-1. 打开 portal → **自动化** → **通知**，填写频道凭证并 **Save**
+1. 打开 portal → **通知**，填写频道凭证并 **Save**
 2. 点 **Test Send** 验证（须先 Save）
 3. 在 **定时任务** 创建任务时勾选「完成后通知」，或在通知页开启「所有后台任务完成都通知」
 
@@ -1089,7 +1153,11 @@ AlphaPilot/
 │   ├── modules/                # 功能模块（alpha_mining/portal/platform/data_viz/backtest_viz/strategy_backtest/daily_trade/qlib_yaml/factor_cli + 插件）
 │   │   ├── alpha_mining/       # 因子挖掘（qlib 场景 + loops + conf + registry）
 │   │   ├── platform/           # prepare_data、单股数据管理、modules 命令；ui/backtest_ui 弃用提示
-│   │   ├── portal/             # 统一 Web 门户（alphapilot portal）
+│   │   ├── portal/             # 统一 Web 门户（FastAPI + React；legacy Streamlit 见 app.py）
+│   │   │   ├── api.py          # FastAPI 后端（alphapilot portal）
+│   │   │   ├── web/            # React/TypeScript 前端（npm run build → dist/）
+│   │   │   ├── app.py          # Streamlit 旧版（alphapilot portal_legacy）
+│   │   │   ├── jobs.py / schedules.py
 │   │   ├── data_viz/           # 股票 K 线（alphapilot data_viz）
 │   │   ├── backtest_viz/       # 回测详情 UI（alphapilot backtest_viz）
 │   │   ├── strategy_backtest/  # 策略资产列表与复测 CLI
@@ -1099,7 +1167,7 @@ AlphaPilot/
 │   │   ├── alphaforge/         # AlphaForge 公共层（vendor 引擎 + translate/pipeline/data_adapter，非注册模块）
 │   │   ├── alphaforge_aff/     # AFF（GAN）公式化挖掘（mine_aff）
 │   │   └── alphaforge_search/  # GP / RL / DSO 公式化挖掘（mine_gp / mine_rl / mine_dso）
-│   └── log/ui/                 # 挖掘日志 panel（portal 嵌入；基于 Scenario trait，不依赖 alpha_mining）
+│   └── log/ui/                 # 挖掘日志 Streamlit panel（portal_legacy 嵌入；新版 portal 经 API 读 log）
 ├── tests/                      # pytest（如 systems/factor/test_factor_validation.py）
 ├── .env.example             # 环境变量模板
 ├── import_factors_from_log.py  # 从 log 提取因子公式写入因子库（去重；--validate 打印拒绝原因）

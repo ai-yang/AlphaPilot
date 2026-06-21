@@ -154,6 +154,13 @@ class FactorEvaluationPipeline:
             use_local=use_local,
         )
         apply_context_env(factor_data_ctx)
+        # When invoked under an `alphapilot backtest` run, link the shared h5 cache into the run
+        # dir and record its fingerprint. No-op for internal callers (strategy/daily) with no run.
+        from alphapilot.systems.run_workspace import current_run
+
+        run = current_run()
+        if run is not None:
+            run.attach_factor_data(factor_data_ctx)
         scenario = QlibFactorEvaluationScenario(
             use_local=use_local,
             qlib_template_dir=request.qlib_template_dir,

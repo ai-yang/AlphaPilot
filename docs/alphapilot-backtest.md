@@ -112,7 +112,8 @@ flowchart TB
 | 结果索引 | `alphapilot/systems/backtest/results.py` | `BacktestResultStore`、workspace 列表/删除 |
 | 策略复测编排 | `alphapilot/systems/strategy/backtest.py` | `retrain` / `reuse_model` → backtest system |
 | AlphaForge 输出 | `alphapilot/modules/alphaforge/pipeline.py` | `emit_factors(..., backtest=True)` |
-| Portal | `alphapilot/modules/portal/app.py` | 因子库类别回测、回测页 CSV 表单 |
+| Portal API | `alphapilot/modules/portal/api.py` | REST 后端；因子库/回测/数据等页面触发 job |
+| Portal 前端 | `alphapilot/modules/portal/web/` | React/TypeScript (Vite) 单页应用 |
 | Portal job | `alphapilot/modules/portal/jobs.py` | `factor_backtest` → `alpha_mining.run_backtest` |
 
 ### 2.3 关键代码行为
@@ -190,7 +191,7 @@ python read_exp_res.py
 | 入口 | 输入 | 实际行为 | 常见误解 |
 |------|------|----------|----------|
 | Portal → 因子库 → **回测该类别** | 类别下全部因子导出临时 CSV | 一次 `factor_backtest` job，combined 回测 | 以为是类别内逐个测 |
-| Portal → 回测分析 → **因子 CSV** | `factor_path` | 同上 | — |
+| Portal → **回测**页（因子回测 JSON kwargs） | `factor_path` | 同上 | — |
 | `alphapilot backtest` | `--factor_path` | 同上 | CLI 描述为「单因子 CSV」易误解为单因子模式 |
 | AlphaForge `backtest=True` | 当次 `accepted` 因子列表 | `emit_factors` → `run_factor_evaluation` | — |
 | `mine` 循环 | 每轮 `factor_backtest` 步 | `QlibFactorRunner` on 当轮因子实验 | 与 LLM 挖掘流程绑定 |

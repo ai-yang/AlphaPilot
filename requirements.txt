@@ -44,6 +44,8 @@ docker
 
 # demo related
 streamlit
+fastapi
+uvicorn
 plotly
 st-theme
 

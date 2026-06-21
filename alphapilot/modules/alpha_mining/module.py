@@ -51,6 +51,7 @@ class AlphaMiningModule(BaseModule):
         from alphapilot.log import logger
         from alphapilot.modules.alpha_mining.registry import get_scenario
         from alphapilot.systems.data.factor_h5 import apply_context_env, prepare_factor_data_context
+        from alphapilot.systems.run_workspace import run_workspace
 
         use_local = self.context.config.backtest.use_local
         spec = get_scenario(scenario, command="mine")
@@ -77,25 +78,35 @@ class AlphaMiningModule(BaseModule):
             f"market={factor_data_ctx.spec.market} factor_data_spec={factor_data_ctx.fingerprint} "
             f"pickle_cache_mine={bt_cfg.pickle_cache_dir_mine}"
         )
-        if path is None:
-            loop = loop_cls(
-                prop_setting,
-                potential_direction=direction,
-                stop_event=stop_event,
-                use_local=use_local,
-                context=self.context,
-                qlib_config_name=resolved_qlib_config,
-                qlib_template_dir=resolved_template_dir,
-            )
-        else:
-            loop = loop_cls.load(path, use_local=use_local)
-            setattr(loop, "context", self.context)
-            if resolved_qlib_config:
-                loop.qlib_config_name = resolved_qlib_config
-            if resolved_template_dir:
-                loop.qlib_template_dir = resolved_template_dir
-        loop.factor_data_context = factor_data_ctx
-        loop.run(step_n=step_n, stop_event=stop_event)
+        # All factor/experiment workspaces this run creates land under runs/<id>/workspaces/
+        # (the override must be active before the loop builds any workspace).
+        with run_workspace(
+            command="mine",
+            market=factor_data_ctx.spec.market,
+            scenario=scenario,
+            qlib_config_name=resolved_qlib_config,
+            qlib_template_dir=resolved_template_dir,
+            factor_data_ctx=factor_data_ctx,
+        ):
+            if path is None:
+                loop = loop_cls(
+                    prop_setting,
+                    potential_direction=direction,
+                    stop_event=stop_event,
+                    use_local=use_local,
+                    context=self.context,
+                    qlib_config_name=resolved_qlib_config,
+                    qlib_template_dir=resolved_template_dir,
+                )
+            else:
+                loop = loop_cls.load(path, use_local=use_local)
+                setattr(loop, "context", self.context)
+                if resolved_qlib_config:
+                    loop.qlib_config_name = resolved_qlib_config
+                if resolved_template_dir:
+                    loop.qlib_template_dir = resolved_template_dir
+            loop.factor_data_context = factor_data_ctx
+            loop.run(step_n=step_n, stop_event=stop_event)
 
     def run_factor_backtest_request(self, request: "FactorBacktestRequest") -> "FactorBacktestResult":
         """Orchestrate CSV/list factor backtest (propose → calculate → qlib via backtest system)."""
@@ -146,13 +157,17 @@ class AlphaMiningModule(BaseModule):
         qlib_template_dir: str | None = None,
         mode: str = "multi_combined",
         yaml_params: str | None = None,
+        market: str | None = None,
     ) -> None:
         """Run a single-shot factor backtest from a factor CSV.
 
         ``mode``: ``multi_combined`` (default) | ``single_ic`` | ``multi_sequential``.
         ``yaml_params``: optional JSON string / file path overriding model / strategy / dataset.
+        ``market``: instrument pool for the factor h5 spec (default resolves from yaml/default).
         """
         from alphapilot.systems.backtest.types import FactorBacktestRequest
+        from alphapilot.systems.data.factor_h5 import resolve_market
+        from alphapilot.systems.run_workspace import run_workspace
 
         if path is not None:
             raise NotImplementedError(
@@ -162,17 +177,29 @@ class AlphaMiningModule(BaseModule):
         if factor_path is None:
             raise ValueError("factor_path is required for alphapilot backtest.")
 
-        self.run_factor_backtest_request(
-            FactorBacktestRequest(
-                factor_path=factor_path,
-                scenario=scenario,
-                qlib_config_name=qlib_config_name,
-                qlib_template_dir=qlib_template_dir,
-                use_local=self.context.config.backtest.use_local,
-                mode=mode,
-                yaml_params=self._parse_yaml_params(yaml_params),
+        parsed_yaml = self._parse_yaml_params(yaml_params)
+        # The h5 context is built inside the pipeline (_build_experiment, which attaches it to the
+        # active run); resolve the market here only to name the run dir.
+        run_market = resolve_market(explicit=market, yaml_params=parsed_yaml)
+        with run_workspace(
+            command="backtest",
+            market=run_market,
+            scenario=scenario,
+            qlib_config_name=qlib_config_name,
+            qlib_template_dir=qlib_template_dir,
+        ):
+            self.run_factor_backtest_request(
+                FactorBacktestRequest(
+                    factor_path=factor_path,
+                    scenario=scenario,
+                    qlib_config_name=qlib_config_name,
+                    qlib_template_dir=qlib_template_dir,
+                    use_local=self.context.config.backtest.use_local,
+                    mode=mode,
+                    yaml_params=parsed_yaml,
+                    market=market,
+                )
             )
-        )
 
     # ---- Mining log session management ----
 
@@ -199,6 +226,20 @@ class AlphaMiningModule(BaseModule):
         shutil.rmtree(target)
         return True
 
+    # ---- Run workspace management ----
+
+    def list_runs(self) -> list[dict[str, Any]]:
+        """List per-task run directories (newest first) with their manifest summary."""
+        from alphapilot.systems.run_workspace import list_runs
+
+        return list_runs()
+
+    def delete_run(self, run_id: str) -> bool:
+        """Delete a per-task run directory (shared cache symlink targets are preserved)."""
+        from alphapilot.systems.run_workspace import delete_run
+
+        return delete_run(run_id)
+
     # ---- CLI contribution ----
 
     def commands(self) -> dict[str, Callable[..., Any]]:
@@ -207,4 +248,6 @@ class AlphaMiningModule(BaseModule):
             "backtest": self.run_backtest,
             "list_mine_logs": self.list_mining_sessions,
             "delete_mine_log": self.delete_mining_session,
+            "list_runs": self.list_runs,
+            "delete_run": self.delete_run,
         }

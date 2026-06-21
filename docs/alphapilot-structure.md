@@ -34,9 +34,10 @@
 | `alphapilot backtest` | 对已有因子 CSV 做回测 |
 | `alphapilot strategy_backtest` | 从 `strategy_zoo` 已保存策略资产复测 |
 | `alphapilot strategy_backtest_list` | 列出已保存策略资产 |
-| `alphapilot portal` | 统一 Web 门户（数据/因子/策略/回测、挖掘日志、K 线等） |
-| `alphapilot ui` | **已弃用**，请使用 `alphapilot portal` →「挖掘日志」 |
-| `alphapilot backtest_ui` | **已弃用**，请使用 `alphapilot portal` →「回测 → 回测详情」 |
+| `alphapilot portal` | 统一 Web 门户（FastAPI + React；`npm run build` 后 `alphapilot portal`） |
+| `alphapilot portal_legacy` | Streamlit 旧版门户（前端未构建或需完整挖掘日志面板时回退） |
+| `alphapilot ui` | **已弃用**，请使用 `alphapilot portal` →「因子挖掘」 |
+| `alphapilot backtest_ui` | **已弃用**，请使用 `alphapilot portal` →「回测」 |
 
 ---
 
@@ -53,7 +54,7 @@
 | **策略复测模块** | `alphapilot/modules/strategy_backtest/` | CLI：`strategy_backtest` / `strategy_backtest_list` |
 | **交易回测系统** | `alphapilot/systems/backtest/` | 因子/模型回测（统一由 system 内部 qlib workspace 执行）、结果存取（`BacktestResultStore`）；设计说明见 [alphapilot-backtest.md](alphapilot-backtest.md) |
 | **模块 modules** | `alphapilot/modules/` | 可插拔特性；内置 `alpha_mining`、`portal`、`platform`、`data_viz` 等 |
-| **Web 门户** | `alphapilot/modules/portal/` | 统一 Streamlit 门户（`alphapilot portal`） |
+| **Web 门户** | `alphapilot/modules/portal/` | FastAPI（`api.py`）+ React/TypeScript 前端（`web/`）；Streamlit 旧版见 `app.py` / `portal_legacy` |
 
 四大系统通过 `adapters/` 保持外部边界可替换（当前重点为 LLM/数据源）。回测默认由 backtest system 内聚的 qlib 执行链路统一承载；系统服务内部对 qlib/baostock/pandas 采用惰性导入，因此内核装配与命令发现保持轻量。
 
@@ -140,7 +141,7 @@ flowchart TB
 |------|------|
 | `cli.py` | 加载 `.env`，用 Fire 分发子命令 |
 | `cli.py` + `modules/` | `alphapilot mine/backtest/...` 统一走模块分发入口 |
-| `modules/backtest_viz/` | Streamlit 回测详情 panel（由 portal 嵌入；产物解析在 `systems/backtest/artifacts.py`） |
+| `modules/backtest_viz/` | Streamlit 回测详情 panel（独立 CLI；新版 portal「回测」页经 API 展示同类数据；产物解析在 `systems/backtest/artifacts.py`） |
 | `CI/` | 持续集成相关辅助 |
 
 ### `core/` — 抽象框架（与 Qlib 无关的通用骨架）
@@ -250,7 +251,7 @@ flowchart TB
 |------|------|
 | `logger.py` / `storage.py` | 结构化记录每轮假说、代码、回测结果 |
 | `tag_utils.py` | 日志 tag 规范化；`resolve_scenario_from_log` 从 pickle 恢复 `core.scenario.Scenario` |
-| `ui/` | 挖掘日志 Streamlit panel（由 `alphapilot portal` 嵌入；`alphapilot ui` 已弃用） |
+| `ui/` | 挖掘日志 Streamlit panel（由 `portal_legacy` 嵌入；新版 portal 经 `/api/mining/*` 读 log；`alphapilot ui` 已弃用） |
 | `ui/session.py` | 通过 `Scenario` 的 UI trait（`is_mining_scenario` 等）分支渲染，**不 import** `alpha_mining` 具体场景类 |
 | `ui/qlib_report_figure.py` | Qlib 报告图表 |
 

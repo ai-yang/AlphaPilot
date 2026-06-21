@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Generic, TypeVar
 
 from alphapilot.core.conf import RD_AGENT_SETTINGS
+from alphapilot.core.workspace import resolve_workspace_root
 
 """
 This file contains the all the class about organizing the task in RD-Agent.
@@ -96,7 +97,9 @@ class FBWorkspace(Workspace):
         self.code_dict = (
             {}
         )  # The code injected into the folder, store them in the variable to reproduce the former result
-        self.workspace_path: Path = RD_AGENT_SETTINGS.workspace_path / uuid.uuid4().hex
+        # Roots under the active per-run workspace dir when a run is in scope, else the global
+        # RD_AGENT_SETTINGS.workspace_path (see alphapilot.core.workspace / systems.run_workspace).
+        self.workspace_path: Path = resolve_workspace_root() / uuid.uuid4().hex
 
     @property
     def code(self) -> str:
