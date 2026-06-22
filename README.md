@@ -947,6 +947,7 @@ alphapilot daily_signals \
 | 命令 | 状态 | 主要用途 |
 |------|------|----------|
 | `alphapilot portal` | **推荐** | 新版 FastAPI + React 一站式 Web 门户：数据/因子/策略/回测、K 线、**定时任务 / 通知**、模块命令等 |
+| `alphapilot portal_restart` | 可选管理 | 重启当前运行中的新版 portal；也可在 portal「高级」页点击 Restart Portal |
 | `alphapilot portal_legacy` | 旧版回退 | Streamlit 版旧门户；用于新版前端未构建或需要临时回退时使用 |
 | `alphapilot data_viz` | 可选独立 | 查看已下载股票 CSV：**K 线图**（portal「市场数据」页已内嵌，通常无需单独启动） |
 | `alphapilot backtest_viz` | 可选独立 | 查看回测 workspace 产物（portal「回测」页已内嵌，通常无需单独启动） |
@@ -987,7 +988,7 @@ cd -
 alphapilot portal
 ```
 
-浏览器打开 `http://127.0.0.1:19901`。默认只监听本机；如需局域网访问，使用 `alphapilot portal --host 0.0.0.0 --port 19901`，或在门户「高级」页修改 Portal Settings 并重启。命令行参数会覆盖网页保存的默认设置。如果只想临时使用旧版 Streamlit 门户，可运行：
+浏览器打开 `http://127.0.0.1:19901`。默认只监听本机；如需局域网访问，使用 `alphapilot portal --host 0.0.0.0 --port 19901`，或在门户「高级」页修改 Portal Settings 并重启。命令行参数会覆盖网页保存的默认设置。也可以在另一个终端执行 `alphapilot portal_restart` 重启当前运行中的新版 portal。如果只想临时使用旧版 Streamlit 门户，可运行：
 
 ```bash
 alphapilot portal_legacy --port 19901

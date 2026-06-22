@@ -1,7 +1,7 @@
 import Plot from "react-plotly.js";
 import { Link } from "react-router-dom";
 import { api, Factor, Job, JobProgress, qs, Schedule } from "./api";
-import { Alert, DataTable, DynamicForm, JobsPanel, JsonTextArea, PageTitle, ProgressBar, Spinner, StatusPill } from "./components";
+import { Alert, DataTable, DynamicForm, HybridJsonEditor, JobsPanel, JsonTextArea, PageTitle, ProgressBar, Spinner, StatusPill } from "./components";
 import { useAsync, useJsonInput, useParamForm } from "./hooks";
 import { useI18n } from "./i18n";
 import {
@@ -38,6 +38,12 @@ type PortalSettings = {
   config_path: string;
   host_options: Array<{ value: string; label: string }>;
   restart_required: boolean;
+  runtime?: {
+    pid?: number;
+    running?: boolean;
+    path?: string;
+    argv?: string[];
+  };
 };
 
 export function HomePage() {
@@ -589,7 +595,7 @@ export function LibraryPage() {
           <aside className="panel">
             <h2>{t("saveStrategyParams")}</h2>
             <input placeholder="strategy_name" value={strategyName} onChange={(e) => setStrategyName(e.target.value)} />
-            <JsonTextArea value={strategyParams.raw} onChange={strategyParams.setRaw} />
+            <HybridJsonEditor value={strategyParams.raw} onChange={strategyParams.setRaw} rows={8} />
             <button className="button primary" disabled={busy} onClick={() => saveStrategy()}>{busy ? <Spinner /> : null}{t("save")}</button>
             <h3>{t("exportStrategyParams")}</h3>
             <input placeholder="strategy_name" value={strategyExportName} onChange={(e) => setStrategyExportName(e.target.value)} />
@@ -1136,15 +1142,102 @@ export function AdvancedPage() {
   const [portalHost, setPortalHost] = useState("127.0.0.1");
   const [portalPort, setPortalPort] = useState("19901");
   const modules = useAsync(() => api.get<Record<string, { commands: Array<Record<string, string>> }>>("/api/modules"), []);
-  const run = useJsonInput(JSON.stringify({ module: "portal", command: "scheduler", kwargs: { interval: 30 } }, null, 2));
+  const [runModule, setRunModule] = useState("portal");
+  const [runCommand, setRunCommand] = useState("scheduler");
+  const runKwargs = useJsonInput(JSON.stringify({ interval: 30 }, null, 2));
+  const runRaw = useJsonInput(JSON.stringify({ module: "portal", command: "scheduler", kwargs: { interval: 30 } }, null, 2));
+  const [runRawError, setRunRawError] = useState<string | null>(null);
   const [result, setResult] = useState<unknown>(null);
+  const [restartMessage, setRestartMessage] = useState<string | null>(null);
   const { busy, run: runAction } = useAction();
   const { busy: savingPortal, run: savePortal } = useAction();
+  const { busy: restartingPortal, run: restartPortal } = useAction();
+  const moduleNames = useMemo(() => Object.keys(modules.data || {}).sort(), [modules.data]);
+  const commandNames = useMemo(
+    () => ((modules.data?.[runModule]?.commands || []).map((cmd) => String(cmd.name))),
+    [modules.data, runModule],
+  );
+
   useEffect(() => {
     if (!portalSettings.data) return;
     setPortalHost(portalSettings.data.settings.host);
     setPortalPort(String(portalSettings.data.settings.port));
   }, [portalSettings.data]);
+
+  useEffect(() => {
+    if (!moduleNames.length) return;
+    if (!moduleNames.includes(runModule)) {
+      setRunModule(moduleNames[0]);
+    }
+  }, [moduleNames, runModule]);
+
+  useEffect(() => {
+    if (!commandNames.length) {
+      if (runCommand) setRunCommand("");
+      return;
+    }
+    if (!commandNames.includes(runCommand)) {
+      setRunCommand(commandNames[0]);
+    }
+  }, [commandNames, runCommand]);
+
+  useEffect(() => {
+    let kwargs: Record<string, unknown> = {};
+    try {
+      kwargs = runKwargs.parse();
+    } catch {
+      kwargs = {};
+    }
+    runRaw.setRaw(JSON.stringify({ module: runModule, command: runCommand, kwargs }, null, 2));
+  }, [runModule, runCommand, runKwargs.raw]);
+
+  function applyRawToStructured() {
+    try {
+      const parsed = runRaw.parse();
+      if (typeof parsed.module === "string") setRunModule(parsed.module);
+      if (typeof parsed.command === "string") setRunCommand(parsed.command);
+      if (parsed.kwargs && typeof parsed.kwargs === "object" && !Array.isArray(parsed.kwargs)) {
+        runKwargs.setRaw(JSON.stringify(parsed.kwargs, null, 2));
+      }
+      setRunRawError(null);
+    } catch (err) {
+      setRunRawError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  function parseRunPayload(): { module: string; command: string; kwargs: Record<string, unknown> } {
+    let fallbackKwargs: Record<string, unknown> = {};
+    try {
+      fallbackKwargs = runKwargs.parse();
+    } catch {
+      fallbackKwargs = {};
+    }
+    const fallback = {
+      module: runModule,
+      command: runCommand,
+      kwargs: fallbackKwargs,
+    };
+    try {
+      const parsed = runRaw.parse();
+      if (typeof parsed.module !== "string" || typeof parsed.command !== "string") {
+        throw new Error(t("runPayloadInvalid"));
+      }
+      const kwargs = parsed.kwargs;
+      if (kwargs !== undefined && (kwargs === null || Array.isArray(kwargs) || typeof kwargs !== "object")) {
+        throw new Error(t("runPayloadInvalid"));
+      }
+      setRunRawError(null);
+      return {
+        module: parsed.module,
+        command: parsed.command,
+        kwargs: (kwargs as Record<string, unknown> | undefined) || {},
+      };
+    } catch (err) {
+      setRunRawError(err instanceof Error ? err.message : String(err));
+      return fallback;
+    }
+  }
+
   return (
     <>
       <PageTitle title={t("advanced")} subtitle={t("advancedSubtitle")} />
@@ -1159,6 +1252,7 @@ export function AdvancedPage() {
         {portalSettings.data?.restart_required ? (
           <Alert>Saved settings differ from the current running address. Restart `alphapilot portal` to apply them.</Alert>
         ) : null}
+        {restartMessage ? <Alert tone="success">{restartMessage}</Alert> : null}
         <div className="dynamic-form cols-2">
           <label>
             Bind host
@@ -1178,18 +1272,34 @@ export function AdvancedPage() {
         </div>
         <div className="settings-summary">
           <span>Current: {portalSettings.data?.current.host || window.location.hostname}:{portalSettings.data?.current.port || window.location.port || "80"}</span>
+          <span>PID: {portalSettings.data?.runtime?.pid || "-"}</span>
           <span>Saved file: {portalSettings.data?.config_path || "-"}</span>
         </div>
-        <button
-          className="button primary"
-          disabled={savingPortal}
-          onClick={() => void savePortal(async () => {
-            const next = await api.patch<PortalSettings>("/api/portal/settings", { host: portalHost, port: Number(portalPort) });
-            portalSettings.setData?.(next);
-          }, "Portal settings saved")}
-        >
-          {savingPortal ? <Spinner /> : null}Save Portal Settings
-        </button>
+        <div className="row-actions left">
+          <button
+            className="button primary"
+            disabled={savingPortal}
+            onClick={() => void savePortal(async () => {
+              const next = await api.patch<PortalSettings>("/api/portal/settings", { host: portalHost, port: Number(portalPort) });
+              portalSettings.setData?.(next);
+            }, "Portal settings saved")}
+          >
+            {savingPortal ? <Spinner /> : null}Save Portal Settings
+          </button>
+          <button
+            className="button"
+            disabled={restartingPortal}
+            onClick={() => {
+              if (!window.confirm("Restart the portal now? The page will reconnect after the server comes back.")) return;
+              void restartPortal(async () => {
+                await api.post("/api/portal/restart");
+                setRestartMessage("Restart requested. Wait a few seconds, then refresh if the page does not reconnect automatically.");
+              }, "Portal restart requested");
+            }}
+          >
+            {restartingPortal ? <Spinner /> : null}Restart Portal
+          </button>
+        </div>
       </section>
       {modules.error ? <Alert tone="error">{modules.error}</Alert> : null}
       <div className="grid side">
@@ -1204,8 +1314,40 @@ export function AdvancedPage() {
         </section>
         <aside className="panel">
           <h2>Run Command</h2>
-          <JsonTextArea value={run.raw} onChange={run.setRaw} />
-          <button className="button primary" disabled={busy} onClick={() => void runAction(async () => { setResult(await api.post("/api/modules/run", run.parse())); }, t("run"))}>{busy ? <Spinner /> : null}{t("run")}</button>
+          <div className="form-grid">
+            <label>
+              {t("moduleLabel")}
+              <select value={runModule} onChange={(e) => setRunModule(e.target.value)}>
+                {!moduleNames.length ? <option value="">{t("empty")}</option> : null}
+                {moduleNames.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </label>
+            <label>
+              {t("commandLabel")}
+              <select value={runCommand} onChange={(e) => setRunCommand(e.target.value)}>
+                {!commandNames.length ? <option value="">{t("empty")}</option> : null}
+                {commandNames.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </label>
+          </div>
+          <HybridJsonEditor value={runKwargs.raw} onChange={runKwargs.setRaw} rows={6} />
+          <details>
+            <summary>{t("advancedJson")}</summary>
+            {runRawError ? <Alert tone="error">{runRawError}</Alert> : null}
+            <JsonTextArea value={runRaw.raw} onChange={runRaw.setRaw} rows={10} />
+            <div className="row-actions left">
+              <button className="button small" onClick={() => applyRawToStructured()}>{t("applyJsonToForm")}</button>
+            </div>
+          </details>
+          <button
+            className="button primary"
+            disabled={busy}
+            onClick={() => void runAction(async () => {
+              setResult(await api.post("/api/modules/run", parseRunPayload()));
+            }, t("run"))}
+          >
+            {busy ? <Spinner /> : null}{t("run")}
+          </button>
         </aside>
       </div>
       {result ? <pre className="json">{JSON.stringify(result, null, 2)}</pre> : null}

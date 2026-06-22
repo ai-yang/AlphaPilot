@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from alphapilot.modules.portal import jobs, schedules
+from alphapilot.modules.portal.runtime import load_runtime, pid_running, runtime_path, schedule_current_process_restart
 from alphapilot.modules.portal.settings import load_file_portal_settings, save_portal_settings, settings_path
 
 
@@ -246,6 +247,7 @@ def create_app(
     @app.get("/api/portal/settings")
     def get_portal_settings(request: Request) -> dict[str, Any]:
         saved = load_file_portal_settings()
+        runtime = load_runtime()
         current = {
             "host": getattr(app.state, "portal_host", None) or request.url.hostname,
             "port": getattr(app.state, "portal_port", None) or request.url.port,
@@ -261,6 +263,12 @@ def create_app(
                     {"value": "0.0.0.0", "label": "0.0.0.0 (LAN / all interfaces)"},
                 ],
                 "restart_required": restart_required,
+                "runtime": {
+                    "pid": runtime.get("pid"),
+                    "running": pid_running(runtime.get("pid")),
+                    "path": runtime_path(),
+                    "argv": runtime.get("argv", []),
+                },
             }
         )
 
@@ -271,6 +279,14 @@ def create_app(
         except Exception as exc:  # noqa: BLE001
             raise _api_error(exc) from exc
         return get_portal_settings(request)
+
+    @app.post("/api/portal/restart")
+    def restart_portal() -> dict[str, Any]:
+        try:
+            restart = schedule_current_process_restart()
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+        return _jsonable({"accepted": True, "restart": restart})
 
     @app.get("/api/jobs")
     def list_jobs() -> list[dict[str, Any]]:
@@ -833,6 +849,13 @@ def create_app(
             return _jsonable(commands[payload.command](**payload.kwargs))
         except Exception as exc:  # noqa: BLE001
             raise _api_error(exc) from exc
+
+    @app.get("/branding/logo.svg")
+    def portal_logo() -> FileResponse:
+        logo_path = Path(__file__).resolve().parents[3] / "docs" / "logo.svg"
+        if not logo_path.exists():
+            raise HTTPException(status_code=404, detail="Logo file not found")
+        return FileResponse(logo_path, media_type="image/svg+xml")
 
     static_path = Path(static_dir) if static_dir else Path(__file__).parent / "web" / "dist"
     if static_path.exists():

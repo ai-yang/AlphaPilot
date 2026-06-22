@@ -26,6 +26,12 @@ class PortalModule(BaseModule):
         import uvicorn
 
         from alphapilot.modules.portal.api import create_app
+        from alphapilot.modules.portal.runtime import (
+            clear_runtime,
+            current_restart_argv,
+            install_restart_signal_handler,
+            write_runtime,
+        )
         from alphapilot.modules.portal.settings import load_portal_settings
 
         settings = load_portal_settings()
@@ -37,7 +43,12 @@ class PortalModule(BaseModule):
             return
         static_dir = Path(__file__).parent / "web" / "dist"
         app = create_app(static_dir=static_dir, portal_host=host, portal_port=port)
-        uvicorn.run(app, host=host, port=port)
+        install_restart_signal_handler()
+        write_runtime(host=host, port=port, argv=current_restart_argv())
+        try:
+            uvicorn.run(app, host=host, port=port)
+        finally:
+            clear_runtime()
 
     def portal_legacy(self, port: int | None = None, host: str | None = None) -> None:
         """Launch the legacy Streamlit portal."""
@@ -62,9 +73,16 @@ class PortalModule(BaseModule):
 
         run_scheduler_loop(interval=interval)
 
+    def portal_restart(self) -> dict[str, Any]:
+        """Restart a running `alphapilot portal` process."""
+        from alphapilot.modules.portal.runtime import request_runtime_restart
+
+        return request_runtime_restart()
+
     def commands(self) -> dict[str, Callable[..., Any]]:
         return {
             "portal": self.portal,
             "portal_legacy": self.portal_legacy,
+            "portal_restart": self.portal_restart,
             "scheduler": self.scheduler,
         }

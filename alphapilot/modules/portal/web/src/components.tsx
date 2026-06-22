@@ -32,7 +32,9 @@ export function Layout() {
     <div className="shell">
       <aside className="sidebar">
         <Link className="brand" to="/">
-          <span className="brand-mark">A</span>
+          <span className="brand-mark" aria-hidden="true">
+            <img src="/branding/logo.svg" alt="" />
+          </span>
           <span>
             <strong>AlphaPilot</strong>
             <small>Portal</small>
@@ -121,6 +123,181 @@ export function JsonTextArea({
   placeholder?: string;
 }) {
   return <textarea className="mono" rows={rows} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />;
+}
+
+type JsonPrimitiveType = "string" | "number" | "boolean" | "null";
+type PrimitiveRow = { key: string; type: JsonPrimitiveType; value: string | boolean };
+
+function isPrimitiveValue(value: unknown): value is string | number | boolean | null {
+  return value === null || ["string", "number", "boolean"].includes(typeof value);
+}
+
+function primitiveTypeOf(value: string | number | boolean | null): JsonPrimitiveType {
+  if (value === null) return "null";
+  if (typeof value === "number") return "number";
+  if (typeof value === "boolean") return "boolean";
+  return "string";
+}
+
+function primitiveRowsFromObject(data: Record<string, unknown>): PrimitiveRow[] {
+  return Object.entries(data)
+    .filter(([, value]) => isPrimitiveValue(value))
+    .map(([key, value]) => ({
+      key,
+      type: primitiveTypeOf(value),
+      value: typeof value === "boolean" ? value : value === null ? "" : String(value),
+    }));
+}
+
+function coercePrimitive(row: PrimitiveRow): string | number | boolean | null {
+  if (row.type === "null") return null;
+  if (row.type === "boolean") return Boolean(row.value);
+  if (row.type === "number") {
+    const n = Number(row.value);
+    return Number.isFinite(n) ? n : 0;
+  }
+  return String(row.value ?? "");
+}
+
+export function HybridJsonEditor({
+  value,
+  onChange,
+  rows = 8,
+  placeholder = "{}",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  rows?: number;
+  placeholder?: string;
+}) {
+  const { t } = useI18n();
+  const [fields, setFields] = useState<PrimitiveRow[]>([]);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [complexKeys, setComplexKeys] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!value.trim()) {
+      setFields([]);
+      setComplexKeys([]);
+      setParseError(null);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed === null || Array.isArray(parsed) || typeof parsed !== "object") {
+        throw new Error("JSON must be an object");
+      }
+      const parsedObject = parsed as Record<string, unknown>;
+      setFields(primitiveRowsFromObject(parsedObject));
+      setComplexKeys(
+        Object.entries(parsedObject)
+          .filter(([, fieldValue]) => !isPrimitiveValue(fieldValue))
+          .map(([key]) => key),
+      );
+      setParseError(null);
+    } catch (err) {
+      setParseError(err instanceof Error ? err.message : String(err));
+    }
+  }, [value]);
+
+  function commitFields(nextFields: PrimitiveRow[]) {
+    setFields(nextFields);
+    let source: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(value || "{}");
+      if (parsed && !Array.isArray(parsed) && typeof parsed === "object") {
+        source = parsed as Record<string, unknown>;
+      }
+    } catch {
+      source = {};
+    }
+
+    const output: Record<string, unknown> = {};
+    Object.entries(source)
+      .filter(([, currentValue]) => !isPrimitiveValue(currentValue))
+      .forEach(([key, currentValue]) => {
+        output[key] = currentValue;
+      });
+
+    nextFields.forEach((field) => {
+      const key = field.key.trim();
+      if (!key) return;
+      output[key] = coercePrimitive(field);
+    });
+
+    onChange(JSON.stringify(output, null, 2));
+  }
+
+  function updateField(index: number, patch: Partial<PrimitiveRow>) {
+    const next = [...fields];
+    const current = next[index];
+    if (!current) return;
+    next[index] = { ...current, ...patch };
+    if (patch.type && patch.type !== current.type) {
+      if (patch.type === "boolean") next[index].value = false;
+      else next[index].value = "";
+    }
+    commitFields(next);
+  }
+
+  return (
+    <div className="hybrid-json-editor">
+      <div className="hybrid-json-header">
+        <strong>{t("structuredParams")}</strong>
+        <button
+          type="button"
+          className="button small ghost"
+          onClick={() => commitFields([...fields, { key: "", type: "string", value: "" }])}
+        >
+          {t("addField")}
+        </button>
+      </div>
+      {fields.length ? (
+        <div className="hybrid-json-fields">
+          {fields.map((field, index) => (
+            <div className="hybrid-json-row" key={`${field.key}-${index}`}>
+              <input
+                placeholder={t("fieldKey")}
+                value={field.key}
+                onChange={(e) => updateField(index, { key: e.target.value })}
+              />
+              <select value={field.type} onChange={(e) => updateField(index, { type: e.target.value as JsonPrimitiveType })}>
+                <option value="string">{t("fieldTypeString")}</option>
+                <option value="number">{t("fieldTypeNumber")}</option>
+                <option value="boolean">{t("fieldTypeBoolean")}</option>
+                <option value="null">{t("fieldTypeNull")}</option>
+              </select>
+              {field.type === "boolean" ? (
+                <label className="inline-check compact">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(field.value)}
+                    onChange={(e) => updateField(index, { value: e.target.checked })}
+                  />
+                  <span>{String(Boolean(field.value))}</span>
+                </label>
+              ) : (
+                <input
+                  placeholder={field.type === "null" ? "null" : t("fieldValue")}
+                  value={field.type === "null" ? "null" : String(field.value ?? "")}
+                  disabled={field.type === "null"}
+                  onChange={(e) => updateField(index, { value: e.target.value })}
+                />
+              )}
+              <button type="button" className="icon-button danger" onClick={() => commitFields(fields.filter((_, i) => i !== index))}>
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="empty">{t("structuredParamsEmpty")}</div>
+      )}
+      {complexKeys.length ? <p className="muted compact">{t("structuredComplexHint")} {complexKeys.join(", ")}</p> : null}
+      {parseError ? <Alert tone="error">{t("jsonSyntaxError")}: {parseError}</Alert> : null}
+      <JsonTextArea value={value} onChange={onChange} rows={rows} placeholder={placeholder} />
+    </div>
+  );
 }
 
 export function DynamicForm({

@@ -150,6 +150,21 @@ const zh: Dict = {
   configuredChannels: "已启用渠道",
   notifyAllJobs: "所有后台任务完成后通知",
   advancedJson: "高级 JSON",
+  structuredParams: "结构化参数",
+  addField: "新增字段",
+  fieldKey: "键名",
+  fieldValue: "值",
+  fieldTypeString: "字符串",
+  fieldTypeNumber: "数字",
+  fieldTypeBoolean: "布尔",
+  fieldTypeNull: "空值",
+  structuredParamsEmpty: "暂无结构化字段，可点击“新增字段”",
+  structuredComplexHint: "以下复杂字段仅在 JSON 中保留：",
+  jsonSyntaxError: "JSON 语法错误",
+  moduleLabel: "模块",
+  commandLabel: "命令",
+  applyJsonToForm: "将 JSON 回填到表单",
+  runPayloadInvalid: "运行 JSON 需包含字符串 module/command，kwargs 需为对象",
   // advanced
   advancedSubtitle: "模块命令、运行时信息和原始命令执行入口。"
 };
@@ -301,6 +316,21 @@ const en: Dict = {
   configuredChannels: "Enabled channels",
   notifyAllJobs: "Notify when any background job finishes",
   advancedJson: "Advanced JSON",
+  structuredParams: "Structured params",
+  addField: "Add field",
+  fieldKey: "Key",
+  fieldValue: "Value",
+  fieldTypeString: "String",
+  fieldTypeNumber: "Number",
+  fieldTypeBoolean: "Boolean",
+  fieldTypeNull: "Null",
+  structuredParamsEmpty: "No structured fields yet. Click Add field.",
+  structuredComplexHint: "Complex keys preserved in JSON only:",
+  jsonSyntaxError: "JSON syntax error",
+  moduleLabel: "Module",
+  commandLabel: "Command",
+  applyJsonToForm: "Apply JSON to form",
+  runPayloadInvalid: "Run JSON must include string module/command and object kwargs",
   // advanced
   advancedSubtitle: "Module commands, runtime info and raw command execution."
 };
