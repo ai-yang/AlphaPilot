@@ -89,6 +89,7 @@ nav a.active::before {
 .daemon-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: #cbd5e1; }
 .daemon-chip .dot.on { background: #16a34a; box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15); }
 .muted { color: #667085; }
+.no-margin { margin: 0; }
 .content { padding: 24px; max-width: 1480px; margin: 0 auto; }
 
 .page-title { margin-bottom: 18px; }
@@ -172,6 +173,15 @@ nav a.active::before {
 }
 .row-actions { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
 .row-actions.left { justify-content: flex-start; }
+
+.settings-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 10px 0 14px;
+  color: #667085;
+  font-size: 13px;
+}
 
 .progress-card {
   border: 1px solid #dce2ea;

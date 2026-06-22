@@ -15,7 +15,7 @@ import {
   withStrategyOptions,
 } from "./paramSpecs";
 import { useAction, useToast } from "./toast";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 /** Responsive Plotly height: ~half the viewport, clamped to a sensible range. */
 function chartHeight(): number {
@@ -30,6 +30,14 @@ type Status = {
   systems: string[];
   modules: Record<string, string[]>;
   config: Record<string, unknown>;
+};
+
+type PortalSettings = {
+  settings: { host: string; port: number };
+  current: { host?: string; port?: number };
+  config_path: string;
+  host_options: Array<{ value: string; label: string }>;
+  restart_required: boolean;
 };
 
 export function HomePage() {
@@ -1124,13 +1132,65 @@ export function NotificationsPage() {
 
 export function AdvancedPage() {
   const { t } = useI18n();
+  const portalSettings = useAsync(() => api.get<PortalSettings>("/api/portal/settings"), []);
+  const [portalHost, setPortalHost] = useState("127.0.0.1");
+  const [portalPort, setPortalPort] = useState("19901");
   const modules = useAsync(() => api.get<Record<string, { commands: Array<Record<string, string>> }>>("/api/modules"), []);
   const run = useJsonInput(JSON.stringify({ module: "portal", command: "scheduler", kwargs: { interval: 30 } }, null, 2));
   const [result, setResult] = useState<unknown>(null);
   const { busy, run: runAction } = useAction();
+  const { busy: savingPortal, run: savePortal } = useAction();
+  useEffect(() => {
+    if (!portalSettings.data) return;
+    setPortalHost(portalSettings.data.settings.host);
+    setPortalPort(String(portalSettings.data.settings.port));
+  }, [portalSettings.data]);
   return (
     <>
       <PageTitle title={t("advanced")} subtitle={t("advancedSubtitle")} />
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <h2>Portal Settings</h2>
+            <p className="muted no-margin">Configure the default host and port used the next time `alphapilot portal` starts.</p>
+          </div>
+        </div>
+        {portalSettings.error ? <Alert tone="error">{portalSettings.error}</Alert> : null}
+        {portalSettings.data?.restart_required ? (
+          <Alert>Saved settings differ from the current running address. Restart `alphapilot portal` to apply them.</Alert>
+        ) : null}
+        <div className="dynamic-form cols-2">
+          <label>
+            Bind host
+            <select value={portalHost} onChange={(e) => setPortalHost(e.target.value)}>
+              {(portalSettings.data?.host_options || [
+                { value: "127.0.0.1", label: "127.0.0.1 (local only)" },
+                { value: "0.0.0.0", label: "0.0.0.0 (LAN / all interfaces)" }
+              ]).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+            <small>Default is local-only. Choose 0.0.0.0 only when this machine should accept LAN connections.</small>
+          </label>
+          <label>
+            Port
+            <input type="number" min={1} max={65535} value={portalPort} onChange={(e) => setPortalPort(e.target.value)} />
+            <small>CLI arguments still override saved settings, e.g. `alphapilot portal --port 19902`.</small>
+          </label>
+        </div>
+        <div className="settings-summary">
+          <span>Current: {portalSettings.data?.current.host || window.location.hostname}:{portalSettings.data?.current.port || window.location.port || "80"}</span>
+          <span>Saved file: {portalSettings.data?.config_path || "-"}</span>
+        </div>
+        <button
+          className="button primary"
+          disabled={savingPortal}
+          onClick={() => void savePortal(async () => {
+            const next = await api.patch<PortalSettings>("/api/portal/settings", { host: portalHost, port: Number(portalPort) });
+            portalSettings.setData?.(next);
+          }, "Portal settings saved")}
+        >
+          {savingPortal ? <Spinner /> : null}Save Portal Settings
+        </button>
+      </section>
       {modules.error ? <Alert tone="error">{modules.error}</Alert> : null}
       <div className="grid side">
         <section className="panel">

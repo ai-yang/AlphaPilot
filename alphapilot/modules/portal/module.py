@@ -21,21 +21,31 @@ class PortalModule(BaseModule):
     def setup(self, context: "Context") -> None:
         self.context = context
 
-    def portal(self, port: int = 19901, host: str = "0.0.0.0", reload: bool = False) -> None:
+    def portal(self, port: int | None = None, host: str | None = None, reload: bool = False) -> None:
         """Launch the React/FastAPI unified web portal."""
         import uvicorn
 
         from alphapilot.modules.portal.api import create_app
+        from alphapilot.modules.portal.settings import load_portal_settings
+
+        settings = load_portal_settings()
+        host = host or settings["host"]
+        port = int(port if port is not None else settings["port"])
 
         if reload:
             uvicorn.run("alphapilot.modules.portal.api:create_app", host=host, port=port, reload=True, factory=True)
             return
         static_dir = Path(__file__).parent / "web" / "dist"
-        app = create_app(static_dir=static_dir)
+        app = create_app(static_dir=static_dir, portal_host=host, portal_port=port)
         uvicorn.run(app, host=host, port=port)
 
-    def portal_legacy(self, port: int = 19901, host: str = "0.0.0.0") -> None:
+    def portal_legacy(self, port: int | None = None, host: str | None = None) -> None:
         """Launch the legacy Streamlit portal."""
+        from alphapilot.modules.portal.settings import load_portal_settings
+
+        settings = load_portal_settings()
+        host = host or settings["host"]
+        port = int(port if port is not None else settings["port"])
         with rpath("alphapilot.modules.portal", "app.py") as app_path:
             cmds = [
                 "streamlit",

@@ -313,6 +313,8 @@ PATH=/opt/homebrew/bin:$PATH npm run build
 
 构建完成后会生成 `alphapilot/modules/portal/web/dist/`。运行 `alphapilot portal` 只需要这个 `dist/` 和 Python 后端依赖；不需要每次启动都运行 npm。旧版 Streamlit 门户保留为 `alphapilot portal_legacy`。
 
+`alphapilot portal` 默认监听 `127.0.0.1:19901`，只允许本机访问。如需局域网访问，请显式启动 `alphapilot portal --host 0.0.0.0 --port 19901`，或在门户「高级」页保存 Portal Settings 后重启门户。
+
 本地开发前端时，可在一个终端运行 `alphapilot portal --port 19901`，另一个终端在 `alphapilot/modules/portal/web` 下执行 `npm run dev`（Vite 默认 `http://localhost:5173`，`/api` 代理到后端）。仅改 Python 后端时可用 `alphapilot portal --reload --port 19901`（需配合 `npm run dev` 或已构建的 `dist/`）。
 
 **可选：AlphaForge 公式化挖掘依赖**
@@ -982,10 +984,10 @@ cd -
 然后启动 FastAPI 后端并托管前端静态文件：
 
 ```bash
-alphapilot portal --port 19901
+alphapilot portal
 ```
 
-浏览器打开 `http://localhost:19901`。如果只想临时使用旧版 Streamlit 门户，可运行：
+浏览器打开 `http://127.0.0.1:19901`。默认只监听本机；如需局域网访问，使用 `alphapilot portal --host 0.0.0.0 --port 19901`，或在门户「高级」页修改 Portal Settings 并重启。命令行参数会覆盖网页保存的默认设置。如果只想临时使用旧版 Streamlit 门户，可运行：
 
 ```bash
 alphapilot portal_legacy --port 19901
@@ -1009,7 +1011,7 @@ alphapilot portal_legacy --port 19901
 
 ```bash
 # 终端 1
-alphapilot portal --port 19901
+alphapilot portal
 
 # 终端 2
 cd alphapilot/modules/portal/web && npm run dev

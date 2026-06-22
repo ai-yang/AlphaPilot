@@ -12,13 +12,14 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from alphapilot.modules.portal import jobs, schedules
+from alphapilot.modules.portal.settings import load_file_portal_settings, save_portal_settings, settings_path
 
 
 def _jsonable(value: Any) -> Any:
@@ -94,6 +95,11 @@ class ScheduleUpdate(BaseModel):
 
 def _model_data(model: BaseModel) -> dict[str, Any]:
     return model.model_dump() if hasattr(model, "model_dump") else model.dict()
+
+
+class PortalSettingsUpdate(BaseModel):
+    host: str
+    port: int
 
 
 class FactorCreate(BaseModel):
@@ -179,10 +185,18 @@ def _write_factor_csv(rows: list[dict[str, Any]], prefix: str = "alphapilot_fact
     return path
 
 
-def create_app(*, static_dir: str | Path | None = None, engine: Any | None = None) -> FastAPI:
+def create_app(
+    *,
+    static_dir: str | Path | None = None,
+    engine: Any | None = None,
+    portal_host: str | None = None,
+    portal_port: int | None = None,
+) -> FastAPI:
     app = FastAPI(title="AlphaPilot Portal API")
     if engine is not None:
         app.state.engine = engine
+    app.state.portal_host = portal_host
+    app.state.portal_port = portal_port
 
     app.add_middleware(
         CORSMiddleware,
@@ -228,6 +242,35 @@ def create_app(*, static_dir: str | Path | None = None, engine: Any | None = Non
                 ),
             }
         )
+
+    @app.get("/api/portal/settings")
+    def get_portal_settings(request: Request) -> dict[str, Any]:
+        saved = load_file_portal_settings()
+        current = {
+            "host": getattr(app.state, "portal_host", None) or request.url.hostname,
+            "port": getattr(app.state, "portal_port", None) or request.url.port,
+        }
+        restart_required = saved.get("host") != current.get("host") or int(saved.get("port", 0)) != int(current.get("port") or 0)
+        return _jsonable(
+            {
+                "settings": saved,
+                "current": current,
+                "config_path": settings_path(),
+                "host_options": [
+                    {"value": "127.0.0.1", "label": "127.0.0.1 (local only)"},
+                    {"value": "0.0.0.0", "label": "0.0.0.0 (LAN / all interfaces)"},
+                ],
+                "restart_required": restart_required,
+            }
+        )
+
+    @app.patch("/api/portal/settings")
+    def update_portal_settings(payload: PortalSettingsUpdate, request: Request) -> dict[str, Any]:
+        try:
+            save_portal_settings(_model_data(payload))
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+        return get_portal_settings(request)
 
     @app.get("/api/jobs")
     def list_jobs() -> list[dict[str, Any]]:
