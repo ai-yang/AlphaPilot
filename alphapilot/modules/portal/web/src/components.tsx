@@ -111,6 +111,55 @@ export function Spinner({ size = 16 }: { size?: number }) {
   return <Loader2 size={size} className="spin" />;
 }
 
+/**
+ * Refresh control that shows a spinning icon while its click is in flight.
+ * Promise-aware: it awaits `onClick`, so it works for a `useAsync.refresh`, a
+ * manual async loader, or any handler that returns a promise. Self-guards
+ * against double-clicks (and the always-present icon improves affordance).
+ */
+export function RefreshButton({
+  onClick,
+  className = "button ghost small",
+  iconOnly = false,
+  label,
+  title,
+  size = 14,
+  disabled = false
+}: {
+  onClick: () => void | Promise<unknown>;
+  className?: string;
+  iconOnly?: boolean;
+  label?: string;
+  title?: string;
+  size?: number;
+  disabled?: boolean;
+}) {
+  const { t } = useI18n();
+  const [busy, setBusy] = useState(false);
+  const text = label ?? t("refresh");
+  async function handle() {
+    if (busy || disabled) return;
+    setBusy(true);
+    try {
+      await onClick();
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <button
+      type="button"
+      className={iconOnly ? "icon-button" : className}
+      disabled={busy || disabled}
+      onClick={() => void handle()}
+      title={title ?? (iconOnly ? text : undefined)}
+    >
+      {busy ? <Loader2 className="spin" size={iconOnly ? 16 : size} /> : <RefreshCw size={iconOnly ? 16 : size} />}
+      {iconOnly ? null : <span>{text}</span>}
+    </button>
+  );
+}
+
 export function JsonTextArea({
   value,
   onChange,
@@ -126,22 +175,26 @@ export function JsonTextArea({
 }
 
 type JsonPrimitiveType = "string" | "number" | "boolean" | "null";
+type JsonPrimitive = string | number | boolean | null;
 type PrimitiveRow = { key: string; type: JsonPrimitiveType; value: string | boolean };
 
-function isPrimitiveValue(value: unknown): value is string | number | boolean | null {
+function isPrimitiveValue(value: unknown): value is JsonPrimitive {
   return value === null || ["string", "number", "boolean"].includes(typeof value);
 }
 
-function primitiveTypeOf(value: string | number | boolean | null): JsonPrimitiveType {
+function primitiveTypeOf(value: JsonPrimitive): JsonPrimitiveType {
   if (value === null) return "null";
   if (typeof value === "number") return "number";
   if (typeof value === "boolean") return "boolean";
   return "string";
 }
 
+function primitiveEntriesFromObject(data: Record<string, unknown>): Array<[string, JsonPrimitive]> {
+  return Object.entries(data).filter((entry): entry is [string, JsonPrimitive] => isPrimitiveValue(entry[1]));
+}
+
 function primitiveRowsFromObject(data: Record<string, unknown>): PrimitiveRow[] {
-  return Object.entries(data)
-    .filter(([, value]) => isPrimitiveValue(value))
+  return primitiveEntriesFromObject(data)
     .map(([key, value]) => ({
       key,
       type: primitiveTypeOf(value),
@@ -436,8 +489,10 @@ export function JobsPanel({ compact = false }: { compact?: boolean }) {
   const [result, setResult] = useState<unknown>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
 
   async function refresh() {
+    setSyncing(true);
     try {
       const data = await api.get<Job[]>("/api/jobs");
       setJobs(data);
@@ -450,6 +505,7 @@ export function JobsPanel({ compact = false }: { compact?: boolean }) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
+      setSyncing(false);
     }
   }
 
@@ -509,12 +565,15 @@ export function JobsPanel({ compact = false }: { compact?: boolean }) {
   return (
     <section className="panel">
       <div className="panel-head">
-        <h2>{t("jobs")}</h2>
+        <h2>
+          {t("jobs")}
+          <span className={`live-dot${syncing ? " on" : ""}`} title={t("autoRefreshing")} />
+        </h2>
         <div className="row-actions">
           {!compact && hasFinished ? (
             <button className="button small ghost" onClick={() => void clearFinished()}>{t("clearFinished")}</button>
           ) : null}
-          <button className="icon-button" onClick={refresh} title={t("refresh")}><RefreshCw size={16} /></button>
+          <RefreshButton iconOnly onClick={refresh} />
         </div>
       </div>
       {error ? <Alert tone="error">{error}</Alert> : null}

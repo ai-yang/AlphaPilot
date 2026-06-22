@@ -1,7 +1,7 @@
 import Plot from "react-plotly.js";
 import { Link } from "react-router-dom";
 import { api, Factor, Job, JobProgress, qs, Schedule } from "./api";
-import { Alert, DataTable, DynamicForm, HybridJsonEditor, JobsPanel, JsonTextArea, PageTitle, ProgressBar, Spinner, StatusPill } from "./components";
+import { Alert, DataTable, DynamicForm, HybridJsonEditor, JobsPanel, JsonTextArea, PageTitle, ProgressBar, RefreshButton, Spinner, StatusPill } from "./components";
 import { useAsync, useJsonInput, useParamForm } from "./hooks";
 import { useI18n } from "./i18n";
 import {
@@ -44,6 +44,49 @@ type PortalSettings = {
     path?: string;
     argv?: string[];
   };
+};
+
+type PortalEnvField = {
+  key: string;
+  label: string;
+  group: string;
+  kind: "text" | "password" | "number" | "boolean";
+  secret: boolean;
+  help_text?: string;
+  requires_restart: boolean;
+};
+
+type PortalEnvSettings = {
+  fields: PortalEnvField[];
+  values: Record<string, string>;
+  current: Record<string, string>;
+  config_path: string;
+  restart_required: boolean;
+  restart_required_keys: string[];
+  masked_secret: string;
+};
+
+type NotifyCommandsStatus = {
+  daemon: {
+    running?: boolean;
+    pid?: number | null;
+    channel?: string | null;
+    root?: string;
+    log_path?: string;
+  };
+  payload?: Record<string, unknown>;
+  events: NotifyEvent[];
+};
+
+type NotifyEvent = Record<string, unknown> & {
+  created_at?: string;
+  channel?: string;
+  user_id?: string;
+  text?: string;
+  ok?: boolean;
+  action?: Record<string, unknown>;
+  reply?: string;
+  error?: string;
 };
 
 export function HomePage() {
@@ -163,7 +206,7 @@ export function MiningPage() {
       <section className="panel">
         <div className="panel-head">
           <h2>{t("miningSessions")}</h2>
-          <button className="button small" onClick={() => void sessions.refresh()}>{t("refresh")}</button>
+          <RefreshButton className="button small" onClick={() => sessions.refresh()} />
         </div>
         {sessions.error ? <Alert tone="error">{sessions.error}</Alert> : null}
         <DataTable
@@ -180,7 +223,7 @@ export function MiningPage() {
               render: (row) => (
                 <div className="row-actions">
                   <button className="button small" onClick={() => void openSession(String(row.name))}>Open</button>
-                  <button className="button small danger" onClick={() => void deleteSession(String(row.name))}>{t("delete")}</button>
+                  <button className="button small danger" disabled={busy} onClick={() => void deleteSession(String(row.name))}>{t("delete")}</button>
                 </div>
               )
             }
@@ -298,7 +341,7 @@ export function BacktestPage() {
               render: (row) => (
                 <div className="row-actions">
                   <button className="button small" onClick={() => void open(String(row.workspace_id))}>Open</button>
-                  <button className="button small danger" onClick={() => void deleteWorkspace(String(row.workspace_id))}>{t("delete")}</button>
+                  <button className="button small danger" disabled={busy} onClick={() => void deleteWorkspace(String(row.workspace_id))}>{t("delete")}</button>
                 </div>
               )
             }
@@ -503,7 +546,7 @@ export function LibraryPage() {
                 {
                   key: "factor_name",
                   label: "",
-                  render: (row) => <button className="button small danger" onClick={() => void run(async () => { await api.delete(`/api/factors/${encodeURIComponent(String(row.factor_name))}`); await factors.refresh(); })}>{t("delete")}</button>
+                  render: (row) => <button className="button small danger" disabled={busy} onClick={() => void run(async () => { await api.delete(`/api/factors/${encodeURIComponent(String(row.factor_name))}`); await factors.refresh(); })}>{t("delete")}</button>
                 }
               ]}
             />
@@ -767,7 +810,7 @@ export function MarketPage() {
             <option value="baostock_cn">baostock_cn</option>
             <option value="tushare_cn">tushare_cn</option>
           </select>
-          <button className="button" onClick={() => void loadManageSymbols()}>{t("refresh")}</button>
+          <RefreshButton className="button" onClick={() => loadManageSymbols()} />
           <select value={manageSymbol} onChange={(e) => setManageSymbol(e.target.value)}>
             <option value="">{t("selectSymbol")}</option>
             {manageSymbols.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -801,7 +844,7 @@ export function MarketPage() {
       <section className="panel">
         <div className="panel-head">
           <h2>最近数据任务</h2>
-          <button className="button small" onClick={() => void dataJobs.refresh()}>{t("refresh")}</button>
+          <RefreshButton className="button small" onClick={() => dataJobs.refresh()} />
         </div>
         <DataTable
           rows={recentDataJobs as unknown as Record<string, unknown>[]}
@@ -833,7 +876,7 @@ export function MarketPage() {
             <option value="">{t("selectSymbol")}</option>
             {symbols.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
-          <button className="button" disabled={busy || !dataDir || !symbol} onClick={() => loadKline()}>{t("refresh")}</button>
+          <button className="button" disabled={busy || !dataDir || !symbol} onClick={() => loadKline()}>{busy ? <Spinner /> : null}{t("refresh")}</button>
       </section>
       {rows.length ? (
         <section className="panel">
@@ -1020,21 +1063,20 @@ export function SchedulerPage() {
 export function NotificationsPage() {
   const { t } = useI18n();
   const cfg = useAsync(() => api.get<Record<string, unknown>>("/api/notify"), []);
-  const [raw, setRaw] = useState("");
+  const commands = useAsync(() => api.get<NotifyCommandsStatus>("/api/notify/commands/status"), []);
+  const [config, setConfig] = useState<Record<string, unknown>>({});
+  const [commandText, setCommandText] = useState("/jobs");
+  const [commandResult, setCommandResult] = useState<Record<string, unknown> | null>(null);
+  const [daemonChannel, setDaemonChannel] = useState("telegram");
+  const [pairCode, setPairCode] = useState<{ code: string; expires_at: string } | null>(null);
   const toast = useToast();
   const { busy, run } = useAction();
   React.useEffect(() => {
-    if (cfg.data && !raw) setRaw(JSON.stringify(cfg.data.config || {}, null, 2));
+    if (cfg.data) setConfig((cfg.data.config || {}) as Record<string, unknown>);
   }, [cfg.data]);
 
-  const config = useMemo(() => {
-    try {
-      return raw ? JSON.parse(raw) as Record<string, unknown> : {};
-    } catch {
-      return {};
-    }
-  }, [raw]);
   const fields = (cfg.data?.fields || {}) as Record<string, Array<string | [string, string]>>;
+  const maskedSecret = String(cfg.data?.masked_secret || "********");
 
   function fieldName(field: string | [string, string]) {
     return Array.isArray(field) ? field[0] : field;
@@ -1049,18 +1091,18 @@ export function NotificationsPage() {
     const channelConfig = { ...((next[channel] as Record<string, unknown>) || {}) };
     channelConfig[field] = value;
     next[channel] = channelConfig;
-    setRaw(JSON.stringify(next, null, 2));
+    setConfig(next);
   }
 
-  function updateNotifyAll(value: boolean) {
+  function updateOption(key: string, value: unknown) {
     const next = { ...config };
-    next.options = { ...((next.options as Record<string, unknown>) || {}), notify_on_all_jobs: value };
-    setRaw(JSON.stringify(next, null, 2));
+    next.options = { ...((next.options as Record<string, unknown>) || {}), [key]: value };
+    setConfig(next);
   }
 
   function saveNotify() {
     void run(async () => {
-      await api.patch("/api/notify", { config: JSON.parse(raw || "{}") });
+      await api.patch("/api/notify", { config });
       await cfg.refresh();
     }, t("notifySaved"));
   }
@@ -1072,11 +1114,60 @@ export function NotificationsPage() {
     });
   }
 
+  function dispatchCommand(planOnly = false) {
+    void run(async () => {
+      const path = planOnly ? "/api/notify/commands/plan" : "/api/notify/commands/dispatch";
+      const r = await api.post<Record<string, unknown>>(path, {
+        text: commandText,
+        channel: "portal",
+        user_id: "portal",
+        chat_id: "portal",
+        enforce_auth: false
+      });
+      setCommandResult(r);
+      await commands.refresh();
+    });
+  }
+
+  function startCommands() {
+    void run(async () => {
+      await api.post("/api/notify/commands/start", { channel: daemonChannel });
+      await commands.refresh();
+    }, t("commandReceiverStarted"));
+  }
+
+  function stopCommands() {
+    void run(async () => {
+      await api.post("/api/notify/commands/stop");
+      await commands.refresh();
+    }, t("commandReceiverStopped"));
+  }
+
+  function generatePairCode() {
+    void run(async () => {
+      const channel = daemonChannel === "feishu" ? "feishu" : "telegram";
+      const r = await api.post<{ code: string; expires_at: string }>("/api/notify/commands/pair-code", { channel });
+      setPairCode({ code: r.code, expires_at: r.expires_at });
+    });
+  }
+
+  function registerMenu() {
+    void run(async () => {
+      await api.post("/api/notify/commands/register-menu");
+    }, t("menuRegistered"));
+  }
+
   return (
     <>
       <PageTitle title={t("notify")} subtitle={t("notifySubtitle")} />
-      <div className="grid side">
-        <section className="panel">
+      <div className="grid two">
+      <section className="panel">
+          <div className="panel-head">
+            <div>
+              <h2>{t("notifyChannelsTitle")}</h2>
+              <p className="muted">{t("notifyChannelsSubtitle")}</p>
+            </div>
+          </div>
           {cfg.error ? <Alert tone="error">{cfg.error}</Alert> : null}
           <p className="muted">{t("credentialsPath")}：{String(cfg.data?.credentials_path || "")}</p>
           <p className="muted">{t("configuredChannels")}：{((cfg.data?.configured_channels as string[]) || []).join(", ") || t("none")}</p>
@@ -1084,10 +1175,49 @@ export function NotificationsPage() {
             <input
               type="checkbox"
               checked={Boolean(((config.options as Record<string, unknown>) || {}).notify_on_all_jobs)}
-              onChange={(e) => updateNotifyAll(e.target.checked)}
+              onChange={(e) => updateOption("notify_on_all_jobs", e.target.checked)}
             />
             {t("notifyAllJobs")}
           </label>
+          <details>
+            <summary>{t("fileBrowseTitle")}</summary>
+            <p className="muted small-text">{t("fileBrowseHint")}</p>
+            <div className="form-grid">
+              <label className="inline-check">
+                <input
+                  type="checkbox"
+                  checked={Boolean(((config.options as Record<string, unknown>) || {}).file_browse_enabled)}
+                  onChange={(e) => updateOption("file_browse_enabled", e.target.checked)}
+                />
+                {t("fileBrowseEnabled")}
+              </label>
+              <label className="inline-check">
+                <input
+                  type="checkbox"
+                  checked={Boolean(((config.options as Record<string, unknown>) || {}).file_browse_allow_download)}
+                  onChange={(e) => updateOption("file_browse_allow_download", e.target.checked)}
+                />
+                {t("fileBrowseAllowDownload")}
+              </label>
+              <label>
+                {t("fileBrowseRoot")}
+                <input
+                  type="text"
+                  placeholder={t("fileBrowseRootPh")}
+                  value={String(((config.options as Record<string, unknown>) || {}).file_browse_root || "")}
+                  onChange={(e) => updateOption("file_browse_root", e.target.value)}
+                />
+              </label>
+              <label>
+                {t("fileBrowseMaxKb")}
+                <input
+                  type="number"
+                  value={String(((config.options as Record<string, unknown>) || {}).file_browse_max_kb ?? 256)}
+                  onChange={(e) => updateOption("file_browse_max_kb", e.target.value ? Number(e.target.value) : 256)}
+                />
+              </label>
+            </div>
+          </details>
           {Object.entries(fields).map(([channel, names]) => (
             <details key={channel}>
               <summary>{channel}</summary>
@@ -1109,7 +1239,8 @@ export function NotificationsPage() {
                       {name}
                       <input
                         type={kind === "secret" ? "password" : kind === "int" ? "number" : "text"}
-                        value={Array.isArray(value) ? value.join(",") : String(value || "")}
+                        placeholder={kind === "secret" && value === maskedSecret ? t("configuredKeepPlaceholder") : undefined}
+                        value={kind === "secret" && value === maskedSecret ? "" : Array.isArray(value) ? value.join(",") : String(value || "")}
                         onChange={(e) => {
                           const rawValue = e.target.value;
                           if (kind === "int") updateChannel(channel, name, rawValue ? Number(rawValue) : "");
@@ -1123,15 +1254,99 @@ export function NotificationsPage() {
               </div>
               <button className="button small" disabled={busy} onClick={() => testChannel(channel)}>{t("test")} {channel}</button>
             </details>
-          ))}
+        ))}
+        <div className="row-actions left">
           <button className="button primary" disabled={busy} onClick={() => saveNotify()}>{busy ? <Spinner /> : null}{t("save")}</button>
           <button className="button" disabled={busy} onClick={() => testChannel()}>{t("testAll")}</button>
-        </section>
-        <aside className="panel">
-          <h2>{t("advancedJson")}</h2>
-          <JsonTextArea value={raw} onChange={setRaw} rows={18} />
-        </aside>
+        </div>
+      </section>
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <h2>{t("commandReceiverTitle")}</h2>
+            <p className="muted">{t("commandReceiverSubtitle")}</p>
+          </div>
+          <StatusPill status={commands.data?.daemon?.running ? "running" : "stopped"} />
+        </div>
+        {commands.error ? <Alert tone="error">{commands.error}</Alert> : null}
+        <div className="metric-grid compact">
+          <div className="metric"><span>{t("status")}</span><strong>{commands.data?.daemon?.running ? t("daemonOn") : t("daemonOff")}</strong></div>
+          <div className="metric"><span>{t("pidLabel")}</span><strong>{String(commands.data?.daemon?.pid || "-")}</strong></div>
+          <div className="metric"><span>{t("commandChannel")}</span><strong>{String(commands.data?.daemon?.channel || "-")}</strong></div>
+        </div>
+        <div className="form-grid">
+          <label>
+            {t("commandChannel")}
+            <select value={daemonChannel} onChange={(e) => setDaemonChannel(e.target.value)}>
+              <option value="telegram">Telegram</option>
+              <option value="all">Telegram + Feishu</option>
+              <option value="feishu">Feishu callback only</option>
+            </select>
+          </label>
+          <label>
+            {t("savedFileLabel")}
+            <input readOnly value={String(commands.data?.daemon?.root || "")} />
+          </label>
+        </div>
+        <div className="row-actions left">
+          <button className="button primary" disabled={busy || Boolean(commands.data?.daemon?.running)} onClick={() => startCommands()}>{t("startCommandReceiver")}</button>
+          <button className="button" disabled={busy || !commands.data?.daemon?.running} onClick={() => stopCommands()}>{t("stopCommandReceiver")}</button>
+          <RefreshButton className="button ghost" onClick={() => commands.refresh()} />
+        </div>
+        <div className="panel-head">
+          <div>
+            <h3>{t("pairingTitle")}</h3>
+            <p className="muted">{t("pairingSubtitle")}</p>
+          </div>
+        </div>
+        <div className="row-actions left">
+          <button className="button" disabled={busy} onClick={() => generatePairCode()}>{t("generatePairCode")}</button>
+          <button className="button ghost" disabled={busy} onClick={() => registerMenu()}>{t("registerMenu")}</button>
+        </div>
+        {pairCode ? (
+          <Alert tone="info">
+            <strong className="mono">{pairCode.code}</strong> — {t("pairingInstruction").replace("{code}", pairCode.code)}
+            <span className="muted small-text"> （{t("expiresAt")}: {pairCode.expires_at}）</span>
+          </Alert>
+        ) : null}
+      </section>
       </div>
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <h2>{t("commandTestTitle")}</h2>
+            <p className="muted">{t("commandTestSubtitle")}</p>
+          </div>
+        </div>
+        <textarea className="mono" rows={4} value={commandText} onChange={(e) => setCommandText(e.target.value)} />
+        <div className="row-actions left">
+          <button className="button primary" disabled={busy || !commandText.trim()} onClick={() => dispatchCommand(false)}>{t("runCommandTest")}</button>
+          <button className="button" disabled={busy || !commandText.trim()} onClick={() => dispatchCommand(true)}>{t("planCommandTest")}</button>
+        </div>
+        {commandResult ? <pre className="result-box">{JSON.stringify(commandResult, null, 2)}</pre> : null}
+      </section>
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <h2>{t("commandEventsTitle")}</h2>
+            <p className="muted">{t("commandEventsSubtitle")}</p>
+          </div>
+          <RefreshButton className="button ghost small" onClick={() => commands.refresh()} />
+        </div>
+        <DataTable
+          rows={commands.data?.events || []}
+          loading={commands.loading}
+          empty={t("empty")}
+          columns={[
+            { key: "created_at", label: t("dateLabel") },
+            { key: "channel", label: t("commandChannel") },
+            { key: "user_id", label: "User" },
+            { key: "text", label: t("commandText"), render: (row) => <span className="mono small-text">{String(row.text || "")}</span> },
+            { key: "ok", label: t("status"), render: (row) => <StatusPill status={row.ok ? "succeeded" : "failed"} /> },
+            { key: "reply", label: t("commandReply"), render: (row) => <span className="small-text">{String(row.reply || row.error || "")}</span> }
+          ]}
+        />
+      </section>
     </>
   );
 }
@@ -1139,8 +1354,10 @@ export function NotificationsPage() {
 export function AdvancedPage() {
   const { t } = useI18n();
   const portalSettings = useAsync(() => api.get<PortalSettings>("/api/portal/settings"), []);
+  const envSettings = useAsync(() => api.get<PortalEnvSettings>("/api/portal/env"), []);
   const [portalHost, setPortalHost] = useState("127.0.0.1");
   const [portalPort, setPortalPort] = useState("19901");
+  const [envValues, setEnvValues] = useState<Record<string, string>>({});
   const modules = useAsync(() => api.get<Record<string, { commands: Array<Record<string, string>> }>>("/api/modules"), []);
   const [runModule, setRunModule] = useState("portal");
   const [runCommand, setRunCommand] = useState("scheduler");
@@ -1151,11 +1368,27 @@ export function AdvancedPage() {
   const [restartMessage, setRestartMessage] = useState<string | null>(null);
   const { busy, run: runAction } = useAction();
   const { busy: savingPortal, run: savePortal } = useAction();
+  const { busy: savingEnv, run: saveEnv } = useAction();
   const { busy: restartingPortal, run: restartPortal } = useAction();
   const moduleNames = useMemo(() => Object.keys(modules.data || {}).sort(), [modules.data]);
   const commandNames = useMemo(
     () => ((modules.data?.[runModule]?.commands || []).map((cmd) => String(cmd.name))),
     [modules.data, runModule],
+  );
+  const hostOptions = useMemo(
+    () => (portalSettings.data?.host_options || [
+      { value: "127.0.0.1", label: "127.0.0.1" },
+      { value: "0.0.0.0", label: "0.0.0.0" },
+    ]).map((option) => ({
+      value: option.value,
+      label:
+        option.value === "127.0.0.1"
+          ? t("hostLocalOnly")
+          : option.value === "0.0.0.0"
+            ? t("hostLanAll")
+            : option.label,
+    })),
+    [portalSettings.data, t],
   );
 
   useEffect(() => {
@@ -1163,6 +1396,24 @@ export function AdvancedPage() {
     setPortalHost(portalSettings.data.settings.host);
     setPortalPort(String(portalSettings.data.settings.port));
   }, [portalSettings.data]);
+
+  useEffect(() => {
+    if (!envSettings.data) return;
+    const next: Record<string, string> = {};
+    envSettings.data.fields.forEach((field) => {
+      const value = envSettings.data?.values[field.key] || "";
+      next[field.key] = field.secret && value === envSettings.data?.masked_secret ? "" : value;
+    });
+    setEnvValues(next);
+  }, [envSettings.data]);
+
+  const envGroups = useMemo(() => {
+    const groups: Record<string, PortalEnvField[]> = {};
+    (envSettings.data?.fields || []).forEach((field) => {
+      groups[field.group] = [...(groups[field.group] || []), field];
+    });
+    return groups;
+  }, [envSettings.data]);
 
   useEffect(() => {
     if (!moduleNames.length) return;
@@ -1244,36 +1495,33 @@ export function AdvancedPage() {
       <section className="panel">
         <div className="panel-head">
           <div>
-            <h2>Portal Settings</h2>
-            <p className="muted no-margin">Configure the default host and port used the next time `alphapilot portal` starts.</p>
+            <h2>{t("portalSettingsTitle")}</h2>
+            <p className="muted no-margin">{t("portalSettingsSubtitle")}</p>
           </div>
         </div>
         {portalSettings.error ? <Alert tone="error">{portalSettings.error}</Alert> : null}
         {portalSettings.data?.restart_required ? (
-          <Alert>Saved settings differ from the current running address. Restart `alphapilot portal` to apply them.</Alert>
+          <Alert>{t("portalSettingsRestartRequired")}</Alert>
         ) : null}
         {restartMessage ? <Alert tone="success">{restartMessage}</Alert> : null}
         <div className="dynamic-form cols-2">
           <label>
-            Bind host
+            {t("bindHostLabel")}
             <select value={portalHost} onChange={(e) => setPortalHost(e.target.value)}>
-              {(portalSettings.data?.host_options || [
-                { value: "127.0.0.1", label: "127.0.0.1 (local only)" },
-                { value: "0.0.0.0", label: "0.0.0.0 (LAN / all interfaces)" }
-              ]).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              {hostOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
-            <small>Default is local-only. Choose 0.0.0.0 only when this machine should accept LAN connections.</small>
+            <small>{t("bindHostHelp")}</small>
           </label>
           <label>
-            Port
+            {t("portLabel")}
             <input type="number" min={1} max={65535} value={portalPort} onChange={(e) => setPortalPort(e.target.value)} />
-            <small>CLI arguments still override saved settings, e.g. `alphapilot portal --port 19902`.</small>
+            <small>{t("portHelp")}</small>
           </label>
         </div>
         <div className="settings-summary">
-          <span>Current: {portalSettings.data?.current.host || window.location.hostname}:{portalSettings.data?.current.port || window.location.port || "80"}</span>
-          <span>PID: {portalSettings.data?.runtime?.pid || "-"}</span>
-          <span>Saved file: {portalSettings.data?.config_path || "-"}</span>
+          <span>{t("currentAddressLabel")}: {portalSettings.data?.current.host || window.location.hostname}:{portalSettings.data?.current.port || window.location.port || "80"}</span>
+          <span>{t("pidLabel")}: {portalSettings.data?.runtime?.pid || "-"}</span>
+          <span>{t("savedFileLabel")}: {portalSettings.data?.config_path || "-"}</span>
         </div>
         <div className="row-actions left">
           <button
@@ -1282,38 +1530,123 @@ export function AdvancedPage() {
             onClick={() => void savePortal(async () => {
               const next = await api.patch<PortalSettings>("/api/portal/settings", { host: portalHost, port: Number(portalPort) });
               portalSettings.setData?.(next);
-            }, "Portal settings saved")}
+            }, t("portalSettingsSaved"))}
           >
-            {savingPortal ? <Spinner /> : null}Save Portal Settings
+            {savingPortal ? <Spinner /> : null}{t("savePortalSettings")}
           </button>
           <button
             className="button"
             disabled={restartingPortal}
             onClick={() => {
-              if (!window.confirm("Restart the portal now? The page will reconnect after the server comes back.")) return;
+              if (!window.confirm(t("restartPortalConfirm"))) return;
               void restartPortal(async () => {
                 await api.post("/api/portal/restart");
-                setRestartMessage("Restart requested. Wait a few seconds, then refresh if the page does not reconnect automatically.");
-              }, "Portal restart requested");
+                setRestartMessage(t("restartPortalRequestedMessage"));
+              }, t("restartPortalRequestedToast"));
             }}
           >
-            {restartingPortal ? <Spinner /> : null}Restart Portal
+            {restartingPortal ? <Spinner /> : null}{t("restartPortalButton")}
+          </button>
+        </div>
+      </section>
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <h2>{t("envSettingsTitle")}</h2>
+            <p className="muted no-margin">{t("envSettingsSubtitle")}</p>
+          </div>
+        </div>
+        {envSettings.error ? <Alert tone="error">{envSettings.error}</Alert> : null}
+        {envSettings.data?.restart_required ? (
+          <Alert>{t("envSettingsRestartRequired")}</Alert>
+        ) : null}
+        <div className="settings-summary">
+          <span>{t("savedFileLabel")}: {envSettings.data?.config_path || "-"}</span>
+          <span>{t("restartKeysLabel")}: {(envSettings.data?.restart_required_keys || []).join(", ") || "-"}</span>
+        </div>
+        {Object.entries(envGroups).map(([group, fields]) => (
+          <details key={group} open>
+            <summary>{group}</summary>
+            <div className="dynamic-form cols-2 env-form">
+              {fields.map((field) => {
+                const savedMasked = Boolean(field.secret && envSettings.data?.values[field.key] === envSettings.data?.masked_secret);
+                return (
+                  <label key={field.key}>
+                    {field.label}
+                    {field.kind === "boolean" ? (
+                      <select
+                        value={envValues[field.key] || ""}
+                        onChange={(e) => setEnvValues((current) => ({ ...current, [field.key]: e.target.value }))}
+                      >
+                        <option value="">{t("unsetOption")}</option>
+                        <option value="true">{t("trueOption")}</option>
+                        <option value="false">{t("falseOption")}</option>
+                      </select>
+                    ) : (
+                      <input
+                        type={field.kind === "password" ? "password" : field.kind === "number" ? "number" : "text"}
+                        value={envValues[field.key] || ""}
+                        placeholder={savedMasked ? t("configuredKeepPlaceholder") : field.key}
+                        onChange={(e) => setEnvValues((current) => ({ ...current, [field.key]: e.target.value }))}
+                      />
+                    )}
+                    <small>
+                      {field.key}
+                      {envSettings.data?.current[field.key] ? ` · ${t("currentValueLabel")}: ${field.secret ? envSettings.data.masked_secret : envSettings.data.current[field.key]}` : ""}
+                      {field.help_text ? ` · ${field.help_text}` : ""}
+                    </small>
+                  </label>
+                );
+              })}
+            </div>
+          </details>
+        ))}
+        <div className="row-actions left">
+          <button
+            className="button primary"
+            disabled={savingEnv}
+            onClick={() => void saveEnv(async () => {
+              const next = await api.patch<PortalEnvSettings>("/api/portal/env", { values: envValues });
+              envSettings.setData?.(next);
+            }, t("envSettingsSaved"))}
+          >
+            {savingEnv ? <Spinner /> : null}{t("saveEnvSettings")}
+          </button>
+          <button
+            className="button"
+            disabled={restartingPortal}
+            onClick={() => {
+              if (!window.confirm(t("restartPortalConfirm"))) return;
+              void restartPortal(async () => {
+                await api.post("/api/portal/restart");
+                setRestartMessage(t("restartPortalRequestedMessage"));
+              }, t("restartPortalRequestedToast"));
+            }}
+          >
+            {restartingPortal ? <Spinner /> : null}{t("restartPortalButton")}
           </button>
         </div>
       </section>
       {modules.error ? <Alert tone="error">{modules.error}</Alert> : null}
       <div className="grid side">
         <section className="panel">
-          <h2>Modules</h2>
+          <h2>{t("modulesTitle")}</h2>
           {Object.entries(modules.data || {}).map(([name, info]) => (
             <details key={name}>
               <summary>{name}</summary>
-              <DataTable rows={info.commands as Record<string, unknown>[]} columns={[{ key: "name", label: "Command" }, { key: "signature", label: "Signature" }, { key: "doc", label: "Doc" }]} />
+              <DataTable
+                rows={info.commands as Record<string, unknown>[]}
+                columns={[
+                  { key: "name", label: t("commandLabel") },
+                  { key: "signature", label: t("signatureLabel") },
+                  { key: "doc", label: t("docLabel") },
+                ]}
+              />
             </details>
           ))}
         </section>
         <aside className="panel">
-          <h2>Run Command</h2>
+          <h2>{t("runCommandTitle")}</h2>
           <div className="form-grid">
             <label>
               {t("moduleLabel")}

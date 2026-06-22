@@ -3,6 +3,10 @@
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: #f6f7f9;
   color: #18212f;
+  --accent-50: #eff6ff;
+  --accent-100: #dbeafe;
+  --accent-600: #2563eb;
+  --accent-700: #1d4ed8;
 }
 
 * { box-sizing: border-box; }
@@ -61,8 +65,8 @@ nav a {
   border-radius: 8px;
   transition: background 0.15s, color 0.15s;
 }
-nav a:hover { background: #eef4f3; color: #0f766e; }
-nav a.active { background: #e8f3f1; color: #0f766e; font-weight: 650; }
+nav a:hover { background: var(--accent-50); color: var(--accent-700); }
+nav a.active { background: var(--accent-100); color: var(--accent-700); font-weight: 650; }
 nav a.active::before {
   content: "";
   position: absolute;
@@ -71,7 +75,7 @@ nav a.active::before {
   bottom: 6px;
   width: 3px;
   border-radius: 0 3px 3px 0;
-  background: #0f766e;
+  background: var(--accent-600);
 }
 
 .main { min-width: 0; }
@@ -94,7 +98,7 @@ nav a.active::before {
 .topbar-actions { display: flex; align-items: center; gap: 12px; }
 .daemon-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #667085; white-space: nowrap; }
 .daemon-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: #cbd5e1; }
-.daemon-chip .dot.on { background: #16a34a; box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15); }
+.daemon-chip .dot.on { background: var(--accent-600); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18); animation: pulse 2.4s ease-in-out infinite; }
 .muted { color: #667085; }
 .no-margin { margin: 0; }
 .content { padding: 24px; max-width: 1480px; margin: 0 auto; }
@@ -156,7 +160,7 @@ nav a.active::before {
   text-decoration: none;
   background: #f9fafb;
 }
-.action:hover { border-color: #0f766e; }
+.action:hover { border-color: var(--accent-600); }
 
 .button, .icon-button {
   border: 1px solid #c8d1dc;
@@ -167,11 +171,11 @@ nav a.active::before {
   padding: 7px 12px;
   cursor: pointer;
 }
-.button.primary { background: #0f766e; border-color: #0f766e; color: white; }
+.button.primary { background: var(--accent-600); border-color: var(--accent-600); color: white; }
 .button.ghost { background: transparent; }
 .button.small { min-height: 30px; padding: 4px 9px; font-size: 13px; }
 .button.danger, .icon-button.danger { border-color: #f4b4b4; color: #b42318; }
-.button:disabled { opacity: 0.5; cursor: not-allowed; }
+.button:disabled, .icon-button:disabled { opacity: 0.55; cursor: not-allowed; }
 .icon-button {
   display: inline-grid;
   place-items: center;
@@ -249,7 +253,7 @@ nav a.active::before {
 .progress-fill {
   height: 100%;
   border-radius: inherit;
-  background: #0f766e;
+  background: var(--accent-600);
   transition: width 0.25s ease;
 }
 .progress-block.active .progress-fill {
@@ -393,6 +397,17 @@ input, select, textarea {
 textarea { resize: vertical; }
 label { display: grid; gap: 6px; color: #38465a; font-size: 13px; margin-bottom: 10px; }
 .mono, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+.small-text { font-size: 12px; line-height: 1.35; white-space: pre-wrap; word-break: break-word; }
+.result-box {
+  margin: 12px 0 0;
+  padding: 12px;
+  border: 1px solid #dce2ea;
+  border-radius: 8px;
+  background: #f8fafc;
+  overflow: auto;
+  max-height: 360px;
+  white-space: pre-wrap;
+}
 
 .table-wrap { width: 100%; overflow: auto; max-height: 640px; border: 1px solid #e4e8ef; border-radius: 8px; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; background: white; }
@@ -466,7 +481,7 @@ td code { white-space: pre-wrap; word-break: break-word; }
   padding: 8px 12px;
   cursor: pointer;
 }
-.tabs button.active { background: #0f766e; color: white; border-color: #0f766e; }
+.tabs button.active { background: var(--accent-600); color: white; border-color: var(--accent-600); }
 
 .tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .tag {
@@ -485,6 +500,25 @@ summary { cursor: pointer; font-weight: 650; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .spin { animation: spin 0.8s linear infinite; vertical-align: -2px; }
 .button .spin, .button > svg { margin-right: 6px; }
+.icon-button > .spin, .icon-button > svg { margin-right: 0; }
+
+/* Live "syncing" dot for auto-polling panels (Jobs, daemon chip). */
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.35); }
+  50% { box-shadow: 0 0 0 4px rgba(37, 99, 235, 0); }
+}
+.live-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 7px;
+  border-radius: 50%;
+  background: #cbd5e1;
+  vertical-align: middle;
+  opacity: 0.5;
+  transition: opacity 0.2s ease;
+}
+.live-dot.on { background: var(--accent-600); opacity: 1; animation: pulse 1s ease-in-out infinite; }
 .loading-row { display: flex; align-items: center; justify-content: center; gap: 8px; }
 
 /* Toasts */

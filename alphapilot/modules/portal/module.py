@@ -26,6 +26,7 @@ class PortalModule(BaseModule):
         import uvicorn
 
         from alphapilot.modules.portal.api import create_app
+        from alphapilot.modules.portal.env_config import apply_portal_env
         from alphapilot.modules.portal.runtime import (
             clear_runtime,
             current_restart_argv,
@@ -37,6 +38,7 @@ class PortalModule(BaseModule):
         settings = load_portal_settings()
         host = host or settings["host"]
         port = int(port if port is not None else settings["port"])
+        apply_portal_env()
 
         if reload:
             uvicorn.run("alphapilot.modules.portal.api:create_app", host=host, port=port, reload=True, factory=True)
@@ -79,10 +81,17 @@ class PortalModule(BaseModule):
 
         return request_runtime_restart()
 
+    def notify_commands(self, channel: str = "telegram", poll_interval: float | None = None) -> None:
+        """Run the inbound notification command receiver."""
+        from alphapilot.systems.notify.inbound import run_daemon
+
+        run_daemon(channel=channel, poll_interval=poll_interval)
+
     def commands(self) -> dict[str, Callable[..., Any]]:
         return {
             "portal": self.portal,
             "portal_legacy": self.portal_legacy,
             "portal_restart": self.portal_restart,
+            "notify_commands": self.notify_commands,
             "scheduler": self.scheduler,
         }

@@ -12,13 +12,14 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from alphapilot.modules.portal import jobs, schedules
+from alphapilot.modules.portal.env_config import apply_portal_env, portal_env_payload, save_env_values
 from alphapilot.modules.portal.runtime import load_runtime, pid_running, runtime_path, schedule_current_process_restart
 from alphapilot.modules.portal.settings import load_file_portal_settings, save_portal_settings, settings_path
 
@@ -103,6 +104,10 @@ class PortalSettingsUpdate(BaseModel):
     port: int
 
 
+class PortalEnvUpdate(BaseModel):
+    values: dict[str, Any] = Field(default_factory=dict)
+
+
 class FactorCreate(BaseModel):
     factor_name: str
     factor_expression: str
@@ -166,6 +171,23 @@ class NotifyUpdate(BaseModel):
     config: dict[str, Any]
 
 
+class NotifyCommandDispatch(BaseModel):
+    text: str
+    channel: str = "portal"
+    user_id: str = "portal"
+    chat_id: str = "portal"
+    user_name: str | None = None
+    enforce_auth: bool = False
+
+
+class NotifyCommandDaemonStart(BaseModel):
+    channel: str = "telegram"
+
+
+class NotifyPairCodeRequest(BaseModel):
+    channel: str = "telegram"
+
+
 class ModuleRun(BaseModel):
     module: str
     command: str
@@ -193,6 +215,7 @@ def create_app(
     portal_host: str | None = None,
     portal_port: int | None = None,
 ) -> FastAPI:
+    apply_portal_env()
     app = FastAPI(title="AlphaPilot Portal API")
     if engine is not None:
         app.state.engine = engine
@@ -287,6 +310,18 @@ def create_app(
         except Exception as exc:  # noqa: BLE001
             raise _api_error(exc) from exc
         return _jsonable({"accepted": True, "restart": restart})
+
+    @app.get("/api/portal/env")
+    def get_portal_env() -> dict[str, Any]:
+        return _jsonable(portal_env_payload())
+
+    @app.patch("/api/portal/env")
+    def update_portal_env(payload: PortalEnvUpdate) -> dict[str, Any]:
+        try:
+            save_env_values(payload.values)
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+        return _jsonable(portal_env_payload())
 
     @app.get("/api/jobs")
     def list_jobs() -> list[dict[str, Any]]:
@@ -801,10 +836,11 @@ def create_app(
 
         return _jsonable(
             {
-                "config": notify_config.load_file_config(),
+                "config": notify_config.public_notify_config(),
                 "fields": notify_config.CHANNEL_FIELDS,
                 "configured_channels": notify_service.configured_channel_names(),
                 "credentials_path": notify_config.credentials_path(),
+                "masked_secret": notify_config.MASKED_SECRET,
             }
         )
 
@@ -820,6 +856,127 @@ def create_app(
         from alphapilot.systems.notify import service as notify_service
 
         return _jsonable(notify_service.test_send(channel))
+
+    @app.get("/api/notify/commands/status")
+    def notify_commands_status() -> dict[str, Any]:
+        from alphapilot.systems.notify import commands as notify_commands
+        from alphapilot.systems.notify import inbound
+
+        return _jsonable(
+            {
+                "daemon": inbound.daemon_status(),
+                "payload": notify_commands.command_payload_status(),
+                "events": inbound.recent_events(limit=20),
+            }
+        )
+
+    @app.post("/api/notify/commands/start")
+    def notify_commands_start(payload: NotifyCommandDaemonStart) -> dict[str, Any]:
+        try:
+            from alphapilot.systems.notify import inbound
+
+            return _jsonable(inbound.start_daemon(channel=payload.channel))
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.post("/api/notify/commands/stop")
+    def notify_commands_stop() -> dict[str, Any]:
+        try:
+            from alphapilot.systems.notify import inbound
+
+            return _jsonable(inbound.stop_daemon())
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.get("/api/notify/commands/events")
+    def notify_commands_events(limit: int = 100) -> list[dict[str, Any]]:
+        from alphapilot.systems.notify import inbound
+
+        return _jsonable(inbound.recent_events(limit=limit))
+
+    @app.post("/api/notify/commands/dispatch")
+    def notify_commands_dispatch(payload: NotifyCommandDispatch) -> dict[str, Any]:
+        from alphapilot.systems.notify.commands import dispatch_text
+
+        try:
+            return _jsonable(
+                dispatch_text(
+                    payload.text,
+                    channel=payload.channel,
+                    user_id=payload.user_id,
+                    chat_id=payload.chat_id,
+                    user_name=payload.user_name,
+                    enforce_auth=payload.enforce_auth,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.post("/api/notify/commands/plan")
+    def notify_commands_plan(payload: NotifyCommandDispatch) -> dict[str, Any]:
+        from alphapilot.systems.notify.commands import plan_natural_language
+
+        try:
+            action = plan_natural_language(payload.text)
+            return _jsonable({"ok": True, "action": action.to_dict()})
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.post("/api/notify/commands/pair-code")
+    def notify_commands_pair_code(payload: NotifyPairCodeRequest) -> dict[str, Any]:
+        from alphapilot.systems.notify import inbound
+
+        try:
+            item = inbound.create_pair_code(channel=payload.channel)
+            return _jsonable({"ok": True, **item})
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.post("/api/notify/commands/register-menu")
+    def notify_commands_register_menu() -> dict[str, Any]:
+        from alphapilot.systems.notify.config import load_notify_config
+        from alphapilot.systems.notify.receivers import telegram_set_my_commands
+
+        try:
+            token = str(load_notify_config().get("telegram", {}).get("bot_token") or "")
+            if not token:
+                raise ValueError("telegram bot_token is required to register the menu")
+            telegram_set_my_commands(token)
+            return {"ok": True}
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.post("/api/notify/feishu/events")
+    async def notify_feishu_events(
+        request: Request,
+        x_lark_request_timestamp: str | None = Header(default=None),
+        x_lark_request_nonce: str | None = Header(default=None),
+        x_lark_signature: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        from alphapilot.systems.notify.config import load_notify_config
+        from alphapilot.systems.notify.receivers import handle_feishu_event, verify_feishu_signature
+
+        body = await request.body()
+        cfg = load_notify_config()
+        feishu_cfg = cfg.get("feishu", {}) if isinstance(cfg.get("feishu"), dict) else {}
+        if not verify_feishu_signature(
+            body=body,
+            timestamp=x_lark_request_timestamp,
+            nonce=x_lark_request_nonce,
+            signature=x_lark_signature,
+            encrypt_key=feishu_cfg.get("encrypt_key"),
+        ):
+            raise HTTPException(status_code=401, detail="Invalid Feishu signature")
+        try:
+            payload = json.loads(body.decode("utf-8") or "{}")
+            token = feishu_cfg.get("verification_token")
+            if token and payload.get("token") and payload.get("token") != token:
+                raise HTTPException(status_code=401, detail="Invalid Feishu verification token")
+            return _jsonable(handle_feishu_event(payload))
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
 
     @app.get("/api/modules")
     def modules() -> dict[str, Any]:

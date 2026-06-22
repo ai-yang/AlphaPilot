@@ -404,7 +404,10 @@ def start_daemon(*, schedule_root: Path | str | None = None, interval: int = 30)
     # Clear a stale pid file before relaunching.
     _pidfile_path(root).unlink(missing_ok=True)
 
+    from alphapilot.modules.portal.env_config import apply_portal_env
+
     env = dict(os.environ)
+    apply_portal_env(env)
     env["ALPHAPILOT_PORTAL_SCHEDULE_ROOT"] = str(root)
     log = _daemon_log_path(root).open("a", encoding="utf-8")
     log.write(f"\n[scheduler] launching at {utc_now()}\n")

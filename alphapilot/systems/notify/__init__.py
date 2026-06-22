@@ -1,6 +1,6 @@
 """AlphaPilot notification system (email / Feishu / Telegram).
 
-Phase 1 = outbound only. Public surface:
+Public surface:
 
 * :class:`Message`, :class:`MessageAction`, :class:`NotifyLevel` -- portable model.
 * :func:`send`, :func:`test_send`, :func:`build_job_message`, :func:`configured_channel_names`.
@@ -15,6 +15,7 @@ from alphapilot.systems.notify.config import (
     load_file_config,
     load_notify_config,
     notify_on_all_jobs,
+    public_notify_config,
     save_notify_config,
 )
 from alphapilot.systems.notify.models import Message, MessageAction, NotifyLevel
@@ -39,6 +40,7 @@ __all__ = [
     "credentials_path",
     "load_file_config",
     "load_notify_config",
+    "public_notify_config",
     "save_notify_config",
     "notify_on_all_jobs",
 ]

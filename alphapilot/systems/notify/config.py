@@ -20,11 +20,24 @@ CHANNEL_FIELDS: dict[str, list[tuple[str, str]]] = {
         ("enabled", "bool"),
         ("bot_token", "secret"),
         ("chat_id", "str"),
+        ("receive_enabled", "bool"),
+        ("allowed_user_ids", "list"),
+        ("allowed_chat_ids", "list"),
+        ("require_mention", "bool"),
+        ("bot_username", "str"),
+        ("poll_interval", "int"),
     ],
     "feishu": [
         ("enabled", "bool"),
         ("webhook", "str"),
         ("secret", "secret"),
+        ("receive_enabled", "bool"),
+        ("app_id", "str"),
+        ("app_secret", "secret"),
+        ("verification_token", "secret"),
+        ("encrypt_key", "secret"),
+        ("allowed_user_ids", "list"),
+        ("allowed_chat_ids", "list"),
     ],
     "email": [
         ("enabled", "bool"),
@@ -40,9 +53,43 @@ CHANNEL_FIELDS: dict[str, list[tuple[str, str]]] = {
 
 SECRET_FIELD_TYPES = {"secret"}
 
+MASKED_SECRET = "********"
+
+# Cross-channel options (name, type, default). Single source of truth for the
+# options block: drives defaults, save coercion and the ``ALPHAPILOT_NOTIFY_*``
+# env overlay, just like CHANNEL_FIELDS does for channels.
+OPTION_FIELDS: list[tuple[str, str, Any]] = [
+    ("notify_on_all_jobs", "bool", False),
+    ("file_browse_enabled", "bool", False),
+    ("file_browse_root", "str", ""),
+    ("file_browse_allow_download", "bool", True),
+    ("file_browse_max_kb", "int", 256),
+]
+
 _DEFAULTS: dict[str, dict[str, Any]] = {
-    "telegram": {"enabled": False, "bot_token": "", "chat_id": ""},
-    "feishu": {"enabled": False, "webhook": "", "secret": ""},
+    "telegram": {
+        "enabled": False,
+        "bot_token": "",
+        "chat_id": "",
+        "receive_enabled": False,
+        "allowed_user_ids": [],
+        "allowed_chat_ids": [],
+        "require_mention": True,
+        "bot_username": "",
+        "poll_interval": 2,
+    },
+    "feishu": {
+        "enabled": False,
+        "webhook": "",
+        "secret": "",
+        "receive_enabled": False,
+        "app_id": "",
+        "app_secret": "",
+        "verification_token": "",
+        "encrypt_key": "",
+        "allowed_user_ids": [],
+        "allowed_chat_ids": [],
+    },
     "email": {
         "enabled": False,
         "host": "",
@@ -74,6 +121,8 @@ def _coerce(value: Any, ftype: str) -> Any:
         except (TypeError, ValueError):
             return 0
     if ftype == "list":
+        if value is None:
+            return []  # else str(None) -> "None" leaks a phantom "None" entry
         if isinstance(value, list):
             return [str(v).strip() for v in value if str(v).strip()]
         return [part.strip() for part in str(value).split(",") if part.strip()]
@@ -83,7 +132,7 @@ def _coerce(value: Any, ftype: str) -> Any:
 def load_file_config() -> dict[str, Any]:
     """Read the credentials file only (no env overlay). Used by the editor UI."""
     cfg = {ch: dict(defaults) for ch, defaults in _DEFAULTS.items()}
-    cfg["options"] = {"notify_on_all_jobs": False}
+    cfg["options"] = {name: default for name, _ftype, default in OPTION_FIELDS}
     path = credentials_path()
     if path.exists():
         try:
@@ -96,7 +145,9 @@ def load_file_config() -> dict[str, Any]:
                 if name in saved:
                     cfg[channel][name] = _coerce(saved[name], ftype)
         if isinstance(stored.get("options"), dict):
-            cfg["options"].update(stored["options"])
+            for name, ftype, _default in OPTION_FIELDS:
+                if name in stored["options"]:
+                    cfg["options"][name] = _coerce(stored["options"][name], ftype)
     return cfg
 
 
@@ -112,9 +163,17 @@ def load_notify_config() -> dict[str, Any]:
             env_val = os.getenv(_env_key(channel, name))
             if env_val is not None:
                 cfg[channel][name] = _coerce(env_val, ftype)
+    # notify_on_all_jobs keeps its historical env key; the rest follow the
+    # ALPHAPILOT_NOTIFY_<OPTION> convention.
     on_all = os.getenv("ALPHAPILOT_NOTIFY_ON_ALL_JOBS")
     if on_all is not None:
         cfg["options"]["notify_on_all_jobs"] = _coerce(on_all, "bool")
+    for name, ftype, _default in OPTION_FIELDS:
+        if name == "notify_on_all_jobs":
+            continue
+        env_val = os.getenv(f"ALPHAPILOT_NOTIFY_{name.upper()}")
+        if env_val is not None:
+            cfg["options"][name] = _coerce(env_val, ftype)
     return cfg
 
 
@@ -126,19 +185,45 @@ def save_notify_config(cfg: dict[str, Any]) -> Path:
         os.chmod(path.parent, 0o700)
     except OSError:
         pass
+    existing = load_file_config()
     payload: dict[str, Any] = {}
     for channel, fields in CHANNEL_FIELDS.items():
         section = cfg.get(channel, {})
-        payload[channel] = {name: _coerce(section.get(name), ftype) for name, ftype in fields}
-    payload["options"] = {
-        "notify_on_all_jobs": bool(cfg.get("options", {}).get("notify_on_all_jobs", False))
-    }
+        payload[channel] = {}
+        for name, ftype in fields:
+            raw_value = section.get(name)
+            if ftype in SECRET_FIELD_TYPES and (raw_value is None or raw_value == "" or raw_value == MASKED_SECRET):
+                payload[channel][name] = existing.get(channel, {}).get(name, "")
+            else:
+                payload[channel][name] = _coerce(raw_value, ftype)
+    incoming_opts = cfg.get("options", {}) if isinstance(cfg.get("options"), dict) else {}
+    existing_opts = existing.get("options", {})
+    payload["options"] = {}
+    for name, ftype, default in OPTION_FIELDS:
+        if name in incoming_opts:
+            payload["options"][name] = _coerce(incoming_opts[name], ftype)
+        elif name in existing_opts:
+            payload["options"][name] = _coerce(existing_opts[name], ftype)
+        else:
+            payload["options"][name] = default
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     try:
         os.chmod(path, 0o600)
     except OSError:
         pass
     return path
+
+
+def public_notify_config(*, include_secrets: bool = False) -> dict[str, Any]:
+    """Return file config for API/UI use, masking secrets by default."""
+    cfg = load_file_config()
+    if include_secrets:
+        return cfg
+    for channel, fields in CHANNEL_FIELDS.items():
+        for name, ftype in fields:
+            if ftype in SECRET_FIELD_TYPES and cfg.get(channel, {}).get(name):
+                cfg[channel][name] = MASKED_SECRET
+    return cfg
 
 
 def notify_on_all_jobs() -> bool:

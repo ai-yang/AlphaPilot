@@ -358,6 +358,9 @@ def _maybe_notify(
 
 
 def _job_worker(job_dir_raw: str, kind: JobKind, kwargs: dict[str, Any]) -> None:
+    from alphapilot.modules.portal.env_config import apply_portal_env
+
+    apply_portal_env()
     job_dir = Path(job_dir_raw)
     job_id = job_dir.name
     log_file = _log_path(job_dir)

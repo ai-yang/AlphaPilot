@@ -1,6 +1,6 @@
 # AlphaPilot
 
-基于 [AlphaAgent](https://github.com/RndmVariableQ/AlphaAgent)（KDD 2025）的本地化 fork，面向 A 股因子挖掘与 Qlib 回测。本仓库在保留原项目核心流程（假设生成 → 因子构造 → 回测评估）的基础上，增加了 API 兼容、**多模式回测**、**日频交易信号**、回测可视化等改动，便于在本地环境稳定运行。
+基于 [AlphaAgent](https://github.com/RndmVariableQ/AlphaAgent)（KDD 2025）的本地化 fork，面向 A 股因子挖掘与 Qlib 回测。本仓库在保留原项目核心流程（假设生成 → 因子构造 → 回测评估）的基础上，增加了 API 兼容、**多模式回测**、**日频交易信号**、**任务完成通知与聊天命令**、回测可视化等改动，便于在本地环境稳定运行。
 
 ---
 
@@ -202,7 +202,7 @@ alphapilot qlib_yaml_validate \
 - 挖掘日志 UI（`alphapilot/log/ui/`）通过 `core.scenario.Scenario` 的 UI trait 分支渲染，**不再 import** `alpha_mining` 具体场景类
 - adapter 层仅保留 **LLM + 数据源** 可插拔边界；已移除未接入主路径的 backtest engine adapter（`get_backtest_engine`），回测统一经 `systems/backtest/` 执行（详见 [alphapilot/adapters/README.md](alphapilot/adapters/README.md)）
 - 统一 Web 门户：`modules/portal/api.py`（FastAPI）+ `modules/portal/web/`（React/Vite 前端）；旧 Streamlit 版保留为 `app.py` / `alphapilot portal_legacy`
-- 任务完成通知收拢到 `alphapilot/systems/notify/`（Telegram / 飞书 / 邮件）；Portal「通知」页配置凭证，后台 job 结束时由 `modules/portal/jobs.py` 触发推送
+- 任务完成通知与双向通讯收拢到 `alphapilot/systems/notify/`（Telegram / 飞书 / 邮件）；Portal「通知」页配置凭证与 Command Receiver，后台 job 结束时由 `modules/portal/jobs.py` 触发推送，白名单用户可通过 Telegram / 飞书发命令查询或创建任务
 
 **数据系统代码位置（供二开参考）**
 
@@ -254,23 +254,57 @@ data.run_download(DataDownloadCommand(
 - 单股重 dump 依赖已存在的 `instruments/all.txt` 与 `calendars/day.txt`；若缺失会提示改跑全量 `alphapilot prepare_data convert`。
 - Portal「市场数据」页也内嵌了同一套删除 / 刷新 / 裁剪控件与「重建 daily_pv h5」按钮。
 
-### 7. 任务完成通知（`alphapilot/systems/notify/`）
+### 7. 任务完成通知与通讯（`alphapilot/systems/notify/`）
 
-因子挖掘、因子/策略回测、数据任务、AlphaForge 等**后台任务**完成后，可推送摘要到 **Telegram**、**飞书** 或 **邮件 SMTP**。
+因子挖掘、因子/策略回测、数据任务、AlphaForge 等**后台任务**完成后，可推送摘要到 **Telegram**、**飞书** 或 **邮件 SMTP**。通知页也支持**双向命令入口**：白名单用户可通过 Telegram / 飞书发送命令来查询或创建 Portal 后台任务，并可 `/start` **一次性配对码** 入册、查看 **Telegram 命令菜单**、`/ls /cat /tree /get` **只读浏览本地文件**；每个会话的消息会**分会话留档**，自然语言指令带最近几轮上下文。
 
 - **配置入口**：`alphapilot portal` → **通知**
 - **凭证文件**：`~/.alphapilot/credentials/notify.json`（仓库外，权限 `0600`；勿提交 git）
 - **触发方式**：在「定时任务」创建任务时勾选「完成后通知」；或在通知页开启「所有后台任务完成都通知」
-- **环境变量覆盖**（服务器部署）：`ALPHAPILOT_NOTIFY_*`（如 `ALPHAPILOT_NOTIFY_TELEGRAM_BOT_TOKEN`、`ALPHAPILOT_NOTIFY_FEISHU_WEBHOOK`）；**运行时 env 优先于文件**
+- **环境变量覆盖**（服务器部署）：`ALPHAPILOT_NOTIFY_*`（如 `ALPHAPILOT_NOTIFY_TELEGRAM_BOT_TOKEN`、`ALPHAPILOT_NOTIFY_FEISHU_WEBHOOK`、`ALPHAPILOT_NOTIFY_TELEGRAM_RECEIVE_ENABLED`、`ALPHAPILOT_NOTIFY_TELEGRAM_ALLOWED_USER_IDS`）；**运行时 env 优先于文件**
 - **测试**：Portal 中先 **Save**，再点频道 **Test Send**（未保存时测试读的是磁盘上的旧配置）
+- **命令接收器**：Portal「通知」页 → **Command Receiver** 启动，或命令行运行 `alphapilot notify_commands --channel telegram`（Telegram 长轮询）；飞书接收依赖 Portal 进程处理 `POST /api/notify/feishu/events`，**须保持 `alphapilot portal` 运行**
+- **配对（`/start`）**：通知页点 **生成配对码** 得到一次性短码（10 分钟、单次有效），在 Telegram 发送 `/start <码>` 即把自己的数字 `user_id` 写入白名单——无需手填 `allowed_user_ids`。配对是**唯一**可绕过白名单的入口，且只用于「加人」、不执行任务；下一条消息即生效，无需重启
+- **命令菜单**：接收器启动时自动调用 Telegram `setMyCommands`，聊天框即可看到命令及说明；也可在通知页点 **注册命令菜单** 手动重推
+- **本地文件浏览（可选，默认关闭）**：通知页「本地文件浏览」开启后，白名单用户可用 `/ls /cat /tree /get` **只读**浏览 / 下载某个**沙箱根目录**内的文件。自动屏蔽越界路径（`..`、越界软链）与密钥类文件（`.env`、`.git`、`~/.alphapilot/credentials`、`*token*`/`*secret*`/`id_*` 等，连列目录都不显示），并有单文件大小上限；根目录默认是进程工作目录，**建议显式设到产出目录**（如 `git_ignore_folder/runs`）缩小暴露面
+- **对话记录**：每个会话按 `chats/<channel>__<chat_id>/transcript.jsonl` 分别留档；自然语言指令会带最近几轮上下文（如「那个回测一下」可解析到上一条）
+- **接收器状态文件**：`~/.alphapilot/portal/notify_commands/`（`notify_commands.pid.json`、`notify_commands.log`、`events.jsonl`、`pending.json`、`pairing.json`、`telegram_offset.json`、`chats/`；可用 `ALPHAPILOT_NOTIFY_COMMAND_ROOT` 覆盖）
 
-| 频道 | 必填项 | 说明 |
-|------|--------|------|
-| Telegram | `bot_token`、`chat_id` | @BotFather 创建 bot；先向 bot 发 `/start`，再填个人或群 `chat_id` |
-| 飞书 Feishu | `webhook` | 群 **自定义机器人** Webhook URL；若创建时开启签名校验则同时填 `secret`，否则留空 |
-| Email | `host`、`sender`、`recipients` | SMTP（默认 SSL 465；`use_ssl=false` 时用 STARTTLS）；按需填 `username` / `password` |
+| 频道 | 推送（出站） | 接收命令（入站，可选） |
+|------|--------------|------------------------|
+| Telegram | `bot_token`、`chat_id` | 开启 `receive_enabled`，填写数字 `allowed_user_ids`；可选 `allowed_chat_ids` 限制群、`require_mention` + `bot_username` 要求群内 @ 机器人、`poll_interval` 轮询间隔（秒） |
+| 飞书 Feishu | 群 **自定义机器人** `webhook`（签名校验时填 `secret`） | 与 Webhook **独立**：在开放平台创建**应用机器人**，填写 `app_id`、`app_secret`、`verification_token`，加密事件时填 `encrypt_key`；开启 `receive_enabled` 与 `allowed_user_ids`，把事件回调 URL 设为 `https://<portal-host>:<port>/api/notify/feishu/events` |
+| Email | `host`、`sender`、`recipients` | 仅出站推送；SMTP 默认 SSL 465（`use_ssl=false` 时用 STARTTLS），按需填 `username` / `password` |
 
-实现位于 `alphapilot/systems/notify/`（`config.py`、各 channel、`service.py`）；Portal 后台 worker 在 `modules/portal/jobs.py` 中于任务结束时调用。
+**聊天命令**（发送 `/help` 可查看完整列表）：
+
+| 命令 | 作用 |
+|------|------|
+| `/start [配对码]` | 用一次性配对码加入白名单；无参数时显示帮助 |
+| `/help` | 显示命令列表 |
+| `/jobs` | 列出最近后台任务 |
+| `/status <job_id>` | 查询任务状态（省略 job_id 时列出最近几条） |
+| `/log <job_id>`、`/result <job_id>` | 读取任务日志或结果 JSON |
+| `/run <kind> {json}` | 显式创建 job（如 `/run mine {"step_n": 1}`） |
+| `/mine`、`/backtest [factor\|strategy]`、`/data` | 简写创建挖掘 / 回测 / 数据任务（参数支持 `key=value` 或 JSON） |
+| `/cancel <job_id>` | 取消任务 |
+| `/confirm <id>` | 确认自然语言解析出的待执行计划 |
+| `/ls [路径]`、`/tree [路径]` | 浏览沙箱根目录内的目录（需开启「本地文件浏览」） |
+| `/cat <路径>` | 查看文件文本内容（截断到大小上限） |
+| `/get <路径>` | 下载文件（Telegram 以文档形式发送） |
+| 自然语言 | 经 LLM 生成结构化计划，须 `/confirm` 后才会执行 |
+
+命令入口默认关闭且失败关闭：必须保存接收开关和白名单用户 ID 后才会执行任务。显式 `/run` 类命令会直接创建允许的 Portal job；自然语言会先生成结构化计划并要求 `/confirm <id>` 确认。第一版不执行任意 Python 或 shell。通知页右侧 **Command Receiver** 面板还可本地测试 dispatch / plan，并查看最近入站事件。
+
+**启动顺序与排错（Telegram 发消息没有回复时看这里）**
+
+- **先开关、再启动**：必须先在通知页保存 `receive_enabled=true`（及 `bot_token`），**再**启动 Command Receiver。顺序反了，接收器子进程会在启动瞬间抛 `RuntimeError: Telegram command receiver is disabled` 并退出 → 此时 Telegram 发任何消息都**完全没有回复**（因为根本没有进程在轮询）。
+- **状态可能误报 running**：接收器崩溃后 PID 文件会残留，状态检查只判断「该 PID 是否还存在」（可能已被系统回收给别的进程），门户因此可能**显示 running 实则已死**；这种状态下再点 Start 会被「已在运行」挡掉。**解决：先 Stop 再 Start**（Stop 会清掉残留 PID 文件）。
+- **确认是否真的在轮询**：`pgrep -fl notify.inbound` 应能看到 `python -m alphapilot.systems.notify.inbound`；或看 `~/.alphapilot/portal/notify_commands/notify_commands.log`——正常应只有 `[notify-commands] started pid=...`，其后**没有紧跟 traceback**；收到的入站消息会写进同目录 `events.jsonl`。
+- **重启不会重放历史**：轮询 offset 持久化在 `telegram_offset.json`，重启接收器不会把已处理过的消息重新执行一遍。
+- **配对码过期**：配对码 10 分钟失效且单次使用，过期请重新「生成配对码」；机器人会回 `配对码已过期 / 无效` 而非静默。
+
+实现位于 `alphapilot/systems/notify/`（`config.py`、各 channel、`service.py`、`commands.py`、`inbound.py`、`receivers.py`、`fsbrowse.py`）；Portal 后台 worker 在 `modules/portal/jobs.py` 中于任务结束时调用。
 
 ---
 
@@ -314,6 +348,8 @@ PATH=/opt/homebrew/bin:$PATH npm run build
 构建完成后会生成 `alphapilot/modules/portal/web/dist/`。运行 `alphapilot portal` 只需要这个 `dist/` 和 Python 后端依赖；不需要每次启动都运行 npm。旧版 Streamlit 门户保留为 `alphapilot portal_legacy`。
 
 `alphapilot portal` 默认监听 `127.0.0.1:19901`，只允许本机访问。如需局域网访问，请显式启动 `alphapilot portal --host 0.0.0.0 --port 19901`，或在门户「高级」页保存 Portal Settings 后重启门户。
+
+门户「高级」页还可以编辑常用环境参数（LLM、Tushare、数据路径、Qlib 模板、缓存等）。这些值默认保存到 `~/.alphapilot/portal/env.json`，不会直接修改仓库 `.env`，避免 key/token 被误提交；真实系统环境变量优先级最高，保存后点击 **Restart Portal** 才能保证当前进程完全生效。
 
 本地开发前端时，可在一个终端运行 `alphapilot portal --port 19901`，另一个终端在 `alphapilot/modules/portal/web` 下执行 `npm run dev`（Vite 默认 `http://localhost:5173`，`/api` 代理到后端）。仅改 Python 后端时可用 `alphapilot portal --reload --port 19901`（需配合 `npm run dev` 或已构建的 `dist/`）。
 
@@ -650,9 +686,15 @@ EMBEDDING_MAX_STR_NUM=10     # DashScope 等 embedding 接口的单次 batch 上
 # ALPHAPILOT_NOTIFY_TELEGRAM_ENABLED=true
 # ALPHAPILOT_NOTIFY_TELEGRAM_BOT_TOKEN=...
 # ALPHAPILOT_NOTIFY_TELEGRAM_CHAT_ID=...
+# ALPHAPILOT_NOTIFY_TELEGRAM_RECEIVE_ENABLED=true
+# ALPHAPILOT_NOTIFY_TELEGRAM_ALLOWED_USER_IDS=123456789
 # ALPHAPILOT_NOTIFY_FEISHU_ENABLED=true
 # ALPHAPILOT_NOTIFY_FEISHU_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/...
 # ALPHAPILOT_NOTIFY_FEISHU_SECRET=...
+# ALPHAPILOT_NOTIFY_FEISHU_RECEIVE_ENABLED=true
+# ALPHAPILOT_NOTIFY_FEISHU_APP_ID=...
+# ALPHAPILOT_NOTIFY_FEISHU_APP_SECRET=...
+# ALPHAPILOT_NOTIFY_FEISHU_VERIFICATION_TOKEN=...
 # ALPHAPILOT_NOTIFY_EMAIL_HOST=smtp.example.com
 # ALPHAPILOT_NOTIFY_EMAIL_RECIPIENTS=you@example.com,other@example.com
 
@@ -948,6 +990,7 @@ alphapilot daily_signals \
 |------|------|----------|
 | `alphapilot portal` | **推荐** | 新版 FastAPI + React 一站式 Web 门户：数据/因子/策略/回测、K 线、**定时任务 / 通知**、模块命令等 |
 | `alphapilot portal_restart` | 可选管理 | 重启当前运行中的新版 portal；也可在 portal「高级」页点击 Restart Portal |
+| `alphapilot notify_commands` | 可选管理 | 运行 Telegram 通知命令接收器；Portal「通知」页也可启动/停止 |
 | `alphapilot portal_legacy` | 旧版回退 | Streamlit 版旧门户；用于新版前端未构建或需要临时回退时使用 |
 | `alphapilot data_viz` | 可选独立 | 查看已下载股票 CSV：**K 线图**（portal「市场数据」页已内嵌，通常无需单独启动） |
 | `alphapilot backtest_viz` | 可选独立 | 查看回测 workspace 产物（portal「回测」页已内嵌，通常无需单独启动） |
@@ -1005,7 +1048,7 @@ alphapilot portal_legacy --port 19901
 | 市场数据 | `/market` | 数据下载/转换/h5、单股管理、K 线查看 |
 | 每日交易 | `/daily-trade` | `daily_signals` 后台 job |
 | 定时任务 | `/scheduler` | cron 式任务与「完成后通知」 |
-| 通知 | `/notifications` | Telegram / 飞书 / 邮件配置与测试 |
+| 通知 | `/notifications` | Telegram / 飞书 / 邮件配置与测试；Command Receiver 启停与命令调试 |
 | 高级 | `/advanced` | 系统/模块清单、JSON 命令调度、重新加载引擎 |
 
 **本地开发**（前端热更新）：
@@ -1064,13 +1107,14 @@ alphapilot backtest_viz --port 19903
 
 #### 4.4 任务完成通知（portal「通知」页）
 
-后台任务（定时任务、AlphaForge、Portal 触发的挖掘/回测/数据 job 等）结束时会推送标题、状态、Job ID 与结果摘要。支持 **Telegram**、**飞书自定义机器人 Webhook**、**SMTP 邮件** 三个频道，可并行启用。
+后台任务（定时任务、AlphaForge、Portal 触发的挖掘/回测/数据 job 等）结束时会推送标题、状态、Job ID 与结果摘要。支持 **Telegram**、**飞书自定义机器人 Webhook**、**SMTP 邮件** 三个频道，可并行启用。通知页还包含 **Command Receiver**：可测试 `/jobs`、`/run mine {"step_n": 1}`、`/backtest ...` 和自然语言计划。
 
 1. 打开 portal → **通知**，填写频道凭证并 **Save**
 2. 点 **Test Send** 验证（须先 Save）
 3. 在 **定时任务** 创建任务时勾选「完成后通知」，或在通知页开启「所有后台任务完成都通知」
+4. 如需聊天命令，填写 Telegram/飞书接收白名单并启动 **Command Receiver**；Telegram 可用 `alphapilot notify_commands --channel telegram` 独立运行，飞书接收需在开放平台把事件回调 URL 指向 `https://<portal-host>:<port>/api/notify/feishu/events` 并保持 Portal 进程在线
 
-凭证默认写入 `~/.alphapilot/credentials/notify.json`（不在 git 仓库内）。服务器可用 `ALPHAPILOT_NOTIFY_*` 环境变量覆盖，详见 [§7](#7-任务完成通知alphapilotsystemsnotify) 与上方 [配置说明](#配置说明)。
+凭证默认写入 `~/.alphapilot/credentials/notify.json`（不在 git 仓库内）。服务器可用 `ALPHAPILOT_NOTIFY_*` 环境变量覆盖，详见 [§7](#7-任务完成通知与通讯alphapilotsystemsnotify) 与上方 [配置说明](#配置说明)。
 
 ### 5. 清理缓存
 
@@ -1151,7 +1195,7 @@ AlphaPilot/
 │   │   ├── factor/             # 因子库（factor_zoo）、结构化表达式校验（FactorValidationResult）
 │   │   ├── backtest/           # 回测：engines/、pipelines/、live/（日频信号）、artifacts、qlib_yaml/
 │   │   ├── strategy/           # 策略资产存储（strategy_zoo）、复测编排（backtest.py）
-│   │   └── notify/             # 任务完成通知（Telegram / 飞书 / 邮件 SMTP）
+│   │   └── notify/             # 任务完成通知与聊天命令（Telegram / 飞书 / 邮件；commands / inbound / receivers）
 │   ├── adapters/               # LLM/数据源可插拔适配层（回测见 systems/backtest/）
 │   ├── modules/                # 功能模块（alpha_mining/portal/platform/data_viz/backtest_viz/strategy_backtest/daily_trade/qlib_yaml/factor_cli + 插件）
 │   │   ├── alpha_mining/       # 因子挖掘（qlib 场景 + loops + conf + registry）
@@ -1189,6 +1233,7 @@ AlphaPilot/
     └── tushare/              # Tushare CSV、download_state.csv、qlib 二进制
 
 ~/.alphapilot/credentials/   # Portal 通知频道凭证（notify.json，不在仓库内）
+~/.alphapilot/portal/       # Portal 运行时状态（env.json、notify_commands 接收器 pid/log 等）
 ```
 
 ---
