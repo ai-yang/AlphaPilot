@@ -6,7 +6,7 @@ This package is NOT a registered kernel module. It hosts:
   subset that the two feature modules (``alphaforge_aff`` and
   ``alphaforge_search``) depend on. The vendored trees keep their original
   top-level package names (``alphagen``, ``alphagen_qlib``, ``alphagen_generic``,
-  ``gan``, ``gplearn``, ``dso``) so their internal imports work unchanged --
+  ``gan``, ``gplearn``) so their internal imports work unchanged --
   we put the single ``vendor/`` directory on ``sys.path`` instead of rewriting
   every import (keeps re-syncing from upstream cheap).
 * the integration glue that maps AlphaForge's torch/Expression world onto

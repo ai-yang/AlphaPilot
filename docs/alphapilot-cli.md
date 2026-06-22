@@ -108,9 +108,8 @@ factor:            ["category_create", "category_delete", "category_list", "fact
 | 32 | `mine_aff` | alphaforge_aff | GAN 式公式化因子挖掘 |
 | 33 | `mine_gp` | alphaforge_search | 遗传编程因子挖掘 |
 | 34 | `mine_rl` | alphaforge_search | PPO RL 因子挖掘 |
-| 35 | `mine_dso` | alphaforge_search | 深度符号优化因子挖掘 |
-| 36 | `strategy_backtest` | strategy_backtest | 从 strategy_zoo 复测策略 |
-| 37 | `strategy_backtest_list` | strategy_backtest | 列出已保存策略资产 |
+| 35 | `strategy_backtest` | strategy_backtest | 从 strategy_zoo 复测策略 |
+| 36 | `strategy_backtest_list` | strategy_backtest | 列出已保存策略资产 |
 
 > **模块名说明**：`alphapilot modules` 输出中的模块名来自各类的 `name` 属性（如 `factor`），与 `pyproject.toml` entry-point 键名（如 `factor_cli`）可能不同，但 CLI 顶层命令名一致。
 
@@ -822,21 +821,6 @@ PPO 强化学习因子挖掘。需要 `stable-baselines3`、`sb3-contrib`。
 alphapilot mine_rl --instruments=test_stock_pool_80 --steps=50000 --pool_capacity=10
 ```
 
-### `alphapilot mine_dso`
-
-深度符号优化（DSO）。需要可选依赖 `alphaforge-dso`（TensorFlow + Cython `cyfunc`）。
-
-| 参数 | 默认 |
-|------|------|
-| `--n_samples` | `5000` |
-| `--pool_capacity` | `10` |
-| `--backtest` | False |
-| `--save` | True |
-
-```bash
-alphapilot mine_dso --instruments=test_stock_pool_80
-```
-
 更多细节见 [`alphapilot/modules/alphaforge/README.md`](../alphapilot/modules/alphaforge/README.md)。
 
 ---
@@ -850,9 +834,6 @@ alphapilot mine_dso --instruments=test_stock_pool_80
 ```bash
 # AFF + GP + RL
 pip install -e ".[alphaforge]"
-
-# DSO（TensorFlow + Cython，较重）
-pip install -e ".[alphaforge-dso]"
 ```
 
 | 命令 | 所需依赖 |
@@ -860,7 +841,6 @@ pip install -e ".[alphaforge-dso]"
 | `mine_aff` | `torch` 等（`alphaforge` extra） |
 | `mine_gp` | 较轻，基本随主依赖 |
 | `mine_rl` | `stable-baselines3`, `sb3-contrib`（`alphaforge` extra） |
-| `mine_dso` | `tensorflow`, `cython`（`alphaforge-dso` extra） |
 
 ### 已弃用命令
 
@@ -887,9 +867,6 @@ pip install -e ".[alphaforge-dso]"
 | [`modules/portal/web/`](../alphapilot/modules/portal/web/) | 新版 portal React/TypeScript 前端 |
 | [`modules/portal/schedules.py`](../alphapilot/modules/portal/schedules.py) | scheduler 底层；`python -m` 可调试 |
 | [`modules/portal/jobs.py`](../alphapilot/modules/portal/jobs.py) | portal 后台 job worker 调试入口 |
-| [`modules/alphaforge/vendor/dso/run.py`](../alphapilot/modules/alphaforge/vendor/dso/run.py) | vendored DSO Click CLI，未接入 `alphapilot` |
-| [`modules/alphaforge/vendor/dso/logeval.py`](../alphapilot/modules/alphaforge/vendor/dso/logeval.py) | DSO 实验日志分析 |
-| [`modules/alphaforge/vendor/dso/task/regression/dataset.py`](../alphapilot/modules/alphaforge/vendor/dso/task/regression/dataset.py) | DSO 基准数据集可视化 |
 
 ---
 

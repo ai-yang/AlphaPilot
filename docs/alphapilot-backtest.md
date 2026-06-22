@@ -285,7 +285,7 @@ Qlib 生态有多种用法；AlphaPilot 主路径只覆盖其中一种。
 | `add_factor` 入库时 | 是 | 语法解析、AST 相似度（`duplication_threshold` 默认 8）、重名/重复表达式检查 |
 | 删除分类 | 否（不删因子） | 只删 `categories` 表与关联 |
 
-### 7.2 AlphaForge（`mine_aff` / `mine_gp` / `mine_rl` / `mine_dso`）
+### 7.2 AlphaForge（`mine_aff` / `mine_gp` / `mine_rl`）
 
 | 阶段 | 去重对象 | 与因子库关系 |
 |------|----------|--------------|

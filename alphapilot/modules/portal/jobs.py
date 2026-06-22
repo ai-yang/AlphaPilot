@@ -28,7 +28,6 @@ ALPHAFORGE_JOBS: dict[str, tuple[str, str]] = {
     "mine_aff": ("alphaforge_aff", "mine_aff"),
     "mine_gp": ("alphaforge_search", "mine_gp"),
     "mine_rl": ("alphaforge_search", "mine_rl"),
-    "mine_dso": ("alphaforge_search", "mine_dso"),
 }
 
 VALID_KINDS = {"mine", "factor_backtest", "strategy_backtest", "daily_signals", "data", *ALPHAFORGE_JOBS}

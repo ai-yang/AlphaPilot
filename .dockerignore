@@ -1,0 +1,48 @@
+# Keep the build context small and never bake secrets / runtime state into the image.
+
+# Secrets & local env (inject at runtime via compose env_file instead)
+.env
+.env.*
+!.env.docker.example
+
+# Runtime state / large caches & data (these are volumes, ~1.9GB locally)
+git_ignore_folder/
+pickle_cache/
+log/
+*.h5
+**/mlruns/
+
+# VCS (excluded -> set SETUPTOOLS_SCM_PRETEND_VERSION at build time)
+.git/
+.gitignore
+
+# Frontend: node_modules + any local dist are rebuilt in the web-builder stage
+alphapilot/modules/portal/web/node_modules/
+alphapilot/modules/portal/web/dist/
+**/node_modules/
+
+# Python build / cache artifacts
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.eggs/
+
+# Tooling caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.idea/
+.vscode/
+.DS_Store
+
+# Tests are not needed in the runtime image
+tests/
+
+# Docker artifacts themselves
+Dockerfile
+docker-compose.yml
+.dockerignore

@@ -125,12 +125,6 @@ _COMMAND_KWARGS_EXAMPLES: dict[tuple[str, str], dict[str, Any]] = {
         "pool_capacity": 10,
         "raw": True,
     },
-    ("alphaforge_search", "mine_dso"): {
-        "instruments": "test_stock_pool_80",
-        "n_samples": 5000,
-        "pool_capacity": 10,
-        "raw": True,
-    },
     ("platform", "prepare_data"): {
         "action": "pipeline",
         "source": "tushare_cn",
@@ -198,10 +192,6 @@ _COMMAND_EXTRA_NOTES: dict[tuple[str, str], dict[str, str]] = {
         "en": "`**kwargs` is passed to RLRunner. Common field: `raw`.",
         "zh": "`**kwargs` 会继续传给 RLRunner，常用：`raw`。",
     },
-    ("alphaforge_search", "mine_dso"): {
-        "en": "`**kwargs` is passed to DSORunner. Common field: `raw`.",
-        "zh": "`**kwargs` 会继续传给 DSORunner，常用：`raw`。",
-    },
     ("platform", "prepare_data"): {
         "en": (
             "`**options` is passed to the selected data action. Common fields: `source`, `token`, "
@@ -222,7 +212,6 @@ _ALPHAFORGE_EXTRA_KWARGS_EXAMPLES: dict[str, dict[str, Any]] = {
     "mine_aff": {"top_n": 50, "raw": True, "num_epochs_g": 50, "max_loops": 10},
     "mine_gp": {"top_n": 50, "raw": True, "tournament_size": 20},
     "mine_rl": {"raw": True},
-    "mine_dso": {"raw": True},
 }
 
 _COMMAND_EXTRA_PARAM_NAMES: dict[tuple[str, str], list[str]] = {
@@ -238,7 +227,6 @@ _COMMAND_EXTRA_PARAM_NAMES: dict[tuple[str, str], list[str]] = {
     ],
     ("alphaforge_search", "mine_gp"): ["tournament_size", "top_n", "raw"],
     ("alphaforge_search", "mine_rl"): ["raw"],
-    ("alphaforge_search", "mine_dso"): ["raw"],
     ("platform", "prepare_data"): [
         "source",
         "token",
@@ -469,16 +457,6 @@ _PARAMETER_DETAILS: dict[str, dict[str, dict[str, str]]] = {
             "range": "`retrain` for a fresh model; `reuse_model` when a saved model artifact exists.",
         },
         "zh": {"desc": "策略回测模式。", "range": "重新训练用 `retrain`；已有模型产物时可用 `reuse_model`。"},
-    },
-    "n_samples": {
-        "en": {
-            "desc": "Number of DSO samples.",
-            "range": "Smoke test: `500`-`5000`; normal run: `5000`-`50000`; DSO is dependency-heavy.",
-        },
-        "zh": {
-            "desc": "DSO 采样数量。",
-            "range": "冒烟 `500`-`5000`；常规 `5000`-`50000`；DSO 依赖和耗时都更重。",
-        },
     },
     "num_epochs_g": {
         "en": {
@@ -2008,7 +1986,7 @@ def _accepted_factors_csv(accepted: list[dict[str, Any]]) -> str:
 def _render_alphaforge_result(summary: dict[str, Any], *, key: str) -> None:
     """Rich rendering of an AlphaForge mining summary (``emit_factors`` output).
 
-    Shared by every method (GP / RL / AFF / DSO) since they emit the same shape:
+    Shared by every method (GP / RL / AFF) since they emit the same shape:
     counts + accepted/rejected factor lists + an optional backtest block.
     """
     import pandas as pd
@@ -2232,11 +2210,11 @@ def _render_mine_launcher() -> None:
             st.error(t("job_start_failed", error=exc))
 
 
-_ALPHAFORGE_METHODS = ["mine_gp", "mine_rl", "mine_aff", "mine_dso"]
+_ALPHAFORGE_METHODS = ["mine_gp", "mine_rl", "mine_aff"]
 
 
 def _render_alphaforge_launcher(engine: Any) -> None:
-    """LLM-free formulaic alpha mining (AlphaForge: GP / RL / AFF / DSO)."""
+    """LLM-free formulaic alpha mining (AlphaForge: GP / RL / AFF)."""
     from alphapilot.modules.portal import jobs as portal_jobs
 
     st.markdown(f"#### {t('af_start_heading')}")
@@ -2354,23 +2332,6 @@ def _render_alphaforge_launcher(engine: Any) -> None:
             )
             method_kwargs["pool_capacity"] = int(
                 r2.number_input(
-                    t("af_pool_capacity"), min_value=1, max_value=200, value=10, step=1
-                )
-            )
-        elif method == "mine_dso":
-            st.warning(t("af_dso_note"))
-            d1, d2 = st.columns(2)
-            method_kwargs["n_samples"] = int(
-                d1.number_input(
-                    t("af_n_samples"),
-                    min_value=100,
-                    max_value=1_000_000,
-                    value=5000,
-                    step=100,
-                )
-            )
-            method_kwargs["pool_capacity"] = int(
-                d2.number_input(
                     t("af_pool_capacity"), min_value=1, max_value=200, value=10, step=1
                 )
             )

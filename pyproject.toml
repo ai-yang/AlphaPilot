@@ -56,9 +56,8 @@ factor_cli = "alphapilot.modules.factor.module:FactorModule"
 alphaforge_aff = "alphapilot.modules.alphaforge_aff.module:AlphaForgeAFFModule"
 alphaforge_search = "alphapilot.modules.alphaforge_search.module:AlphaForgeSearchModule"
 
-# Optional deps for the AlphaForge-derived mining modules. ``alphaforge``
-# covers AFF (GAN) + GP + RL; ``alphaforge-dso`` adds the heavy DSO backend
-# (TensorFlow + a Cython ``cyfunc`` build), kept separate / optional.
+# Optional deps for the AlphaForge-derived mining modules: ``alphaforge``
+# covers AFF (GAN) + GP + RL.
 [project.optional-dependencies]
 alphaforge = [
   "torch",
@@ -66,11 +65,6 @@ alphaforge = [
   "stable-baselines3",
   "sb3-contrib",
   "shimmy",
-]
-alphaforge-dso = [
-  "tensorflow",
-  "cython",
-  "commentjson",
 ]
 
 [project.urls]

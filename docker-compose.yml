@@ -1,0 +1,72 @@
+# AlphaPilot — single image, three services (portal / scheduler / notify).
+#
+# Quick start:
+#   cp .env.docker.example .env      # fill in OPENAI_API_KEY etc.
+#   docker compose build
+#   docker compose up -d portal scheduler
+#   # optional bot command receiver (needs a configured channel):
+#   docker compose --profile notify up -d notify
+#
+# Market data (~2.4 GB) is downloaded at runtime into the qlib_data volume on the
+# first data job — it is NOT baked into the image.
+
+# Shared build/config; each service only differs by its command (+ portal extras).
+x-app: &app
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: alphapilot:latest
+  env_file:
+    - .env
+  working_dir: /app
+  restart: unless-stopped
+  volumes:
+    - qlib_data:/root/.qlib                  # downloaded market data (~2.4 GB)
+    - alphapilot_home:/root/.alphapilot      # portal settings/env, runtime, notify creds & state
+    - git_ignore:/app/git_ignore_folder      # runs/, factor_h5_cache/, portal_jobs/, portal_schedules/
+    - pickle_cache:/app/pickle_cache         # reusable mine/backtest result cache
+    - logs:/app/log                          # application + LLM message logs
+
+services:
+  portal:
+    <<: *app
+    command: ["alphapilot", "portal", "--host", "0.0.0.0", "--port", "19901"]
+    environment:
+      # Default host is 127.0.0.1 (unreachable from outside the container).
+      ALPHAPILOT_PORTAL_HOST: "0.0.0.0"
+      ALPHAPILOT_PORTAL_PORT: "19901"
+    ports:
+      - "19901:19901"
+    # torch + multiprocessing(spawn) + large datasets need more than the 64 MB default.
+    shm_size: "2gb"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:19901/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  # Fires saved data/mine/backtest schedules.
+  scheduler:
+    <<: *app
+    command: ["alphapilot", "scheduler"]
+    shm_size: "2gb"
+    depends_on:
+      - portal
+
+  # Telegram/Feishu inbound command receiver. Disabled by default; enable with
+  # `--profile notify`. Needs a configured channel (see .env.docker.example).
+  notify:
+    <<: *app
+    command: ["alphapilot", "notify_commands", "--channel", "telegram"]
+    depends_on:
+      - portal
+    profiles:
+      - notify
+
+volumes:
+  qlib_data:
+  alphapilot_home:
+  git_ignore:
+  pickle_cache:
+  logs:

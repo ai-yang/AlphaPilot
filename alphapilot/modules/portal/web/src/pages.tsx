@@ -1029,7 +1029,6 @@ export function SchedulerPage() {
                 <option value="mine_aff">{t("kindAff")}</option>
                 <option value="mine_gp">{t("kindGp")}</option>
                 <option value="mine_rl">AlphaForge RL</option>
-                <option value="mine_dso">AlphaForge DSO</option>
                 <option value="factor_backtest">{t("factorBacktest")}</option>
                 <option value="strategy_backtest">{t("strategyBacktest")}</option>
                 <option value="daily_signals">{t("kindDaily")}</option>

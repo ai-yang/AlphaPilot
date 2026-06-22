@@ -41,7 +41,6 @@ SCHEDULE_KINDS = (
     "mine_aff",
     "mine_gp",
     "mine_rl",
-    "mine_dso",
     "factor_backtest",
     "strategy_backtest",
     "daily_signals",

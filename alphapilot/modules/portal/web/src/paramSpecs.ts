@@ -153,7 +153,6 @@ export const alphaForgeSpecs: FieldSpec[] = [
       { label: "AFF", value: "mine_aff" },
       { label: "GP", value: "mine_gp" },
       { label: "RL", value: "mine_rl" },
-      { label: "DSO", value: "mine_dso" },
     ],
   },
   { key: "instruments", label: "Instruments", type: "text", defaultValue: "test_stock_pool_80" },
@@ -219,7 +218,7 @@ export const dailyTradeSpecs: FieldSpec[] = [
 export function scheduleSpecsFor(kind: string, strategyNames: string[] = []): FieldSpec[] {
   if (kind === "data") return dataActionSpecs;
   if (kind === "mine") return llmMiningSpecs;
-  if (["mine_aff", "mine_gp", "mine_rl", "mine_dso"].includes(kind)) {
+  if (["mine_aff", "mine_gp", "mine_rl"].includes(kind)) {
     return alphaForgeSpecs
       .filter((field) => field.key !== "method")
       .map((field) => {

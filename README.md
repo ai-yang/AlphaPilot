@@ -1,6 +1,6 @@
 # AlphaPilot
 
-基于 [AlphaAgent](https://github.com/RndmVariableQ/AlphaAgent)（KDD 2025）的本地化 fork，面向 A 股因子挖掘与 Qlib 回测。本仓库在保留原项目核心流程（假设生成 → 因子构造 → 回测评估）的基础上，增加了 API 兼容、**多模式回测**、**日频交易信号**、**任务完成通知与聊天命令**、回测可视化等改动，便于在本地环境稳定运行。
+基于 [AlphaAgent](https://github.com/RndmVariableQ/AlphaAgent)（KDD 2025）的本地化 fork，面向 A 股因子挖掘与 Qlib 回测。本仓库在保留原项目核心流程（假设生成 → 因子构造 → 回测评估）的基础上，增加了 API 兼容、**多模式回测**、**日频交易信号**、**任务完成通知与聊天命令**、**Docker 一键部署**、回测可视化等改动，便于在本地环境稳定运行。
 
 ---
 
@@ -16,7 +16,8 @@ AlphaPilot 通过三个 Agent 协作完成因子挖掘：
 
 本仓库使用 [Qlib](https://github.com/microsoft/qlib) 作为回测引擎，使用 OpenAI 兼容 API 调用大模型。
 
-> **CLI 完整参考**：所有 `alphapilot` 命令及参数见 [docs/alphapilot-cli.md](docs/alphapilot-cli.md)。
+> **CLI 完整参考**：所有 `alphapilot` 命令及参数见 [docs/alphapilot-cli.md](docs/alphapilot-cli.md)。  
+> **Docker 部署**：`docker compose` 一键启动门户 / 定时任务 / 通知接收器，详见 [docs/DOCKER.md](docs/DOCKER.md)。
 
 ---
 
@@ -203,6 +204,7 @@ alphapilot qlib_yaml_validate \
 - adapter 层仅保留 **LLM + 数据源** 可插拔边界；已移除未接入主路径的 backtest engine adapter（`get_backtest_engine`），回测统一经 `systems/backtest/` 执行（详见 [alphapilot/adapters/README.md](alphapilot/adapters/README.md)）
 - 统一 Web 门户：`modules/portal/api.py`（FastAPI）+ `modules/portal/web/`（React/Vite 前端）；旧 Streamlit 版保留为 `app.py` / `alphapilot portal_legacy`
 - 任务完成通知与双向通讯收拢到 `alphapilot/systems/notify/`（Telegram / 飞书 / 邮件）；Portal「通知」页配置凭证与 Command Receiver，后台 job 结束时由 `modules/portal/jobs.py` 触发推送，白名单用户可通过 Telegram / 飞书发命令查询或创建任务
+- **Docker 部署**：根目录 `Dockerfile` + `docker-compose.yml` 将 Portal（含 React 前端构建）、定时任务守护进程、可选 `notify` 接收器打成单镜像多服务；行情与运行状态通过 named volume 持久化，容器内默认 `USE_LOCAL=True`（无需 docker-in-docker）
 
 **数据系统代码位置（供二开参考）**
 
@@ -310,6 +312,32 @@ data.run_download(DataDownloadCommand(
 
 ## 环境准备
 
+### 0. Docker 部署（可选）
+
+适合服务器一键部署，或不想在宿主机安装 Conda / Node 的场景。镜像构建阶段会完成 Portal 前端 `npm run build`，运行时默认 `USE_LOCAL=True`（LLM 生成的因子/回测代码在容器内子进程执行，**无需**挂载 Docker socket）。
+
+```bash
+cp .env.docker.example .env   # 填写 OPENAI_API_KEY、CHAT_MODEL 等
+docker compose build          # 首次构建较慢（torch + 科学计算栈）
+docker compose up -d portal scheduler
+# 浏览器打开 http://localhost:19901
+```
+
+可选 Telegram 命令接收器（需先在通知页或 `.env` 配置频道凭证）：
+
+```bash
+docker compose --profile notify up -d notify
+```
+
+要点：
+
+- 行情数据（约 2.4 GB）**不会打进镜像**；首次请在 Portal「市场数据」页触发下载，或在容器内执行 `docker compose exec portal alphapilot platform prepare_data download`（baostock 无需 token；Tushare 需在 `.env` 填 `TUSHARE_TOKEN`）。
+- Compose 通过 named volume 持久化 `qlib_data`（`~/.qlib`）、`alphapilot_home`（`~/.alphapilot`）、`git_ignore`、`pickle_cache`、`logs` 等，重启容器不丢数据。
+- Compose 已将 Portal 绑定为 `0.0.0.0:19901`（容器外可访问）；`portal` / `scheduler` 默认 `shm_size: 2gb`，并发跑多个挖掘/回测 job 时如遇 OOM 可适当调大。
+- 飞书入站命令回调 URL 需指向宿主机可访问的 `https://<host>:19901/api/notify/feishu/events`，并保持 `portal` 服务在线。
+
+架构说明、Apple Silicon 构建、验证命令与排错见 [docs/DOCKER.md](docs/DOCKER.md)。
+
 ### 1. 创建 Conda 环境
 
 ```bash
@@ -360,14 +388,9 @@ AlphaForge（无需 LLM 的公式化因子挖掘，详见 [使用流程 §1.5](#
 ```bash
 # AFF（GAN）+ GP + RL：torch / gym / stable-baselines3 / sb3-contrib / shimmy
 pip install -e ".[alphaforge]"
-
-# DSO（实验性、较重，可选）：先装 TensorFlow + Cython
-pip install -e ".[alphaforge-dso]"
-# 再编译 dso 的 Cython 扩展（cyfunc）
-cd alphapilot/modules/alphaforge/vendor/dso && python setup.py build_ext --inplace && cd -
 ```
 
-> GP / RL / AFF 三种方法只需 `.[alphaforge]`；DSO 额外依赖 TensorFlow 与已编译的 `cyfunc` 扩展，缺失时仅 `mine_dso` 会报清晰的安装提示，不影响其它方法。numpy / scipy / pandas / scikit-learn / gymnasium 等已随基础依赖（含 qlib）安装。
+> GP / RL / AFF 三种方法只需 `.[alphaforge]`。numpy / scipy / pandas / scikit-learn / gymnasium 等已随基础依赖（含 qlib）安装。
 
 ### 3. macOS 额外依赖（LightGBM 回测）
 
@@ -813,7 +836,6 @@ alphapilot delete_mine_log --session=2026-06-04_15-32-47-893456
 | `alphapilot mine_gp` | 遗传规划（gplearn），最轻量 | `.[alphaforge]` |
 | `alphapilot mine_rl` | PPO 强化学习（stable-baselines3 + sb3-contrib） | `.[alphaforge]` |
 | `alphapilot mine_aff` | AFF（GAN 生成器 + 预测器，论文 stage-1，表达式长度固定 20） | `.[alphaforge]` |
-| `alphapilot mine_dso` | 深度符号优化（实验性） | `.[alphaforge-dso]` + 编译 cyfunc |
 
 > **数据注意**：本仓库 baostock qlib 数据**没有 `csi300` / `csi500` 成分股集**（这些是各方法的默认值），请改用 `--instruments=test_stock_pool_80`（或 `all`，即 `<qlib_data_dir>/instruments/` 下实际存在的股票池）。
 
@@ -823,13 +845,11 @@ CLI 示例：
 alphapilot mine_gp  --instruments=test_stock_pool_80 --population_size=200 --generations=10
 alphapilot mine_rl  --instruments=test_stock_pool_80 --steps=50000 --pool_capacity=10
 alphapilot mine_aff --instruments=test_stock_pool_80 --zoo_size=20 --device=cpu --backtest=True
-# DSO 需先装 .[alphaforge-dso] 并编译 cyfunc（见 §2）
-alphapilot mine_dso --instruments=test_stock_pool_80
 ```
 
 常用参数：`--instruments`（股票池）、`--train_end_year`（默认 2020：train=[2010,end]、valid=end+1、test=end+2）、`--device`（`cpu`/`mps`/`cuda`，省略自动探测）、`--save`（加入因子库，默认 True）、`--backtest`（回测通过的因子，默认 False）；其余训练超参经 `**kwargs` 透传（如 `--top_n=50`、`--num_epochs_g=50`）。
 
-也可在 **Portal「因子挖掘」页** 以 JSON kwargs 启动 AlphaForge（GP/RL/AFF/DSO）**后台任务**，并在任务面板查看日志 / 进度 / 取消。
+也可在 **Portal「因子挖掘」页** 以 JSON kwargs 启动 AlphaForge（GP/RL/AFF）**后台任务**，并在任务面板查看日志 / 进度 / 取消。
 
 详见模块文档 [alphapilot/modules/alphaforge/README.md](alphapilot/modules/alphaforge/README.md)。
 
@@ -997,7 +1017,8 @@ alphapilot daily_signals \
 | `alphapilot ui` | **已弃用** | 打印重定向提示 → 请使用 portal「因子挖掘」页 |
 | `alphapilot backtest_ui` | **已弃用** | 打印重定向提示 → 请使用 portal「回测」页或 `backtest_viz` |
 
-> 说明：CLI 入口已改为 **modules-only** 分发；新增第三方模块后会自动出现在 `alphapilot modules` 与 `alphapilot portal` 页面中。
+> 说明：CLI 入口已改为 **modules-only** 分发；新增第三方模块后会自动出现在 `alphapilot modules` 与 `alphapilot portal` 页面中。  
+> **Docker**：也可通过 `docker compose up -d portal scheduler` 启动门户与定时任务守护进程，见 [docs/DOCKER.md](docs/DOCKER.md)。
 
 #### 4.0 股票数据 K 线可视化（`data_viz`）
 
@@ -1016,7 +1037,7 @@ alphapilot data_viz --port 19902
 
 #### 4.1 统一 Web 门户（推荐）
 
-首次从源码运行新版门户前，请先确认前端已构建：
+**从源码安装**时，首次运行前请先构建前端（**Docker 用户可跳过**，镜像内已包含 `web/dist/`）：
 
 ```bash
 cd alphapilot/modules/portal/web
@@ -1068,7 +1089,7 @@ cd alphapilot/modules/portal/web && npm run dev
 
 在 portal「因子挖掘」页中：
 
-- 以 JSON kwargs 启动 LLM 挖掘或 AlphaForge（GP/RL/AFF/DSO）后台 job
+- 以 JSON kwargs 启动 LLM 挖掘或 AlphaForge（GP/RL/AFF）后台 job
 - 浏览 `log/` 下挖掘会话列表，打开会话内文件查看文本内容
 - 删除单个 log 会话目录（**不**连带删除 `strategy_zoo` 或回测 workspace）
 - 页面底部任务面板可查看 job 进度 / 日志 / 取消
@@ -1213,9 +1234,13 @@ AlphaPilot/
 │   │   ├── factor/             # 因子库 CLI（factor_validate / factor_add）
 │   │   ├── alphaforge/         # AlphaForge 公共层（vendor 引擎 + translate/pipeline/data_adapter，非注册模块）
 │   │   ├── alphaforge_aff/     # AFF（GAN）公式化挖掘（mine_aff）
-│   │   └── alphaforge_search/  # GP / RL / DSO 公式化挖掘（mine_gp / mine_rl / mine_dso）
+│   │   └── alphaforge_search/  # GP / RL 公式化挖掘（mine_gp / mine_rl）
 │   └── log/ui/                 # 挖掘日志 Streamlit panel（portal_legacy 嵌入；新版 portal 经 API 读 log）
 ├── tests/                      # pytest（如 systems/factor/test_factor_validation.py）
+├── Dockerfile                  # 多阶段镜像（Node 构建前端 + Python 3.11 运行时）
+├── docker-compose.yml          # portal / scheduler / notify（profile）三服务
+├── .env.docker.example         # Compose 用环境变量模板（cp 为 .env）
+├── docs/DOCKER.md              # Docker 部署完整说明
 ├── .env.example             # 环境变量模板
 ├── import_factors_from_log.py  # 从 log 提取因子公式写入因子库（去重；--validate 打印拒绝原因）
 ├── clean_log_dirs.py        # 清理 log 下空目录与失败桩目录

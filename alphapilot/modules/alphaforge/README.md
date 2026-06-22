@@ -7,7 +7,7 @@ pluggable alphapilot modules:
 | Module | Command(s) | Method | Deps |
 |---|---|---|---|
 | `alphaforge_aff` | `mine_aff` | **AFF** — GAN-style generator+predictor search (the AlphaForge paper's stage-1) | torch |
-| `alphaforge_search` | `mine_gp` / `mine_rl` / `mine_dso` | **GP** (gplearn), **RL** (PPO/sb3), **DSO** (deep symbolic optimization) | torch; sb3+sb3-contrib (RL); tensorflow+cython (DSO, optional) |
+| `alphaforge_search` | `mine_gp` / `mine_rl` | **GP** (gplearn), **RL** (PPO/sb3) | torch; sb3+sb3-contrib (RL) |
 
 Both mine internally on the **vendored alphagen torch engine** (fast batch
 evaluation), then translate each surviving `Expression` into alphapilot's
@@ -18,14 +18,14 @@ alphagen objects leak past the output boundary.
 
 ```
 alphaforge/                 shared base (NOT a registered module)
-  vendor/                   verbatim AlphaForge subset (alphagen, gan, gplearn, dso, ...)
+  vendor/                   verbatim AlphaForge subset (alphagen, gan, gplearn, ...)
   __init__.py               puts vendor/ on sys.path so `import alphagen` resolves
   device.py                 resolve_device (cuda/mps/cpu) + use_fork_start_method()
   data_adapter.py           build StockData from context.config.data.qlib_data_dir
   translate.py              Expression AST  ->  alphapilot DSL string  (the boundary)
   pipeline.py               emit_factors(): translate -> validate/add -> optional backtest
 alphaforge_aff/             AFFMiner (refactor of train_AFF) + module
-alphaforge_search/          GP/DSO/RL runners (refactor of train_{GP,DSO,RL}) + module
+alphaforge_search/          GP/RL runners (refactor of train_{GP,RL}) + module
 ```
 
 ## Usage
@@ -37,17 +37,13 @@ alphapilot mine_aff --instruments=test_stock_pool_80 --zoo_size=20 --device=cpu 
 # GP / RL
 alphapilot mine_gp --instruments=test_stock_pool_80 --population_size=200 --generations=10
 alphapilot mine_rl --instruments=test_stock_pool_80 --steps=50000 --pool_capacity=10
-
-# DSO (optional deps): pip install tensorflow cython, then build dso/cyfunc
-alphapilot mine_dso --instruments=test_stock_pool_80
 ```
 
 `--save=True` (default) adds accepted factors to the factor zoo; `--backtest=True`
 runs them through the qlib backtest system. Extra training knobs pass through
 via `**kwargs` (e.g. `--num_epochs_g=50`, `--max_loops=10`, `--top_n=50`, `--raw=True`).
 
-Install extras: `pip install -e ".[alphaforge]"` (AFF+GP+RL) and
-`".[alphaforge-dso]"` (DSO).
+Install extras: `pip install -e ".[alphaforge]"` (AFF+GP+RL).
 
 ## Environment notes (this repo / macOS)
 
@@ -62,8 +58,6 @@ These were needed to run on the current env (numpy 2.x, torch 2.x, py3.11, macOS
 - **RL**: the vendored `alphagen/rl/{env,policy}` were migrated `gym` →
   `gymnasium` for stable-baselines3 ≥ 2 (reset returns `(obs, info)`, step
   returns a 5-tuple). `tensorboard_log` is disabled (tensorboard not required).
-- **DSO**: heaviest backend (TensorFlow + a Cython `cyfunc` build); imported
-  lazily so GP/RL work without it.
 
 ## Data caveats
 
