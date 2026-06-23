@@ -334,3 +334,26 @@ def build_summary(report: pd.DataFrame) -> dict[str, float]:
         "累计手续费": float(report["cost"].sum()) if "cost" in report.columns else 0.0,
         "期末总资产": float(report["account"].iloc[-1]) if "account" in report.columns and len(report) else 0.0,
     }
+
+
+LEADERBOARD_GLOB = "*_leaderboard.csv"
+
+
+def find_leaderboards(root: Path | str) -> list[Path]:
+    """All ``*_leaderboard.csv`` files under *root*, newest first.
+
+    Streamlit-free so both the portal API and the Streamlit leaderboard view can
+    share one implementation (the latter imports it from here).
+    """
+    root = Path(root)
+    if not root.exists():
+        return []
+    return sorted(root.rglob(LEADERBOARD_GLOB), key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def read_leaderboard(path: Path | str, *, sort_col: str | None = None) -> pd.DataFrame:
+    """Read one leaderboard CSV, optionally sorted by ``abs(sort_col)`` descending."""
+    df = pd.read_csv(path)
+    if sort_col and sort_col in df.columns:
+        df = df.reindex(df[sort_col].abs().sort_values(ascending=False).index).reset_index(drop=True)
+    return df

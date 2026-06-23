@@ -5,7 +5,6 @@
 **目录**
 
 - [CLI 命令参考（完整列表）](alphapilot-cli.md)
-- [回测系统设计（现状 / 语义 / 演进规划）](alphapilot-backtest.md)
 - [项目整体在做什么](#项目整体在做什么)
 - [`alphapilot/` 目录总览](#alphapilot-目录总览)
 - [各子目录作用](#各子目录作用)
@@ -52,7 +51,7 @@
 | **因子管理系统** | `alphapilot/systems/factor/` | 导入因子、因子库（`FactorDatabase` 包装 `FactorRegulator`）、结构化表达式校验（`validate_expression` → `FactorValidationResult`）；CLI：`modules/factor/`（`factor_validate` / `factor_add`） |
 | **策略管理系统** | `alphapilot/systems/strategy/` | 策略资产落盘（`important_data/strategy_zoo/`）、`backtest_from_asset` 复测编排（经 `strategy/backtest.py` 委托 backtest 系统，不依赖 `alpha_mining` 模块） |
 | **策略复测模块** | `alphapilot/modules/strategy_backtest/` | CLI：`strategy_backtest` / `strategy_backtest_list` |
-| **交易回测系统** | `alphapilot/systems/backtest/` | 因子/模型回测（统一由 system 内部 qlib workspace 执行）、结果存取（`BacktestResultStore`）；设计说明见 [alphapilot-backtest.md](alphapilot-backtest.md) |
+| **交易回测系统** | `alphapilot/systems/backtest/` | 因子/模型回测（统一由 system 内部 qlib workspace 执行）、结果存取（`BacktestResultStore`） |
 | **模块 modules** | `alphapilot/modules/` | 可插拔特性；内置 `alpha_mining`、`portal`、`platform`、`data_viz` 等 |
 | **Web 门户** | `alphapilot/modules/portal/` | FastAPI（`api.py`）+ React/TypeScript 前端（`web/`）；Streamlit 旧版见 `app.py` / `portal_legacy` |
 

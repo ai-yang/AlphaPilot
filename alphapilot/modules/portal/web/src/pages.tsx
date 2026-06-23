@@ -1,7 +1,8 @@
 import Plot from "react-plotly.js";
 import { Link } from "react-router-dom";
 import { api, Factor, Job, JobProgress, qs, Schedule } from "./api";
-import { Alert, DataTable, DynamicForm, HybridJsonEditor, JobsPanel, JsonTextArea, PageTitle, ProgressBar, RefreshButton, Spinner, StatusPill } from "./components";
+import { Alert, chartHeight, DataTable, DynamicForm, HybridJsonEditor, JobsPanel, JsonTextArea, PageTitle, ProgressBar, RefreshButton, Spinner, StatusPill } from "./components";
+import { BacktestDetail, BacktestDetailData, LeaderboardPanel } from "./backtestDetail";
 import { useAsync, useJsonInput, useParamForm } from "./hooks";
 import { useI18n } from "./i18n";
 import {
@@ -17,12 +18,6 @@ import {
 import { useAction, useToast } from "./toast";
 import React, { useEffect, useMemo, useState } from "react";
 
-/** Responsive Plotly height: ~half the viewport, clamped to a sensible range. */
-function chartHeight(): number {
-  if (typeof window === "undefined") return 420;
-  return Math.max(360, Math.min(640, Math.round(window.innerHeight * 0.5)));
-}
-
 type Status = {
   metrics: Record<string, string | number>;
   recent_jobs: Job[];
@@ -33,10 +28,11 @@ type Status = {
 };
 
 type PortalSettings = {
-  settings: { host: string; port: number };
-  current: { host?: string; port?: number };
+  settings: { host: string; port: number; timezone: string };
+  current: { host?: string; port?: number; timezone?: string };
   config_path: string;
   host_options: Array<{ value: string; label: string }>;
+  timezone_options: string[];
   restart_required: boolean;
   runtime?: {
     pid?: number;
@@ -265,7 +261,7 @@ export function BacktestPage() {
   const strategyAdvanced = useJsonInput("{}");
   const strategyForm = useParamForm(strategySpecs, strategyAdvanced.raw);
   const list = useAsync(() => api.get<Array<Record<string, unknown>>>("/api/backtests"), []);
-  const [detail, setDetail] = useState<Record<string, unknown> | null>(null);
+  const [detail, setDetail] = useState<BacktestDetailData | null>(null);
   const { busy, run } = useAction();
 
   function startFactorBacktest() {
@@ -283,7 +279,7 @@ export function BacktestPage() {
   }
 
   async function open(workspaceId: string) {
-    setDetail(await api.get(`/api/backtests/${encodeURIComponent(workspaceId)}`));
+    setDetail(await api.get<BacktestDetailData>(`/api/backtests/${encodeURIComponent(workspaceId)}`));
   }
 
   function deleteWorkspace(workspaceId: string) {
@@ -295,12 +291,6 @@ export function BacktestPage() {
     });
   }
 
-  const cumulative = (detail?.cumulative as Array<Record<string, unknown>> | undefined) || [];
-  const report = (detail?.report as Array<Record<string, unknown>> | undefined) || [];
-  const trades = (detail?.trades as Array<Record<string, unknown>> | undefined) || [];
-  const holdings = (detail?.holdings as Array<Record<string, unknown>> | undefined) || [];
-  const metrics = (detail?.metrics as Record<string, unknown> | undefined) || {};
-  const x = cumulative.map((r) => String(r.date));
   return (
     <>
       <PageTitle title={t("backtest")} subtitle={t("backtestSubtitle")} />
@@ -348,60 +338,8 @@ export function BacktestPage() {
           ]}
         />
       </section>
-      {detail ? (
-        <section className="panel">
-          <h2>{String(detail.workspace_id)}</h2>
-          <div className="metric-grid compact">
-            {Object.entries((detail.summary as Record<string, unknown>) || {}).map(([key, value]) => (
-              <div className="metric" key={key}><span>{key}</span><strong>{Number(value).toFixed(4)}</strong></div>
-            ))}
-          </div>
-          <Plot
-            data={[
-              { x, y: cumulative.map((r) => r["策略(含成本)"]), type: "scatter", mode: "lines", name: "策略(含成本)" },
-              { x, y: cumulative.map((r) => r["基准"]), type: "scatter", mode: "lines", name: "基准" },
-              { x, y: cumulative.map((r) => r["超额(含成本)"]), type: "scatter", mode: "lines", name: "超额(含成本)" }
-            ]}
-            layout={{ autosize: true, height: chartHeight(), margin: { l: 48, r: 24, t: 24, b: 40 }, hovermode: "x unified" }}
-            useResizeHandler
-            style={{ width: "100%" }}
-          />
-          <div className="tabs">
-            <button className="active">Summary</button>
-          </div>
-          <div className="split">
-            <DataTable
-              rows={Object.entries(metrics).map(([key, value]) => ({ key, value: typeof value === "number" ? value.toFixed(6) : String(value) }))}
-              empty={t("empty")}
-              columns={[
-                { key: "key", label: "Metric" },
-                { key: "value", label: "Value" }
-              ]}
-            />
-            <DataTable
-              rows={report.slice(-30).reverse()}
-              empty={t("empty")}
-              columns={Object.keys(report[0] || {}).slice(0, 8).map((key) => ({ key, label: key }))}
-            />
-          </div>
-          <details>
-            <summary>Trades</summary>
-            <DataTable
-              rows={trades.slice(0, 80)}
-              empty={t("empty")}
-              columns={Object.keys(trades[0] || {}).slice(0, 10).map((key) => ({ key, label: key }))}
-            />
-          </details>
-          <details>
-            <summary>Holdings</summary>
-            <DataTable
-              rows={holdings.slice(0, 80)}
-              empty={t("empty")}
-              columns={Object.keys(holdings[0] || {}).slice(0, 10).map((key) => ({ key, label: key }))}
-            />
-          </details>
-        </section>
-      ) : null}
+      {detail ? <BacktestDetail detail={detail} workspaces={(list.data || []) as Record<string, unknown>[]} /> : null}
+      <LeaderboardPanel />
       <JobsPanel compact />
     </>
   );
@@ -1356,6 +1294,7 @@ export function AdvancedPage() {
   const envSettings = useAsync(() => api.get<PortalEnvSettings>("/api/portal/env"), []);
   const [portalHost, setPortalHost] = useState("127.0.0.1");
   const [portalPort, setPortalPort] = useState("19901");
+  const [portalTz, setPortalTz] = useState("Asia/Shanghai");
   const [envValues, setEnvValues] = useState<Record<string, string>>({});
   const modules = useAsync(() => api.get<Record<string, { commands: Array<Record<string, string>> }>>("/api/modules"), []);
   const [runModule, setRunModule] = useState("portal");
@@ -1390,10 +1329,16 @@ export function AdvancedPage() {
     [portalSettings.data, t],
   );
 
+  const tzOptions = useMemo(() => {
+    const opts = portalSettings.data?.timezone_options || ["Asia/Shanghai", "UTC"];
+    return opts.includes(portalTz) ? opts : [portalTz, ...opts];
+  }, [portalSettings.data, portalTz]);
+
   useEffect(() => {
     if (!portalSettings.data) return;
     setPortalHost(portalSettings.data.settings.host);
     setPortalPort(String(portalSettings.data.settings.port));
+    setPortalTz(portalSettings.data.settings.timezone);
   }, [portalSettings.data]);
 
   useEffect(() => {
@@ -1516,6 +1461,13 @@ export function AdvancedPage() {
             <input type="number" min={1} max={65535} value={portalPort} onChange={(e) => setPortalPort(e.target.value)} />
             <small>{t("portHelp")}</small>
           </label>
+          <label>
+            {t("timezoneLabel")}
+            <select value={portalTz} onChange={(e) => setPortalTz(e.target.value)}>
+              {tzOptions.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+            </select>
+            <small>{t("timezoneHelp")}</small>
+          </label>
         </div>
         <div className="settings-summary">
           <span>{t("currentAddressLabel")}: {portalSettings.data?.current.host || window.location.hostname}:{portalSettings.data?.current.port || window.location.port || "80"}</span>
@@ -1527,7 +1479,7 @@ export function AdvancedPage() {
             className="button primary"
             disabled={savingPortal}
             onClick={() => void savePortal(async () => {
-              const next = await api.patch<PortalSettings>("/api/portal/settings", { host: portalHost, port: Number(portalPort) });
+              const next = await api.patch<PortalSettings>("/api/portal/settings", { host: portalHost, port: Number(portalPort), timezone: portalTz });
               portalSettings.setData?.(next);
             }, t("portalSettingsSaved"))}
           >

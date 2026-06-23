@@ -12,15 +12,11 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from alphapilot.systems.backtest.artifacts import DEFAULT_WORKSPACE_ROOT
-
-LEADERBOARD_GLOB = "*_leaderboard.csv"
-
-
-def find_leaderboards(root: Path) -> list[Path]:
-    if not root.exists():
-        return []
-    return sorted(root.rglob(LEADERBOARD_GLOB), key=lambda p: p.stat().st_mtime, reverse=True)
+from alphapilot.systems.backtest.artifacts import (
+    DEFAULT_WORKSPACE_ROOT,
+    LEADERBOARD_GLOB,
+    find_leaderboards,
+)
 
 
 def render_factor_leaderboard(

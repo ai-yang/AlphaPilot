@@ -1,0 +1,285 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 450" width="1280" height="450" role="img" aria-labelledby="title desc">
+  <title id="title">AlphaPilot refined logo banner</title>
+  <desc id="desc">Refined AlphaPilot logo banner for a quantitative finance project, with the original A icon without an outer frame, the full AlphaPilot wordmark, and an optimized market chart.</desc>
+
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#061226"/>
+      <stop offset="55%" stop-color="#04142B"/>
+      <stop offset="100%" stop-color="#03101E"/>
+    </linearGradient>
+
+    <radialGradient id="leftGlow" cx="18%" cy="40%" r="40%">
+      <stop offset="0%" stop-color="#0EA5E9" stop-opacity="0.23"/>
+      <stop offset="50%" stop-color="#0EA5E9" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#0EA5E9" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="aGrad" x1="18%" y1="100%" x2="82%" y2="0%">
+      <stop offset="0%" stop-color="#1D4ED8"/>
+      <stop offset="35%" stop-color="#06B6D4"/>
+      <stop offset="52%" stop-color="#34D399"/>
+      <stop offset="72%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#92400E"/>
+    </linearGradient>
+
+    <linearGradient id="arrowGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#D97706"/>
+      <stop offset="45%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#FEF08A"/>
+    </linearGradient>
+
+    <linearGradient id="alphaGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#DDE7F2"/>
+    </linearGradient>
+
+    <linearGradient id="pilotGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#20C5FF"/>
+      <stop offset="48%" stop-color="#3DDCCB"/>
+      <stop offset="78%" stop-color="#E7D44B"/>
+      <stop offset="100%" stop-color="#FFBF1F"/>
+    </linearGradient>
+
+    <linearGradient id="lineBlue" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1AB8FF"/>
+      <stop offset="72%" stop-color="#43D5FF"/>
+      <stop offset="100%" stop-color="#FFD34D"/>
+    </linearGradient>
+
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity="0.38"/>
+    </filter>
+
+    <filter id="glowBlue" x="-40%" y="-60%" width="180%" height="220%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="glowGold" x="-40%" y="-60%" width="180%" height="220%">
+      <feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="#FFCC33" flood-opacity="0.55"/>
+    </filter>
+
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#133354" stroke-opacity="0.45" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1280" height="450" rx="38" fill="url(#bgGrad)"/>
+  <rect width="1280" height="450" rx="38" fill="url(#leftGlow)"/>
+
+  <!-- ambient lines on the left -->
+  <g opacity="0.35">
+    <path d="M20 290 C140 385, 215 350, 300 265 C380 185, 458 145, 565 143" fill="none" stroke="#1EB6FF" stroke-opacity="0.22" stroke-width="2"/>
+    <path d="M15 310 C125 390, 215 382, 312 310 C392 250, 455 220, 572 218" fill="none" stroke="#F4BD3A" stroke-opacity="0.16" stroke-width="1.8"/>
+    <path d="M0 348 C120 395, 220 395, 334 355" fill="none" stroke="#0EA5E9" stroke-opacity="0.10" stroke-width="1.5"/>
+  </g>
+
+  <!-- original A icon, no outer frame -->
+  <g transform="translate(95 20) scale(0.62)" filter="url(#softShadow)">
+    <g transform="translate(0, -10)">
+      <path d="M 120 420
+               L 225 104
+               C 235 73, 244 48, 256 48
+               C 268 48, 278 73, 288 104
+               L 392 420
+               L 322 420
+               L 256 206
+               L 190 420
+               Z"
+            fill="url(#aGrad)"
+            stroke="url(#aGrad)"
+            stroke-width="4"
+            stroke-linejoin="round"/>
+      <path d="M 70 330
+               C 160 380, 280 340, 380 200
+               L 410 220
+               L 450 100
+               L 330 140
+               L 355 160
+               C 280 280, 160 320, 70 330
+               Z"
+            fill="none"
+            stroke="#061226"
+            stroke-width="24"
+            stroke-linejoin="round"/>
+      <path d="M 70 330
+               C 160 380, 280 340, 380 200
+               L 410 220
+               L 450 100
+               L 330 140
+               L 355 160
+               C 280 280, 160 320, 70 330
+               Z"
+            fill="url(#arrowGrad)"
+            stroke="url(#arrowGrad)"
+            stroke-width="2"
+            stroke-linejoin="round"/>
+    </g>
+  </g>
+
+  <!-- wordmark -->
+  <g filter="url(#softShadow)">
+    <text x="370" y="230"
+          font-family="Inter, SF Pro Display, Segoe UI, Arial, sans-serif"
+          font-size="120"
+          font-weight="800"
+          letter-spacing="-4"
+          fill="url(#alphaGrad)">Alpha</text>
+    <text x="725" y="230"
+          font-family="Inter, SF Pro Display, Segoe UI, Arial, sans-serif"
+          font-size="120"
+          font-weight="800"
+          letter-spacing="-4"
+          fill="url(#pilotGrad)">Pilot</text>
+  </g>
+
+  <!-- chart area: centered around the AlphaPilot wordmark, slightly extended to reduce right-side empty space -->
+  <g transform="translate(355 108)">
+    <rect x="20" y="0" width="760" height="205" fill="url(#grid)" opacity="0.32"/>
+
+    <!-- realistic candlesticks: stronger up/down fluctuation, mixed hollow/solid candles, plus a few doji-like crosses, while keeping an overall upward bias similar to the line -->
+    <g opacity="0.64" stroke-width="1.2">
+      <!-- 1 -->
+      <line x1="84" y1="166" x2="84" y2="198" stroke="#447AAC" stroke-opacity="0.56"/>
+      <rect x="79" y="176" width="10" height="12" fill="none" stroke="#71D6FF" stroke-opacity="0.60"/>
+
+      <!-- 2 bearish -->
+      <line x1="124" y1="156" x2="124" y2="201" stroke="#447AAC" stroke-opacity="0.56"/>
+      <rect x="119" y="168" width="10" height="19" fill="#1E4F82" fill-opacity="0.48" stroke="#4E8ABC" stroke-opacity="0.45"/>
+
+      <!-- 3 doji -->
+      <line x1="164" y1="150" x2="164" y2="192" stroke="#487EB3" stroke-opacity="0.58"/>
+      <rect x="159" y="170" width="10" height="2" fill="none" stroke="#79DBFF" stroke-opacity="0.64"/>
+      <line x1="156" y1="171" x2="172" y2="171" stroke="#79DBFF" stroke-opacity="0.64"/>
+
+      <!-- 4 bullish -->
+      <line x1="204" y1="138" x2="204" y2="182" stroke="#4A82B7" stroke-opacity="0.59"/>
+      <rect x="199" y="148" width="10" height="23" fill="#2490D8" fill-opacity="0.33" stroke="#62CCFF" stroke-opacity="0.56"/>
+
+      <!-- 5 pullback -->
+      <line x1="244" y1="145" x2="244" y2="184" stroke="#4A82B7" stroke-opacity="0.59"/>
+      <rect x="239" y="153" width="10" height="18" fill="#1E4F82" fill-opacity="0.48" stroke="#4E8ABC" stroke-opacity="0.45"/>
+
+      <!-- 6 hollow rise -->
+      <line x1="284" y1="126" x2="284" y2="176" stroke="#4E88BE" stroke-opacity="0.61"/>
+      <rect x="279" y="136" width="10" height="25" fill="none" stroke="#74D8FF" stroke-opacity="0.63"/>
+
+      <!-- 7 small dip -->
+      <line x1="324" y1="132" x2="324" y2="170" stroke="#4E88BE" stroke-opacity="0.61"/>
+      <rect x="319" y="141" width="10" height="16" fill="#1E4F82" fill-opacity="0.48" stroke="#4E8ABC" stroke-opacity="0.45"/>
+
+      <!-- 8 bullish -->
+      <line x1="364" y1="114" x2="364" y2="163" stroke="#528EC2" stroke-opacity="0.63"/>
+      <rect x="359" y="124" width="10" height="24" fill="#2490D8" fill-opacity="0.34" stroke="#62CCFF" stroke-opacity="0.57"/>
+
+      <!-- 9 doji/star -->
+      <line x1="404" y1="103" x2="404" y2="158" stroke="#5696C8" stroke-opacity="0.65"/>
+      <rect x="399" y="127" width="10" height="2" fill="none" stroke="#79DBFF" stroke-opacity="0.66"/>
+      <line x1="396" y1="128" x2="412" y2="128" stroke="#79DBFF" stroke-opacity="0.66"/>
+
+      <!-- 10 bearish -->
+      <line x1="444" y1="111" x2="444" y2="156" stroke="#5696C8" stroke-opacity="0.65"/>
+      <rect x="439" y="120" width="10" height="20" fill="#1E4F82" fill-opacity="0.48" stroke="#4E8ABC" stroke-opacity="0.45"/>
+
+      <!-- 11 strong rise -->
+      <line x1="484" y1="86" x2="484" y2="146" stroke="#5C9DCE" stroke-opacity="0.67"/>
+      <rect x="479" y="95" width="10" height="31" fill="#2490D8" fill-opacity="0.35" stroke="#66D1FF" stroke-opacity="0.61"/>
+
+      <!-- 12 hollow continuation -->
+      <line x1="524" y1="76" x2="524" y2="142" stroke="#5C9DCE" stroke-opacity="0.67"/>
+      <rect x="519" y="88" width="10" height="25" fill="none" stroke="#79DBFF" stroke-opacity="0.65"/>
+
+      <!-- 13 dip -->
+      <line x1="564" y1="88" x2="564" y2="136" stroke="#61A4D3" stroke-opacity="0.69"/>
+      <rect x="559" y="98" width="10" height="20" fill="#1E4F82" fill-opacity="0.48" stroke="#4E8ABC" stroke-opacity="0.45"/>
+
+      <!-- 14 sharp rise -->
+      <line x1="604" y1="59" x2="604" y2="129" stroke="#61A4D3" stroke-opacity="0.69"/>
+      <rect x="599" y="70" width="10" height="35" fill="#2490D8" fill-opacity="0.36" stroke="#6DD5FF" stroke-opacity="0.63"/>
+
+      <!-- 15 doji after rise -->
+      <line x1="644" y1="50" x2="644" y2="121" stroke="#67ABDA" stroke-opacity="0.73"/>
+      <rect x="639" y="82" width="10" height="2" fill="none" stroke="#84E0FF" stroke-opacity="0.68"/>
+      <line x1="636" y1="83" x2="652" y2="83" stroke="#84E0FF" stroke-opacity="0.68"/>
+
+      <!-- 16 breakout -->
+      <line x1="684" y1="40" x2="684" y2="116" stroke="#67ABDA" stroke-opacity="0.73"/>
+      <rect x="679" y="52" width="10" height="27" fill="#2490D8" fill-opacity="0.36" stroke="#6DD5FF" stroke-opacity="0.61"/>
+
+      <!-- 17 final hollow rise -->
+      <line x1="724" y1="28" x2="724" y2="108" stroke="#71B3E0" stroke-opacity="0.76"/>
+      <rect x="719" y="41" width="10" height="31" fill="none" stroke="#8BE4FF" stroke-opacity="0.69"/>
+    </g>
+
+    <!-- zigzag line chart with an upward finish -->
+    <path d="M0 176
+             C28 177, 48 174, 66 175
+             S100 180, 120 173
+             S150 166, 172 169
+             S205 176, 228 165
+             S262 158, 286 161
+             S322 170, 346 154
+             S382 144, 408 148
+             S448 160, 474 137
+             S518 122, 544 126
+             S584 140, 612 108
+             S650 90, 680 96
+             S716 82, 740 46"
+          fill="none"
+          stroke="url(#lineBlue)"
+          stroke-width="5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          filter="url(#glowBlue)"/>
+
+    <g fill="#49D3FF" filter="url(#glowBlue)">
+      <circle cx="120" cy="173" r="5.5"/>
+      <circle cx="172" cy="169" r="5.5"/>
+      <circle cx="228" cy="165" r="5.5"/>
+      <circle cx="286" cy="161" r="5.5"/>
+      <circle cx="346" cy="154" r="5.5"/>
+      <circle cx="408" cy="148" r="5.5"/>
+      <circle cx="474" cy="137" r="5.5"/>
+      <circle cx="544" cy="126" r="5.5"/>
+      <circle cx="612" cy="108" r="5.5"/>
+      <circle cx="680" cy="96" r="5.5"/>
+    </g>
+    <g fill="#FFD24A" filter="url(#glowGold)">
+      <circle cx="740" cy="46" r="6.5"/>
+    </g>
+
+    <!-- support curve -->
+    <path d="M0 184 C125 192, 250 190, 378 177 C486 166, 586 142, 760 88" fill="none" stroke="#123250" stroke-width="2" opacity="0.50"/>
+  </g>
+
+  <!-- bottom descriptor: fixed typography without stretching, equal spacing between text and dots, aligned from the A icon side to the line chart endpoint -->
+  <g filter="url(#softShadow)">
+    <text x="138" y="390"
+          text-anchor="start"
+          font-family="Inter, SF Pro Display, Segoe UI, Arial, sans-serif"
+          font-size="18"
+          font-weight="600"
+          letter-spacing="4.0"
+          fill="#B8C7D9">QUANT FINANCE</text>
+    <circle cx="400" cy="382" r="4" fill="#18C5FF"/>
+    <text x="465" y="390"
+          text-anchor="start"
+          font-family="Inter, SF Pro Display, Segoe UI, Arial, sans-serif"
+          font-size="18"
+          font-weight="600"
+          letter-spacing="4.0"
+          fill="#B8C7D9">ALPHA RESEARCH</text>
+    <circle cx="742" cy="382" r="4" fill="#F5BF2A"/>
+    <text x="807" y="390"
+          text-anchor="start"
+          font-family="Inter, SF Pro Display, Segoe UI, Arial, sans-serif"
+          font-size="18"
+          font-weight="600"
+          letter-spacing="4.0"
+          fill="#B8C7D9">AUTONOMOUS TRADING</text>
+  </g>
+</svg>

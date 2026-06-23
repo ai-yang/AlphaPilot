@@ -208,3 +208,90 @@ def delete_run(run_id: str) -> bool:
         return False
     shutil.rmtree(target)
     return True
+
+
+# --------------------------------------------------------------------------- #
+# Backtest-result discovery from saved runs (durable record, not the transient
+# global workspace cache). Each run dir holds its own ``workspaces/<id>/`` and a
+# ``logs`` symlink, so the portal can browse results by run instead of scanning a
+# flat workspace root.
+# --------------------------------------------------------------------------- #
+def _run_label(manifest: dict[str, Any], ws_name: str, *, dup: bool = False) -> str:
+    """Readable label for a run's backtest result (``command · market · time``)."""
+    cmd = manifest.get("command") or "run"
+    market = manifest.get("market") or ""
+    stamp = ""
+    raw_ts = manifest.get("created_at") or ""
+    if raw_ts:
+        try:
+            stamp = datetime.fromisoformat(str(raw_ts)).strftime("%m-%d %H:%M")
+        except (ValueError, TypeError):
+            stamp = str(raw_ts)[:16]
+    label = " · ".join(p for p in (cmd, market, stamp) if p) or ws_name
+    return f"{label}  ({ws_name[:8]}…)" if dup else label
+
+
+def list_run_backtests() -> list[dict[str, Any]]:
+    """Backtest-result workspaces (those with ``ret.pkl``) across all saved runs.
+
+    Newest run first; entries carry manifest-derived ``label`` / ``command`` /
+    ``market`` / ``status`` plus the workspace ``mtime``. This replaces scanning a
+    flat workspace root in the portal.
+    """
+    root = runs_root().resolve()
+    if not root.exists():
+        return []
+    out: list[dict[str, Any]] = []
+    for run in list_runs():
+        run_id = run.get("run_id")
+        if not run_id:
+            continue
+        ws_dir = root / run_id / "workspaces"
+        if not ws_dir.is_dir():
+            continue
+        ret_workspaces = sorted(
+            (w for w in ws_dir.iterdir() if w.is_dir() and (w / "ret.pkl").exists()),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        dup = len(ret_workspaces) > 1
+        for ws in ret_workspaces:
+            out.append(
+                {
+                    "workspace_id": ws.name,
+                    "path": str(ws),
+                    "run_id": run_id,
+                    "label": _run_label(run, ws.name, dup=dup),
+                    "command": run.get("command"),
+                    "market": run.get("market"),
+                    "status": run.get("status"),
+                    "log_trace_path": run.get("log_trace_path"),
+                    "mtime": datetime.fromtimestamp(ws.stat().st_mtime).strftime("%Y-%m-%d %H:%M"),
+                }
+            )
+    return out
+
+
+def resolve_run_workspace(workspace_id: str) -> Path | None:
+    """Find a backtest-result workspace (``ret.pkl``) by its dir name across runs."""
+    root = runs_root().resolve()
+    if not root.exists():
+        return None
+    for run_dir in root.iterdir():
+        if not run_dir.is_dir():
+            continue
+        ws = run_dir / "workspaces" / workspace_id
+        if ws.is_dir() and (ws / "ret.pkl").exists():
+            return ws
+    return None
+
+
+def delete_run_workspace(workspace_id: str) -> bool:
+    """Delete a single backtest-result workspace dir (kept within ``runs_root``)."""
+    ws = resolve_run_workspace(workspace_id)
+    if ws is None:
+        return False
+    root = runs_root().resolve()
+    ensure_child_path(root, ws.resolve())
+    shutil.rmtree(ws)
+    return True

@@ -5,10 +5,7 @@ Pipfile
 public
 release-notes.md
 /tests
-/AlphaForge
-/openclaw
-/QuantaAlpha
-/hikyuu
+Working_AlphaPilot.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -72,8 +72,26 @@ class PortalModule(BaseModule):
     def scheduler(self, interval: int = 30) -> None:
         """Run the daily task scheduler daemon (auto-fires saved data/mine/backtest schedules)."""
         from alphapilot.modules.portal.schedules import run_scheduler_loop
+        from alphapilot.modules.portal.settings import apply_timezone
 
+        apply_timezone()  # daily firing depends on local time
         run_scheduler_loop(interval=interval)
+
+    def timezone(self, tz: str | None = None) -> dict[str, Any]:
+        """Show or set the AlphaPilot timezone (default Asia/Shanghai).
+
+        Examples:
+          ``alphapilot timezone``                 show the current timezone
+          ``alphapilot timezone Asia/Shanghai``   set the timezone
+        Affects scheduler firing and recorded/displayed timestamps. Accepts any
+        IANA name (e.g. ``UTC``, ``America/New_York``).
+        """
+        from alphapilot.modules.portal.settings import apply_timezone, resolve_timezone, set_timezone
+
+        if tz is None or str(tz).strip() == "":
+            return {"timezone": resolve_timezone(), "applied": apply_timezone()}
+        path = set_timezone(tz)
+        return {"timezone": resolve_timezone(), "applied": apply_timezone(), "saved_to": str(path)}
 
     def portal_restart(self) -> dict[str, Any]:
         """Restart a running `alphapilot portal` process."""
@@ -83,8 +101,10 @@ class PortalModule(BaseModule):
 
     def notify_commands(self, channel: str = "telegram", poll_interval: float | None = None) -> None:
         """Run the inbound notification command receiver."""
+        from alphapilot.modules.portal.settings import apply_timezone
         from alphapilot.systems.notify.inbound import run_daemon
 
+        apply_timezone()
         run_daemon(channel=channel, poll_interval=poll_interval)
 
     def commands(self) -> dict[str, Callable[..., Any]]:
@@ -94,4 +114,5 @@ class PortalModule(BaseModule):
             "portal_restart": self.portal_restart,
             "notify_commands": self.notify_commands,
             "scheduler": self.scheduler,
+            "timezone": self.timezone,
         }

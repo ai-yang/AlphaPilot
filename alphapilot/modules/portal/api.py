@@ -21,7 +21,14 @@ from pydantic import BaseModel, Field
 from alphapilot.modules.portal import jobs, schedules
 from alphapilot.modules.portal.env_config import apply_portal_env, portal_env_payload, save_env_values
 from alphapilot.modules.portal.runtime import load_runtime, pid_running, runtime_path, schedule_current_process_restart
-from alphapilot.modules.portal.settings import load_file_portal_settings, save_portal_settings, settings_path
+from alphapilot.modules.portal.settings import (
+    COMMON_TIMEZONES,
+    apply_timezone,
+    load_file_portal_settings,
+    resolve_timezone,
+    save_portal_settings,
+    settings_path,
+)
 
 
 def _jsonable(value: Any) -> Any:
@@ -56,6 +63,23 @@ def _safe_call(label: str, fn, default: Any = None) -> Any:  # noqa: ANN001
 def _api_error(exc: Exception) -> HTTPException:
     status = 404 if isinstance(exc, FileNotFoundError) else 400
     return HTTPException(status_code=status, detail=f"{type(exc).__name__}: {exc}")
+
+
+def _count_unique_symbols(symbols_by_mode: Any) -> int:
+    """Count distinct stock symbols across data-source/adjust-mode buckets."""
+    if isinstance(symbols_by_mode, dict):
+        return len(
+            {
+                str(symbol).strip()
+                for values in symbols_by_mode.values()
+                if isinstance(values, (list, tuple, set))
+                for symbol in values
+                if str(symbol).strip()
+            }
+        )
+    if isinstance(symbols_by_mode, (list, tuple, set)):
+        return len({str(symbol).strip() for symbol in symbols_by_mode if str(symbol).strip()})
+    return 0
 
 
 def _load_engine() -> Any:
@@ -102,6 +126,7 @@ def _model_data(model: BaseModel) -> dict[str, Any]:
 class PortalSettingsUpdate(BaseModel):
     host: str
     port: int
+    timezone: str | None = None
 
 
 class PortalEnvUpdate(BaseModel):
@@ -216,6 +241,7 @@ def create_app(
     portal_port: int | None = None,
 ) -> FastAPI:
     apply_portal_env()
+    apply_timezone()
     app = FastAPI(title="AlphaPilot Portal API")
     if engine is not None:
         app.state.engine = engine
@@ -253,7 +279,7 @@ def create_app(
                     "backtest_workspace_root": getattr(getattr(eng.config, "backtest", None), "workspace_root", None),
                 },
                 "metrics": {
-                    "symbols": _safe_call("symbols", lambda: sum(len(v) for v in data_system.list_symbols().values()), "—"),
+                    "symbols": _safe_call("symbols", lambda: _count_unique_symbols(data_system.list_symbols()), "—"),
                     "factors": _safe_call("factors", lambda: len(factor_system.list_factors()), "—"),
                     "strategies": _safe_call("strategies", lambda: len(strategy_system.param_database.list_strategies()), "—"),
                     "backtests": _safe_call("backtests", lambda: len(list(backtest_system.results.list_runs())), "—"),
@@ -274,6 +300,7 @@ def create_app(
         current = {
             "host": getattr(app.state, "portal_host", None) or request.url.hostname,
             "port": getattr(app.state, "portal_port", None) or request.url.port,
+            "timezone": resolve_timezone(),
         }
         restart_required = saved.get("host") != current.get("host") or int(saved.get("port", 0)) != int(current.get("port") or 0)
         return _jsonable(
@@ -285,6 +312,7 @@ def create_app(
                     {"value": "127.0.0.1", "label": "127.0.0.1 (local only)"},
                     {"value": "0.0.0.0", "label": "0.0.0.0 (LAN / all interfaces)"},
                 ],
+                "timezone_options": list(COMMON_TIMEZONES),
                 "restart_required": restart_required,
                 "runtime": {
                     "pid": runtime.get("pid"),
@@ -299,6 +327,7 @@ def create_app(
     def update_portal_settings(payload: PortalSettingsUpdate, request: Request) -> dict[str, Any]:
         try:
             save_portal_settings(_model_data(payload))
+            apply_timezone()  # timezone takes effect immediately in this process
         except Exception as exc:  # noqa: BLE001
             raise _api_error(exc) from exc
         return get_portal_settings(request)
@@ -683,6 +712,15 @@ def create_app(
 
     @app.get("/api/backtests")
     def backtests(workspace_root: str | None = None, log_root: str | None = None) -> list[dict[str, Any]]:
+        # Prefer the durable per-run records under git_ignore_folder/runs/<id>/; each
+        # run keeps its own workspaces + a logs symlink. Only fall back to a flat
+        # workspace root (legacy layout) when there are no saved runs.
+        from alphapilot.systems.run_workspace import list_run_backtests
+
+        entries = list_run_backtests()
+        if entries:
+            return _jsonable(entries)
+
         from alphapilot.systems.backtest.artifacts import (
             DEFAULT_LOG_ROOT,
             build_workspace_log_titles,
@@ -705,16 +743,63 @@ def create_app(
             ]
         )
 
+    # Static paths must be declared before "/api/backtests/{workspace_id}" so they
+    # aren't swallowed by the parametric route (workspace_id="leaderboards").
+    @app.get("/api/backtests/leaderboards")
+    def backtest_leaderboards(workspace_root: str | None = None) -> list[dict[str, Any]]:
+        from alphapilot.systems.backtest.artifacts import find_leaderboards
+        from alphapilot.systems.run_workspace import runs_root
+
+        root = Path(workspace_root) if workspace_root else runs_root()
+        return _jsonable(
+            [
+                {
+                    "file": str(p.relative_to(root)),
+                    "label": f"{p.parent.name}/{p.name}",
+                    "mtime": datetime.fromtimestamp(p.stat().st_mtime),
+                }
+                for p in find_leaderboards(root)
+            ]
+        )
+
+    @app.get("/api/backtests/leaderboard")
+    def backtest_leaderboard(file: str, workspace_root: str | None = None) -> dict[str, Any]:
+        import pandas as pd
+
+        from alphapilot.systems.backtest.artifacts import read_leaderboard
+        from alphapilot.systems.run_workspace import runs_root
+
+        root = (Path(workspace_root) if workspace_root else runs_root()).resolve()
+        target = (root / file).resolve()
+        if root not in target.parents or not target.name.endswith("_leaderboard.csv"):
+            raise _api_error(ValueError(f"invalid leaderboard file: {file}"))
+        try:
+            df = read_leaderboard(target)
+            numeric = [c for c in df.columns if c != "factor_name" and pd.api.types.is_numeric_dtype(df[c])]
+            return _jsonable({"columns": list(df.columns), "numeric_columns": numeric, "rows": df})
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
     @app.get("/api/backtests/{workspace_id}")
     def backtest_detail(workspace_id: str, workspace_root: str | None = None) -> dict[str, Any]:
         from alphapilot.modules.backtest_viz import charts
         from alphapilot.systems.backtest.artifacts import build_summary, load_backtest
+        from alphapilot.systems.run_workspace import resolve_run_workspace
 
-        root = Path(workspace_root or _engine(app).config.backtest.workspace_root)
+        ws = resolve_run_workspace(workspace_id)
+        if ws is None:
+            ws = Path(workspace_root or _engine(app).config.backtest.workspace_root) / workspace_id
         try:
-            data = load_backtest(root / workspace_id)
-            report = data.report.reset_index().rename(columns={"index": "date"})
-            cum = charts.cum_series(data.report).reset_index().rename(columns={"index": "date"})
+            data = load_backtest(ws)
+            # The report's DatetimeIndex is named "datetime", so renaming the
+            # "index" column is a no-op — force the date column name explicitly so
+            # the payload always carries a `date` field (charts key off it).
+            rep = data.report.copy()
+            rep.index.name = "date"
+            report = rep.reset_index()
+            cum_df = charts.cum_series(data.report)
+            cum_df.index.name = "date"
+            cum = cum_df.reset_index()
             return _jsonable(
                 {
                     "workspace_id": workspace_id,
@@ -731,8 +816,12 @@ def create_app(
 
     @app.delete("/api/backtests/{workspace_id}")
     def delete_backtest(workspace_id: str) -> dict[str, Any]:
+        from alphapilot.systems.run_workspace import delete_run_workspace
+
         try:
-            deleted = _engine(app).get_system("backtest").delete_workspace(workspace_id)
+            deleted = delete_run_workspace(workspace_id)
+            if not deleted:  # legacy flat workspace root
+                deleted = _engine(app).get_system("backtest").delete_workspace(workspace_id)
             return {"workspace_id": workspace_id, "deleted": deleted}
         except Exception as exc:  # noqa: BLE001
             raise _api_error(exc) from exc

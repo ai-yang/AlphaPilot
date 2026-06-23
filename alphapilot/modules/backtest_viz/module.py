@@ -22,6 +22,12 @@ class BacktestVizModule(BaseModule):
 
     def backtest_viz(self, port: int = 19903, host: str = "0.0.0.0") -> None:
         """Launch Streamlit backtest artifact viewer."""
+        from alphapilot.log import logger
+
+        logger.warning(
+            "回测可视化已整合进 `alphapilot portal` 的「回测」页（含收益/超额/账户/换手率图表、"
+            "每日明细、因子排行榜与对比基准）；此独立 Streamlit 查看器保留作回退。"
+        )
         with rpath("alphapilot.modules.backtest_viz", "app.py") as app_path:
             cmds = [
                 "streamlit",

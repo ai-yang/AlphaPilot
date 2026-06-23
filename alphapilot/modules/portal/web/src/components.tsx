@@ -160,6 +160,33 @@ export function RefreshButton({
   );
 }
 
+/** Responsive Plotly height: ~half the viewport, clamped to a sensible range. */
+export function chartHeight(): number {
+  if (typeof window === "undefined") return 420;
+  return Math.max(360, Math.min(640, Math.round(window.innerHeight * 0.5)));
+}
+
+/** Simple tab bar reusing the `.tabs` styling. Caller owns the active state. */
+export function Tabs({
+  tabs,
+  active,
+  onChange
+}: {
+  tabs: { key: string; label: string }[];
+  active: string;
+  onChange: (key: string) => void;
+}) {
+  return (
+    <div className="tabs">
+      {tabs.map((tb) => (
+        <button key={tb.key} className={tb.key === active ? "active" : ""} onClick={() => onChange(tb.key)}>
+          {tb.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function JsonTextArea({
   value,
   onChange,
