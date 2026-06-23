@@ -113,5 +113,6 @@ class SavedModelBacktestRequest:
     qlib_data_dir: str | None = None
     use_local: bool | None = None
     options: dict[str, Any] = field(default_factory=dict)
+    yaml_params: Any = None
     market: str | None = None
     """Instrument-pool name for the factor h5 spec; ``None`` resolves from yaml_params/default."""

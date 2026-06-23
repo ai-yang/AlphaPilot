@@ -215,6 +215,13 @@ class StrategySystem(BaseStrategySystem):
         modes = [mode]
 
         factors = self._factors_to_defs(record.factor_formulas)
+        # Optional per-run yaml_params override (money / rebalance strategy / costs / dates),
+        # passed through options. Accept a dict (Portal) or a JSON string (CLI --options).
+        yaml_params = request.options.get("yaml_params") if request.options else None
+        if isinstance(yaml_params, str) and yaml_params.strip():
+            import json
+
+            yaml_params = json.loads(yaml_params)
         qlib_config_name = request.qlib_config_name or (record.metadata or {}).get("qlib_config_name")
         qlib_template_dir = remap_legacy_relative_path(
             request.qlib_template_dir or (record.metadata or {}).get("qlib_template_dir")
@@ -256,6 +263,7 @@ class StrategySystem(BaseStrategySystem):
                     use_local=use_local,
                     model_pickle_path=model_uri,
                     market=asset_market,
+                    yaml_params=yaml_params,
                 )
                 metrics = self._extract_metrics(run.result.experiment)
                 details: dict[str, Any] = {

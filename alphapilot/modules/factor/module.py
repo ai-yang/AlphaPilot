@@ -73,6 +73,14 @@ class FactorModule(BaseModule):
             sys.exit(1)
         return result.to_dict()
 
+    def factor_rename(self, factor_name: str, new_name: str) -> dict[str, Any]:
+        """Rename a factor in the zoo (expression and categories are preserved)."""
+        result = self.context.factor().rename_factor(factor_name, new_name)
+        _print_validation(result, expression=new_name)
+        if not result.acceptable:
+            sys.exit(1)
+        return result.to_dict()
+
     def factor_list(self, category: str | None = None) -> list[dict[str, Any]]:
         """List factors in the zoo, optionally filtered to a single ``--category``."""
         factor_system = self.context.factor()
@@ -155,6 +163,7 @@ class FactorModule(BaseModule):
         return {
             "factor_validate": self.factor_validate,
             "factor_add": self.factor_add,
+            "factor_rename": self.factor_rename,
             "factor_list": self.factor_list,
             "factor_categorize": self.factor_categorize,
             "factor_category_add": self.factor_category_add,

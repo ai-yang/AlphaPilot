@@ -53,11 +53,18 @@ _PORTFOLIO_ARTIFACT_NAMES = (
 
 
 def _coerce_yaml_params(yaml_params: Any) -> Any:
-    """Return a ``QlibYamlParams`` from an instance or plain dict."""
+    """Return a ``QlibYamlParams`` from an instance or plain dict.
+
+    A plain dict is treated as a *patch*: when it omits ``template_type`` we default it to
+    ``combined`` (the LLM-factor norm). Otherwise ``model_validate`` defaults to ``baseline`` and
+    would silently render the wrong qlib template for combined-factor runs.
+    """
     from alphapilot.systems.backtest.qlib_yaml.schema import QlibYamlParams
 
     if isinstance(yaml_params, QlibYamlParams):
         return yaml_params
+    if isinstance(yaml_params, dict) and "template_type" not in yaml_params:
+        yaml_params = {"template_type": "combined", **yaml_params}
     return QlibYamlParams.model_validate(yaml_params)
 
 

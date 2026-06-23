@@ -1,4 +1,4 @@
-import { Loader2, RefreshCw, Trash2, XCircle } from "lucide-react";
+import { Loader2, Moon, RefreshCw, Sun, Trash2, XCircle } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { api, Job } from "./api";
@@ -23,8 +23,18 @@ function activeNavKey(pathname: string): string {
   return match ? match[0] : "home";
 }
 
+function useTheme(): [string, () => void] {
+  const [theme, setTheme] = useState<string>(() => (localStorage.getItem("portal_theme") === "dark" ? "dark" : "light"));
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("portal_theme", theme);
+  }, [theme]);
+  return [theme, () => setTheme((cur) => (cur === "dark" ? "light" : "dark"))];
+}
+
 export function Layout() {
   const { lang, setLang, t } = useI18n();
+  const [theme, toggleTheme] = useTheme();
   const location = useLocation();
   const daemon = useDaemonStatus();
   const current = activeNavKey(location.pathname);
@@ -59,6 +69,14 @@ export function Layout() {
               <span className={`dot ${daemon ? "on" : "off"}`} />
               {daemon ? t("daemonOn") : t("daemonOff")}
             </span>
+            <button
+              className="button ghost small icon-only"
+              onClick={toggleTheme}
+              title={theme === "dark" ? t("themeLight") : t("themeDark")}
+              aria-label={theme === "dark" ? t("themeLight") : t("themeDark")}
+            >
+              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
             <button className="button ghost small" onClick={() => setLang(lang === "zh" ? "en" : "zh")}>
               {lang === "zh" ? "English" : "中文"}
             </button>

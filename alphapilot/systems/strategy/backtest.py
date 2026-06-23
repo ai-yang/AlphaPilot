@@ -9,7 +9,7 @@ dependency only flows strategy-system -> backtest-system via the context.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from alphapilot.systems.backtest.types import (
     FactorBacktestRequest,
@@ -50,6 +50,7 @@ def run_strategy_asset_backtest(
     use_local: bool | None = None,
     model_pickle_path: str | None = None,
     market: str | None = None,
+    yaml_params: Any = None,
 ) -> StrategyAssetBacktestRun:
     backtest = context.backtest()
 
@@ -65,6 +66,7 @@ def run_strategy_asset_backtest(
                 qlib_template_dir=qlib_template_dir,
                 use_local=use_local,
                 market=market,
+                yaml_params=yaml_params,
             )
         )
     elif mode == "reuse_model":
@@ -80,6 +82,7 @@ def run_strategy_asset_backtest(
                 qlib_data_dir=qlib_data_dir,
                 use_local=use_local,
                 market=market,
+                yaml_params=yaml_params,
             )
         )
     else:

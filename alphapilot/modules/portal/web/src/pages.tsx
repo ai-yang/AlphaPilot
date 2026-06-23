@@ -484,7 +484,12 @@ export function LibraryPage() {
                 {
                   key: "factor_name",
                   label: "",
-                  render: (row) => <button className="button small danger" disabled={busy} onClick={() => void run(async () => { await api.delete(`/api/factors/${encodeURIComponent(String(row.factor_name))}`); await factors.refresh(); })}>{t("delete")}</button>
+                  render: (row) => (
+                    <div className="row-actions">
+                      <button className="button small" disabled={busy} onClick={() => { const name = String(row.factor_name); const next = window.prompt(t("renameFactorPrompt"), name); if (next && next.trim() && next.trim() !== name) void run(async () => { await api.patch(`/api/factors/${encodeURIComponent(name)}`, { new_name: next.trim() }); await factors.refresh(); }, t("renameFactor")); }}>{t("rename")}</button>
+                      <button className="button small danger" disabled={busy} onClick={() => void run(async () => { await api.delete(`/api/factors/${encodeURIComponent(String(row.factor_name))}`); await factors.refresh(); })}>{t("delete")}</button>
+                    </div>
+                  )
                 }
               ]}
             />

@@ -45,8 +45,17 @@ class AlphaMiningModule(BaseModule):
         qlib_config_name: str | None = None,
         qlib_template_dir: str | None = None,
         market: str | None = None,
+        yaml_params: str | None = None,
+        save_factors_to_library: bool = False,
     ) -> None:
-        """Run the autonomous factor-mining loop."""
+        """Run the autonomous factor-mining loop.
+
+        ``yaml_params``: optional JSON string / file path overriding the qlib config used by the
+        in-loop factor evaluation (money ``account`` / rebalance ``topk``/``n_drop`` / costs /
+        date segments). ``None`` keeps today's behavior. ``market``: instrument pool for the
+        factor h5 spec. ``save_factors_to_library``: when True, each round's mined factor
+        expressions are also added to the factor library (zoo) under a ``mined`` category.
+        """
         from alphapilot.core.utils import import_class
         from alphapilot.log import logger
         from alphapilot.modules.alpha_mining.registry import get_scenario
@@ -60,6 +69,7 @@ class AlphaMiningModule(BaseModule):
 
         resolved_qlib_config = qlib_config_name or getattr(prop_setting, "qlib_config_name", None)
         resolved_template_dir = qlib_template_dir or getattr(prop_setting, "qlib_template_dir", None)
+        parsed_yaml_params = self._parse_yaml_params(yaml_params)
         bt_cfg = self.context.config.backtest
 
         # Prepare this run's factor h5 context (market/spec cache) and publish it via env so the
@@ -97,6 +107,8 @@ class AlphaMiningModule(BaseModule):
                     context=self.context,
                     qlib_config_name=resolved_qlib_config,
                     qlib_template_dir=resolved_template_dir,
+                    yaml_params=parsed_yaml_params,
+                    save_factors_to_library=save_factors_to_library,
                 )
             else:
                 loop = loop_cls.load(path, use_local=use_local)
@@ -105,6 +117,9 @@ class AlphaMiningModule(BaseModule):
                     loop.qlib_config_name = resolved_qlib_config
                 if resolved_template_dir:
                     loop.qlib_template_dir = resolved_template_dir
+                if parsed_yaml_params is not None:
+                    loop.yaml_params = parsed_yaml_params
+                loop.save_factors_to_library = save_factors_to_library
             loop.factor_data_context = factor_data_ctx
             loop.run(step_n=step_n, stop_event=stop_event)
 

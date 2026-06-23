@@ -32,6 +32,25 @@ export function visibleFields(specs: FieldSpec[], values: Record<string, FieldVa
   return specs.filter((field) => !field.visibleWhen || field.visibleWhen(values));
 }
 
+// Assign a value into the params object. Keys starting with "_" are UI-only controls (e.g. a
+// "show overrides" toggle) and are never sent to the backend. Dotted keys ("yaml_params.account")
+// are expanded into nested objects so friendly widgets can populate a single nested patch.
+function assignParam(params: Record<string, unknown>, key: string, value: unknown): void {
+  if (key.startsWith("_")) return;
+  if (!key.includes(".")) {
+    params[key] = value;
+    return;
+  }
+  const parts = key.split(".");
+  let node = params;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const part = parts[i];
+    if (typeof node[part] !== "object" || node[part] === null) node[part] = {};
+    node = node[part] as Record<string, unknown>;
+  }
+  node[parts[parts.length - 1]] = value;
+}
+
 export function buildParams(
   specs: FieldSpec[],
   values: Record<string, FieldValue>,
@@ -45,21 +64,21 @@ export function buildParams(
     }
     if (raw === "" || raw === null || raw === undefined) continue;
     if (field.type === "checkbox") {
-      params[field.key] = Boolean(raw);
+      assignParam(params, field.key, Boolean(raw));
       continue;
     }
     if (field.parse) {
       const parsed = field.parse(raw, values);
-      if (parsed !== undefined) params[field.key] = parsed;
+      if (parsed !== undefined) assignParam(params, field.key, parsed);
       continue;
     }
     if (field.type === "number") {
       const n = Number(raw);
       if (!Number.isFinite(n)) throw new Error(`${field.label} must be a number`);
-      params[field.key] = n;
+      assignParam(params, field.key, n);
       continue;
     }
-    params[field.key] = raw;
+    assignParam(params, field.key, raw);
   }
 
   if (advancedJson?.trim()) {
@@ -137,10 +156,58 @@ export const dataActionSpecs: FieldSpec[] = [
   { key: "market", label: "Market", type: "text", placeholder: "optional", visibleWhen: (v) => v.action === "build_h5" },
 ];
 
+// Strategy / money / cost overrides shared by mining, backtest and daily-trade forms. Fields use
+// dotted keys so they collect into a single nested ``yaml_params`` patch; they stay hidden behind a
+// UI-only ``_show_overrides`` toggle and are only sent when filled (empty = use template defaults).
+const strategyClassOptions: FieldOption[] = [
+  { label: "默认（按策略/模板）", value: "" },
+  { label: "TopkDropoutStrategy", value: "TopkDropoutStrategy" },
+  { label: "EnhancedIndexingStrategy", value: "EnhancedIndexingStrategy" },
+];
+
+export function strategyParamFields(opts: { showAccount?: boolean } = {}): FieldSpec[] {
+  const { showAccount = true } = opts;
+  const gate = (v: Record<string, FieldValue>) => Boolean(v._show_overrides);
+  const fields: FieldSpec[] = [
+    {
+      key: "_show_overrides",
+      label: "自定义资金 / 调仓 / 成本参数",
+      type: "checkbox",
+      defaultValue: false,
+      helpText: "打开后可覆盖资金、调仓策略、交易成本与日期；留空的字段沿用策略 / 模板默认值。",
+    },
+  ];
+  if (showAccount) {
+    fields.push({ key: "yaml_params.account", label: "初始资金", type: "number", placeholder: "50000", helpText: "回测账户初始现金", visibleWhen: gate });
+  }
+  fields.push(
+    { key: "yaml_params.strategy_class", label: "调仓策略", type: "select", defaultValue: "", options: strategyClassOptions, visibleWhen: gate },
+    { key: "yaml_params.topk", label: "持仓数 Top-k", type: "number", placeholder: "15", visibleWhen: gate },
+    { key: "yaml_params.n_drop", label: "每日剔除数", type: "number", placeholder: "5", visibleWhen: gate },
+    { key: "yaml_params.hold_thresh", label: "最短持有天数", type: "number", placeholder: "1", visibleWhen: gate },
+    { key: "yaml_params.risk_degree", label: "仓位比例 (0-1)", type: "number", placeholder: "0.9", visibleWhen: gate },
+    { key: "yaml_params.open_cost", label: "买入成本", type: "number", placeholder: "0.0002", visibleWhen: gate },
+    { key: "yaml_params.close_cost", label: "卖出成本", type: "number", placeholder: "0.0008", visibleWhen: gate },
+    { key: "yaml_params.min_cost", label: "单笔最低成本", type: "number", placeholder: "5", visibleWhen: gate },
+    { key: "yaml_params.limit_threshold", label: "涨跌停阈值", type: "number", placeholder: "0.095", visibleWhen: gate },
+    { key: "yaml_params.benchmark", label: "基准", type: "text", placeholder: "SH000905", visibleWhen: gate },
+    { key: "yaml_params.test_start", label: "测试开始", type: "date", visibleWhen: gate },
+    { key: "yaml_params.test_end", label: "测试结束", type: "date", visibleWhen: gate },
+    { key: "yaml_params.backtest_start", label: "回测开始", type: "date", visibleWhen: gate },
+    { key: "yaml_params.backtest_end", label: "回测结束", type: "date", helpText: "回测区间须落在测试区间内", visibleWhen: gate },
+  );
+  return fields;
+}
+
 export const llmMiningSpecs: FieldSpec[] = [
   { key: "step_n", label: "Step N", type: "number", defaultValue: 5, required: true },
   { key: "scenario", label: "Scenario", type: "text", defaultValue: "alpha_factor_mining" },
   { key: "direction", label: "Direction", type: "textarea", placeholder: "挖掘方向或假说" },
+  // Auto-add each round's mined factors to the factor library (zoo) under a "mined" category.
+  { key: "save_factors_to_library", label: "挖到的因子自动加入因子库", type: "checkbox", defaultValue: false, helpText: "每轮挖出的因子表达式会校验去重后存入因子库（mined 分类）。" },
+  // Mining drives its data universe by the top-level ``market`` kwarg (run dir + factor h5 spec).
+  { key: "market", label: "市场 / 股票池", type: "text", placeholder: "optional", visibleWhen: (v) => Boolean(v._show_overrides) },
+  ...strategyParamFields(),
 ];
 
 export const alphaForgeSpecs: FieldSpec[] = [
@@ -181,6 +248,7 @@ export const factorBacktestSpecs: FieldSpec[] = [
     ],
   },
   { key: "scenario", label: "Scenario", type: "text", defaultValue: "factor_backtest" },
+  ...strategyParamFields(),
 ];
 
 export const strategyBacktestSpecs: FieldSpec[] = [
@@ -196,6 +264,7 @@ export const strategyBacktestSpecs: FieldSpec[] = [
     ],
   },
   { key: "scenario", label: "Scenario", type: "text", defaultValue: "factor_backtest" },
+  ...strategyParamFields(),
 ];
 
 export function withStrategyOptions(specs: FieldSpec[], names: string[] = []): FieldSpec[] {
@@ -213,6 +282,8 @@ export const dailyTradeSpecs: FieldSpec[] = [
   { key: "model_pickle_path", label: "Model Pickle Path", type: "text" },
   { key: "refresh_data", label: "Refresh data before run", type: "checkbox", defaultValue: false },
   { key: "notify", label: "Push notification", type: "checkbox", defaultValue: false },
+  // Money is set above via ``init_cash``; only expose rebalance / cost / date overrides here.
+  ...strategyParamFields({ showAccount: false }),
 ];
 
 export function scheduleSpecsFor(kind: string, strategyNames: string[] = []): FieldSpec[] {

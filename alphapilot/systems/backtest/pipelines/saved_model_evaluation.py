@@ -36,5 +36,6 @@ def run_saved_model_evaluation(
             use_local=request.use_local,
             run_env=run_env,
             market=request.market,
+            yaml_params=request.yaml_params,
         ),
     )

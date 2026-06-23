@@ -1382,6 +1382,182 @@ def _factor_store_path(engine: Any, factor_system: Any) -> Path:
     return Path(engine.config.factor.zoo_dir) / filename
 
 
+def _render_strategy_params(
+    key_prefix: str,
+    *,
+    default_template: str = "combined",
+    show_account: bool = True,
+) -> dict[str, Any]:
+    """Friendly controls for money / rebalance strategy / costs / dates.
+
+    Returns a ``yaml_params`` patch dict (same shape the raw JSON box produces) carrying only the
+    fields the user changed from the template defaults, layered on top of any JSON pasted in the
+    advanced box (friendly controls win). Returns ``{}`` when nothing is set, so callers can skip
+    ``yaml_params`` entirely and preserve today's "use the strategy / template defaults" behavior.
+
+    Renders with ``st.markdown`` sub-headings only (no ``st.expander``) so it is safe to call
+    inside a ``st.form`` *or* an already-open ``st.expander`` (Streamlit forbids nested expanders).
+    """
+    from alphapilot.systems.backtest.qlib_yaml.schema import QlibYamlParams
+
+    defaults = QlibYamlParams.defaults_for(default_template)
+    patch: dict[str, Any] = {}
+    st.caption(t("sp_caption"))
+
+    # -- Money & rebalance strategy --
+    st.markdown(f"**{t('sp_group_capital')}**")
+    c1, c2, c3 = st.columns(3)
+    if show_account:
+        account = float(
+            c1.number_input(
+                t("sp_account"),
+                min_value=0.0,
+                value=float(defaults.account),
+                step=10000.0,
+                key=f"{key_prefix}_account",
+                help=t("sp_account_help"),
+            )
+        )
+        if account != float(defaults.account):
+            patch["account"] = account
+    strategy_class = c2.selectbox(
+        t("sp_strategy_class"),
+        ["TopkDropoutStrategy", "EnhancedIndexingStrategy"],
+        index=0,
+        key=f"{key_prefix}_strategy_class",
+        help=t("sp_strategy_class_help"),
+    )
+    if strategy_class != defaults.strategy_class:
+        patch["strategy_class"] = strategy_class
+    topk = int(
+        c3.number_input(
+            t("sp_topk"), min_value=1, value=int(defaults.topk), step=1, key=f"{key_prefix}_topk"
+        )
+    )
+    if topk != int(defaults.topk):
+        patch["topk"] = topk
+    c4, c5, c6 = st.columns(3)
+    n_drop = int(
+        c4.number_input(
+            t("sp_n_drop"), min_value=0, value=int(defaults.n_drop), step=1, key=f"{key_prefix}_n_drop"
+        )
+    )
+    if n_drop != int(defaults.n_drop):
+        patch["n_drop"] = n_drop
+    hold_thresh = int(
+        c5.number_input(
+            t("sp_hold_thresh"),
+            min_value=1,
+            value=int(defaults.hold_thresh),
+            step=1,
+            key=f"{key_prefix}_hold_thresh",
+        )
+    )
+    if hold_thresh != int(defaults.hold_thresh):
+        patch["hold_thresh"] = hold_thresh
+    risk_degree = float(
+        c6.slider(
+            t("sp_risk_degree"),
+            min_value=0.0,
+            max_value=1.0,
+            value=float(defaults.risk_degree),
+            step=0.01,
+            key=f"{key_prefix}_risk_degree",
+            help=t("sp_risk_degree_help"),
+        )
+    )
+    if risk_degree != float(defaults.risk_degree):
+        patch["risk_degree"] = risk_degree
+
+    # -- Trading costs --
+    st.markdown(f"**{t('sp_group_costs')}**")
+    d1, d2, d3, d4 = st.columns(4)
+    cost_fields = [
+        ("open_cost", float(defaults.open_cost), 0.0001, "%.4f", d1, None),
+        ("close_cost", float(defaults.close_cost), 0.0001, "%.4f", d2, None),
+        ("min_cost", float(defaults.min_cost), 1.0, "%.2f", d3, None),
+        ("limit_threshold", float(defaults.limit_threshold), 0.005, "%.3f", d4, "sp_limit_threshold_help"),
+    ]
+    for field_name, default_value, step, fmt, col, help_key in cost_fields:
+        value = float(
+            col.number_input(
+                t(f"sp_{field_name}"),
+                min_value=0.0,
+                value=default_value,
+                step=step,
+                format=fmt,
+                key=f"{key_prefix}_{field_name}",
+                help=t(help_key) if help_key else None,
+            )
+        )
+        if value != default_value:
+            patch[field_name] = value
+
+    # -- Benchmark / market --
+    st.markdown(f"**{t('sp_group_universe')}**")
+    e1, e2 = st.columns(2)
+    bench = e1.text_input(t("sp_benchmark"), value=defaults.benchmark, key=f"{key_prefix}_benchmark")
+    if bench.strip() and bench.strip() != defaults.benchmark:
+        patch["benchmark"] = bench.strip()
+    mkt = e2.text_input(
+        t("sp_market"), value="", placeholder=defaults.market, key=f"{key_prefix}_market", help=t("sp_market_help")
+    )
+    if mkt.strip():
+        patch["market"] = mkt.strip()
+
+    # -- Date segments (grouped so segment-order validation stays consistent) --
+    st.markdown(f"**{t('sp_group_dates')}**")
+    st.caption(t("sp_dates_help"))
+    f1, f2 = st.columns(2)
+    seg_fields = [
+        ("train_start", f1), ("train_end", f2),
+        ("valid_start", f1), ("valid_end", f2),
+        ("test_start", f1), ("test_end", f2),
+        ("backtest_start", f1), ("backtest_end", f2),
+    ]
+    for field_name, col in seg_fields:
+        default_value = getattr(defaults, field_name)
+        value = col.text_input(
+            t(f"sp_{field_name}"), value=default_value, key=f"{key_prefix}_{field_name}"
+        )
+        if value.strip() and value.strip() != default_value:
+            patch[field_name] = value.strip()
+
+    # -- Advanced: raw JSON escape hatch (arbitrary qlib keys; friendly controls override) --
+    st.markdown(f"**{t('sp_group_advanced')}**")
+    raw_json = st.text_area(
+        t("bt_yaml_params_json"),
+        value="",
+        height=90,
+        placeholder='{"num_leaves": 128, "learning_rate": 0.05}',
+        key=f"{key_prefix}_yaml_params",
+        help=t("sp_json_help"),
+    )
+    base: dict[str, Any] = {}
+    if raw_json.strip():
+        try:
+            parsed = json.loads(raw_json)
+            if isinstance(parsed, dict):
+                base = parsed
+            else:
+                st.warning(t("sp_json_not_object"))
+        except json.JSONDecodeError as exc:
+            st.warning(t("sp_json_invalid", error=exc))
+
+    merged = {**base, **patch}
+    if not merged:
+        return {}
+    # template_type drives which qlib template file is rendered; default it (and respect an
+    # explicit one set via the JSON box) so combined factors don't fall back to the baseline.
+    merged.setdefault("template_type", default_template)
+    # Validate eagerly so the user gets a clear message instead of a backend failure.
+    try:
+        QlibYamlParams.model_validate(merged)
+    except Exception as exc:  # noqa: BLE001
+        st.warning(t("sp_validation_failed", error=exc))
+    return merged
+
+
 def _render_factor_backtest_options(key_prefix: str) -> dict[str, Any]:
     st.markdown(f"##### {t('factor_bt_options_heading')}")
     st.info(t("factor_bt_launch_hint"))
@@ -1409,22 +1585,20 @@ def _render_factor_backtest_options(key_prefix: str) -> dict[str, Any]:
         value="",
         key=f"{key_prefix}_qlib_template",
     )
-    yaml_params = st.text_area(
-        t("bt_yaml_params_json"),
-        value="",
-        height=110,
-        placeholder='{"topk": 30, "n_drop": 5, "backtest_start": "2024-01-01"}',
-        key=f"{key_prefix}_yaml_params",
-    )
-    return _nonempty_kwargs(
+    yaml_params = _render_strategy_params(key_prefix, default_template="combined")
+    kwargs = _nonempty_kwargs(
         {
             "scenario": scenario,
             "qlib_config_name": qlib_config_name,
             "qlib_template_dir": qlib_template_dir,
             "mode": mode,
-            "yaml_params": yaml_params,
         }
     )
+    # Only attach yaml_params when the user actually set something; an empty dict would force a
+    # full QlibYamlParams render (and template_type default) instead of the existing config file.
+    if yaml_params:
+        kwargs["yaml_params"] = yaml_params
+    return kwargs
 
 
 def _remember_factor_backtest_job(job: dict[str, Any], kwargs: dict[str, Any]) -> None:
@@ -2181,6 +2355,12 @@ def _render_mine_launcher() -> None:
         )
         scenario = c2.text_input(t("mine_scenario"), value="alpha_factor_mining")
         direction = st.text_area(t("mine_direction"), value="", height=90)
+        save_factors_to_library = st.checkbox(
+            t("mine_save_factors"), value=False, help=t("mine_save_factors_help")
+        )
+        # Money / rebalance / cost / market override applied to the in-loop factor evaluation
+        # backtest (``set market`` here also names the run's instrument universe).
+        mine_params = _render_strategy_params("mine", default_template="combined")
         with st.expander(t("advanced_options"), expanded=False):
             path = st.text_input(t("mine_resume_path"), value="")
             qlib_config_name = st.text_input(
@@ -2202,6 +2382,13 @@ def _render_mine_launcher() -> None:
                 "qlib_template_dir": qlib_template_dir,
             }
         )
+        if save_factors_to_library:
+            kwargs["save_factors_to_library"] = True
+        if mine_params:
+            kwargs["yaml_params"] = mine_params
+            # Keep the run's instrument-universe naming in sync with the override's market.
+            if mine_params.get("market"):
+                kwargs["market"] = mine_params["market"]
         try:
             job = portal_jobs.start_job("mine", kwargs)
             st.success(t("job_started", job_id=job["job_id"]))
@@ -2473,6 +2660,7 @@ def _render_backtest_launcher(engine: Any) -> None:
             run_tag = st.text_input(
                 t("bt_run_tag"), value="", key="strategy_bt_run_tag"
             )
+            strategy_params = _render_strategy_params("strategy_bt", default_template="combined")
             submitted = st.form_submit_button(
                 t("bt_start_strategy_btn"), type="primary"
             )
@@ -2491,6 +2679,9 @@ def _render_backtest_launcher(engine: Any) -> None:
                         "run_tag": run_tag,
                     }
                 )
+                # Optional money/rebalance override → strategy_backtest(**options) → request.options.
+                if strategy_params:
+                    kwargs["yaml_params"] = strategy_params
                 try:
                     job = portal_jobs.start_job("strategy_backtest", kwargs)
                     st.success(t("job_started", job_id=job["job_id"]))
@@ -3003,14 +3194,13 @@ def _render_daily_trade(engine: Any) -> None:
         date = c1.text_input(t("daily_trade_date"), value="", placeholder="YYYY-MM-DD")
         init_cash = c2.text_input(t("daily_trade_init_cash"), value="")
         state_path = st.text_input(t("daily_trade_state_path"), value="")
+        # Money is handled by ``init_cash`` above; the form only adds rebalance / cost / date knobs.
+        dt_params = _render_strategy_params("daily_trade", default_template="combined", show_account=False)
         with st.expander(t("daily_trade_manual"), expanded=not strategies):
             factor_path = st.text_input(
                 t("factor_path"), value="", key="daily_factor_path"
             )
             model_pickle_path = st.text_input(t("daily_trade_model_pkl"), value="")
-            yaml_params = st.text_area(
-                t("bt_yaml_params_json"), value="", height=100, key="daily_yaml"
-            )
         refresh_data = st.checkbox(t("daily_trade_refresh"), value=False)
         submitted = st.form_submit_button(t("daily_trade_btn"), type="primary")
 
@@ -3022,8 +3212,8 @@ def _render_daily_trade(engine: Any) -> None:
             kwargs["factor_path"] = factor_path.strip()
         if model_pickle_path.strip():
             kwargs["model_pickle_path"] = model_pickle_path.strip()
-        if yaml_params.strip():
-            kwargs["yaml_params"] = yaml_params
+        if dt_params:
+            kwargs["yaml_params"] = dt_params
         if date.strip():
             kwargs["date"] = date.strip()
         if state_path.strip():

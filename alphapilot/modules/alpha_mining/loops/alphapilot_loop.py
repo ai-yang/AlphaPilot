@@ -67,11 +67,18 @@ class AlphaPilotLoop(LoopBase, metaclass=LoopMeta):
         context: Any | None = None,
         qlib_config_name: str | None = None,
         qlib_template_dir: str | None = None,
+        yaml_params: Any = None,
+        save_factors_to_library: bool = False,
     ):
         with logger.tag("init"):
             self.context = context
             self.use_local = use_local
             self.potential_direction = potential_direction
+            # Optional qlib-config override (money / rebalance / costs / dates) applied to the
+            # in-loop factor evaluation; ``None`` keeps the template defaults.
+            self.yaml_params = yaml_params
+            # When True, each round's mined factors are also added to the factor library (zoo).
+            self.save_factors_to_library = save_factors_to_library
             self.qlib_config_name = qlib_config_name or getattr(PROP_SETTING, "qlib_config_name", None)
             self.qlib_template_dir = qlib_template_dir or getattr(PROP_SETTING, "qlib_template_dir", None)
             logger.info(f"初始化AlphaPilotLoop，使用{'本地环境' if use_local else 'Docker容器'}回测")
@@ -161,6 +168,11 @@ class AlphaPilotLoop(LoopBase, metaclass=LoopMeta):
                 experiment.factor_data_context = factor_data_ctx
             if self.qlib_config_name:
                 experiment.qlib_config_name = self.qlib_config_name
+            # Apply the optional money/rebalance/cost override to this round's evaluation; the
+            # runner renders it via ``getattr(exp, "yaml_params")`` (factor_runner.py).
+            loop_yaml_params = getattr(self, "yaml_params", None)
+            if loop_yaml_params is not None:
+                experiment.yaml_params = loop_yaml_params
             if self.context is None:
                 raise RuntimeError(
                     "factor_backtest requires a kernel Context; inject context when constructing the loop."
@@ -192,6 +204,8 @@ class AlphaPilotLoop(LoopBase, metaclass=LoopMeta):
             logger.log_object(feedback, tag="feedback")
         self.trace.hist.append((prev_out["factor_propose"], prev_out["factor_backtest"], feedback))
         self._save_strategy_asset(prev_out)
+        if getattr(self, "save_factors_to_library", False):
+            self._save_factors_to_library(prev_out)
 
     def _save_strategy_asset(self, prev_out: dict[str, Any]) -> None:
         """
@@ -273,6 +287,40 @@ class AlphaPilotLoop(LoopBase, metaclass=LoopMeta):
             )
         except Exception as e:
             logger.warning(f"[strategy.save] round asset save failed: {e}")
+
+    def _save_factors_to_library(self, prev_out: dict[str, Any]) -> None:
+        """Add this round's mined factor expressions to the factor library (zoo).
+
+        Reuses ``factor().add_factor`` (validates + dedups by name/expression). A name clash with a
+        *different* expression is retried with a round suffix. Failures are non-fatal.
+        """
+        if self.context is None:
+            return
+        try:
+            from alphapilot.systems.factor.types import REJECT_DUPLICATE_NAME
+
+            result = prev_out.get("factor_backtest")
+            if result is None:
+                return
+            round_no = self.loop_idx + 1
+            factor_system = self.context.factor()
+            added = 0
+            for i, task in enumerate(getattr(result, "sub_tasks", []) or []):
+                expr = getattr(task, "factor_expression", None)
+                if not expr:
+                    continue
+                name = str(getattr(task, "factor_name", None) or f"mined_r{round_no}_{i}")
+                res = factor_system.add_factor(name, str(expr), categories=["mined"], save=True)
+                # Duplicate name with a different expression -> retry under a round-tagged name.
+                if not res.acceptable and getattr(res, "code", None) == REJECT_DUPLICATE_NAME:
+                    res = factor_system.add_factor(
+                        f"{name}_r{round_no}", str(expr), categories=["mined"], save=True
+                    )
+                if res.acceptable:
+                    added += 1
+            logger.info(f"[factor.save] round {round_no}: added {added} factor(s) to the library")
+        except Exception as e:  # noqa: BLE001 — auto-save must never break mining
+            logger.warning(f"[factor.save] round factor-library save failed: {e}")
 
 
 def _to_float(v: Any) -> float | None:

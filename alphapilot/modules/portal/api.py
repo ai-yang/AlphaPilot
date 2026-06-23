@@ -143,6 +143,10 @@ class FactorValidate(BaseModel):
     expression: str
 
 
+class FactorRename(BaseModel):
+    new_name: str
+
+
 class FactorCategoryEdit(BaseModel):
     name: str | None = None
     new_name: str | None = None
@@ -500,6 +504,14 @@ def create_app(
     def delete_factor(factor_name: str) -> dict[str, Any]:
         try:
             return {"factor_name": factor_name, "deleted": _engine(app).get_system("factor").delete_factor(factor_name)}
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.patch("/api/factors/{factor_name}")
+    def rename_factor(factor_name: str, payload: FactorRename) -> dict[str, Any]:
+        try:
+            result = _engine(app).get_system("factor").rename_factor(factor_name, payload.new_name)
+            return _jsonable(result)
         except Exception as exc:  # noqa: BLE001
             raise _api_error(exc) from exc
 

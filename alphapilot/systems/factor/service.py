@@ -132,6 +132,52 @@ class FactorSystem(BaseFactorSystem):
             self._database.reload()
         return removed
 
+    def rename_factor(
+        self, factor_name: str, new_name: str, *, save: bool = True
+    ) -> FactorValidationResult:
+        """Rename a factor (expression and category links preserved).
+
+        Mirrors ``add_factor``'s name checks: the new name must be non-empty and must not collide
+        with an existing factor.
+        """
+        old = factor_name.strip()
+        new = new_name.strip()
+        if not new:
+            return FactorValidationResult(
+                acceptable=False,
+                code=REJECT_MISSING_NAME,
+                message="New factor name is required.",
+                details=None,
+            )
+        if new == old:
+            return FactorValidationResult(
+                acceptable=True, code=OK_CODE, message="Name unchanged.", details={"factor_name": old}
+            )
+        for item in self.list_factors():
+            if item["factor_name"] == new:
+                return FactorValidationResult(
+                    acceptable=False,
+                    code=REJECT_DUPLICATE_NAME,
+                    message=f"Factor name '{new}' already exists in the zoo.",
+                    details={"factor_name": new},
+                )
+        if not self._database.rename(old, new):
+            return FactorValidationResult(
+                acceptable=False,
+                code=REJECT_MISSING_NAME,
+                message=f"Factor '{old}' not found in the zoo.",
+                details={"factor_name": old},
+            )
+        if save:
+            self._database.save()
+            self._database.reload()
+        return FactorValidationResult(
+            acceptable=True,
+            code=OK_CODE,
+            message=f"Factor renamed '{old}' -> '{new}'.",
+            details={"factor_name": new, "previous_name": old},
+        )
+
     @property
     def database(self) -> Any:
         return self._database

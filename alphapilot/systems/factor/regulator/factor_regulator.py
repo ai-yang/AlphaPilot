@@ -249,6 +249,16 @@ class FactorRegulator(Evaluator):
         logger.info(f"Removed factor: {factor_name}")
         return True
 
+    def rename_factor(self, old_name: str, new_name: str) -> bool:
+        if self.alphazoo.empty or "factor_name" not in self.alphazoo.columns:
+            return False
+        mask = self.alphazoo["factor_name"].astype(str) == old_name
+        if not mask.any():
+            return False
+        self.alphazoo.loc[mask, "factor_name"] = new_name
+        logger.info(f"Renamed factor: {old_name} -> {new_name}")
+        return True
+
     def save_factor_zoo(self, output_path: Optional[str] = None) -> None:
         save_path = output_path if output_path else self.factor_zoo_path
         self.alphazoo.to_csv(save_path, index=False)

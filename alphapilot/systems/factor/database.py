@@ -49,6 +49,10 @@ class BaseFactorDatabase(ABC):
         """Remove a factor by name; return True if removed."""
 
     @abstractmethod
+    def rename(self, old_name: str, new_name: str) -> bool:
+        """Rename a factor (expression and category links preserved); True if renamed."""
+
+    @abstractmethod
     def save(self, output_path: str | None = None) -> None:
         """Persist the zoo to disk."""
 
@@ -126,6 +130,9 @@ class FileFactorDatabase(BaseFactorDatabase):
 
     def delete(self, factor_name: str) -> bool:
         return self.regulator.remove_factor(factor_name)
+
+    def rename(self, old_name: str, new_name: str) -> bool:
+        return self.regulator.rename_factor(old_name, new_name)
 
     def reload(self) -> None:
         self._regulator = None
@@ -270,6 +277,18 @@ class SqliteFactorDatabase(BaseFactorDatabase):
         self.reload()
         if cur.rowcount:
             logger.info(f"Removed factor: {factor_name}")
+            return True
+        return False
+
+    def rename(self, old_name: str, new_name: str) -> bool:
+        # The category links reference factors by id, so updating the name keeps them intact.
+        with closing(self._connect()) as conn, conn:
+            cur = conn.execute(
+                "UPDATE factors SET name = ? WHERE name = ?", (new_name, old_name)
+            )
+        self.reload()
+        if cur.rowcount:
+            logger.info(f"Renamed factor: {old_name} -> {new_name}")
             return True
         return False
 

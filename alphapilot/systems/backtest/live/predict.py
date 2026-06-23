@@ -31,6 +31,10 @@ def _coerce_params(yaml_params: Any):
         return QlibYamlParams.defaults_for("combined")
     if isinstance(yaml_params, QlibYamlParams):
         return yaml_params
+    # A partial dict is a patch onto the combined template (daily signals gate combined-factor
+    # computation on template_type); default it so an override that omits template_type still works.
+    if isinstance(yaml_params, dict) and "template_type" not in yaml_params:
+        yaml_params = {"template_type": "combined", **yaml_params}
     return QlibYamlParams.model_validate(yaml_params)
 
 

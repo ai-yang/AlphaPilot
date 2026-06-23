@@ -17,6 +17,9 @@ import {
 } from "./pages";
 import "./styles.css";
 
+// Apply the saved theme before first paint to avoid a flash of the wrong theme.
+document.documentElement.dataset.theme = localStorage.getItem("portal_theme") === "dark" ? "dark" : "light";
+
 const router = createBrowserRouter([
   {
     path: "/",
