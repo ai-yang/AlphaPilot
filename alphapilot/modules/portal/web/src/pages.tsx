@@ -190,7 +190,7 @@ export function MiningPage() {
           <button className="button primary" disabled={busy} onClick={() => startLlmMining()}>{busy ? <Spinner /> : null}{t("run")}</button>
         </section>
         <section className="panel">
-          <h2>AlphaForge</h2>
+          <h2>公式化挖掘</h2>
           <DynamicForm specs={alphaForgeSpecs} values={afForm.values} onChange={afForm.setValue} errors={afForm.errors} />
           <details>
             <summary>{t("advancedJson")}</summary>
