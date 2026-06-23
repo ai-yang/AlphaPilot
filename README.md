@@ -204,7 +204,7 @@ alphapilot qlib_yaml_validate \
 - adapter 层仅保留 **LLM + 数据源** 可插拔边界；已移除未接入主路径的 backtest engine adapter（`get_backtest_engine`），回测统一经 `systems/backtest/` 执行（详见 [alphapilot/adapters/README.md](alphapilot/adapters/README.md)）
 - 统一 Web 门户：`modules/portal/api.py`（FastAPI）+ `modules/portal/web/`（React/Vite 前端）；旧 Streamlit 版保留为 `app.py` / `alphapilot portal_legacy`
 - 任务完成通知与双向通讯收拢到 `alphapilot/systems/notify/`（Telegram / 飞书 / 邮件）；Portal「通知」页配置凭证与 Command Receiver，后台 job 结束时由 `modules/portal/jobs.py` 触发推送，白名单用户可通过 Telegram / 飞书发命令查询或创建任务
-- **Docker 部署**：根目录 `Dockerfile` + `docker-compose.yml` 将 Portal（含 React 前端构建）、定时任务守护进程、可选 `notify` 接收器打成单镜像多服务；行情与运行状态通过 named volume 持久化，容器内默认 `USE_LOCAL=True`（无需 docker-in-docker）
+- **Docker 部署**：根目录 `Dockerfile` + `docker-compose.yml` 将 Portal（含 React 前端构建）、定时任务守护进程、可选 `notify` 接收器打成单镜像多服务；行情与运行状态以 bind mount 持久化到宿主 `./docker-data/`（可直接浏览的普通文件），容器内默认 `USE_LOCAL=True`（无需 docker-in-docker）
 
 **数据系统代码位置（供二开参考）**
 
@@ -318,6 +318,7 @@ data.run_download(DataDownloadCommand(
 
 ```bash
 cp .env.docker.example .env   # 填写 OPENAI_API_KEY、CHAT_MODEL 等
+mkdir -p docker-data/{qlib-data,app-config,workspace,pickle-cache,logs}  # 宿主持久化目录
 docker compose build          # 首次构建较慢（torch + 科学计算栈）
 docker compose up -d portal scheduler
 # 浏览器打开 http://localhost:19901
@@ -331,8 +332,8 @@ docker compose --profile notify up -d notify
 
 要点：
 
-- 行情数据（约 2.4 GB）**不会打进镜像**；首次请在 Portal「市场数据」页触发下载，或在容器内执行 `docker compose exec portal alphapilot platform prepare_data download`（baostock 无需 token；Tushare 需在 `.env` 填 `TUSHARE_TOKEN`）。
-- Compose 通过 named volume 持久化 `qlib_data`（`~/.qlib`）、`alphapilot_home`（`~/.alphapilot`）、`git_ignore`、`pickle_cache`、`logs` 等，重启容器不丢数据。
+- 行情数据（约 2.4 GB）**不会打进镜像**；首次请在 Portal「市场数据」页触发下载，或在容器内执行 `docker compose exec portal alphapilot platform prepare_data download`（baostock 无需 token；Tushare 需在 `.env` 填 `TUSHARE_TOKEN`）。已有数据可直接复用：`cp -R ~/.qlib/ docker-data/qlib-data/`（保持 `qlib_data/...` 层级），免去重新下载。
+- Compose 以 **bind mount** 把所有持久化数据落到宿主 `./docker-data/`：`qlib-data/`（→ `~/.qlib` 行情数据）、`app-config/`（→ `~/.alphapilot` 配置/凭据）、`workspace/`（→ `git_ignore_folder`，挖掘/回测 runs 与 factor_h5 缓存）、`pickle-cache/`、`logs/`。都是宿主机上可直接浏览的普通文件，`docker compose down` 也不会删除（Linux 下容器以 root 写入，注意目录属主）。
 - Compose 已将 Portal 绑定为 `0.0.0.0:19901`（容器外可访问）；`portal` / `scheduler` 默认 `shm_size: 2gb`，并发跑多个挖掘/回测 job 时如遇 OOM 可适当调大。
 - 飞书入站命令回调 URL 需指向宿主机可访问的 `https://<host>:19901/api/notify/feishu/events`，并保持 `portal` 服务在线。
 

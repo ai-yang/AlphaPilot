@@ -7,25 +7,40 @@
 #   # optional bot command receiver (needs a configured channel):
 #   docker compose --profile notify up -d notify
 #
-# Market data (~2.4 GB) is downloaded at runtime into the qlib_data volume on the
-# first data job — it is NOT baked into the image.
+# Persistent state lives in ./docker-data/ (bind mounts) — create the dirs first:
+#   mkdir -p docker-data/{qlib-data,app-config,workspace,pickle-cache,logs}
+# Market data (~2.4 GB) is downloaded at runtime into ./docker-data/qlib-data on
+# the first data job — it is NOT baked into the image. To reuse data you already
+# have on the host: cp -R ~/.qlib/ docker-data/qlib-data/
 
 # Shared build/config; each service only differs by its command (+ portal extras).
 x-app: &app
+  # Microsoft qlib (`pyqlib`) ships wheels for linux/amd64 only — no linux/arm64.
+  # Pin amd64 so the image builds & runs identically on Apple Silicon (Docker
+  # Desktop emulates it; enable Rosetta in Settings → General for best speed) and
+  # on amd64 servers.
+  platform: linux/amd64
   build:
     context: .
     dockerfile: Dockerfile
+    args:
+      # Debian apt mirror (see Dockerfile). Set APT_MIRROR=mirrors.aliyun.com in
+      # .env on networks where deb.debian.org is blocked/slow (e.g. behind a proxy).
+      APT_MIRROR: ${APT_MIRROR:-deb.debian.org}
   image: alphapilot:latest
   env_file:
     - .env
   working_dir: /app
   restart: unless-stopped
+  # All persistent state is bind-mounted to ./docker-data/ on the host so every
+  # artifact (runs, caches, logs, market data, config) is a plain file you can
+  # browse — not hidden inside a Docker-managed volume.
   volumes:
-    - qlib_data:/root/.qlib                  # downloaded market data (~2.4 GB)
-    - alphapilot_home:/root/.alphapilot      # portal settings/env, runtime, notify creds & state
-    - git_ignore:/app/git_ignore_folder      # runs/, factor_h5_cache/, portal_jobs/, portal_schedules/
-    - pickle_cache:/app/pickle_cache         # reusable mine/backtest result cache
-    - logs:/app/log                          # application + LLM message logs
+    - ./docker-data/qlib-data:/root/.qlib              # 行情数据 (baostock/tushare → qlib bin, ~2.4 GB)
+    - ./docker-data/app-config:/root/.alphapilot       # portal settings/env.json, runtime, notify creds & state
+    - ./docker-data/workspace:/app/git_ignore_folder   # 挖掘&回测 runs/, factor_h5_cache/, portal_jobs/, portal_schedules/
+    - ./docker-data/pickle-cache:/app/pickle_cache     # mine/backtest 结果复用缓存
+    - ./docker-data/logs:/app/log                      # 应用 + LLM 消息日志
 
 services:
   portal:
@@ -63,10 +78,3 @@ services:
       - portal
     profiles:
       - notify
-
-volumes:
-  qlib_data:
-  alphapilot_home:
-  git_ignore:
-  pickle_cache:
-  logs:

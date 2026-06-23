@@ -161,6 +161,9 @@ reports/
 # git_ignore_folder
 git_ignore_folder/
 
+# Docker bind-mount data (runs, caches, logs, market data, config)
+docker-data/
+
 # User-owned strategy assets and qlib templates (see important_data/README.md)
 important_data/strategy_zoo/
 important_data/factor_zoo/

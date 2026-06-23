@@ -12,7 +12,7 @@ LLM-generated factor/backtest code runs **as local subprocesses inside the conta
 | File | Purpose |
 |------|---------|
 | `Dockerfile` | Multi-stage: Node builds the React `dist/`, then a Python 3.11 runtime |
-| `docker-compose.yml` | `portal` + `scheduler` + `notify` off one image, with named volumes |
+| `docker-compose.yml` | `portal` + `scheduler` + `notify` off one image; state bind-mounted to `./docker-data/` |
 | `.dockerignore` | Keeps the ~1.9 GB of local caches/secrets out of the build context |
 | `.env.docker.example` | Template for the `.env` compose reads (API keys, tokens) |
 
@@ -20,6 +20,7 @@ LLM-generated factor/backtest code runs **as local subprocesses inside the conta
 
 ```bash
 cp .env.docker.example .env        # fill in OPENAI_API_KEY, CHAT_MODEL, etc.
+mkdir -p docker-data/{qlib-data,app-config,workspace,pickle-cache,logs}  # host folders for all output
 docker compose build               # first build is large/slow (torch + scientific stack)
 docker compose up -d portal scheduler
 # open http://localhost:19901
@@ -41,18 +42,29 @@ docker compose exec portal alphapilot platform prepare_data download   # baostoc
 # tushare also needs TUSHARE_TOKEN in .env
 ```
 
-It lands in the `qlib_data` volume (`/root/.qlib/qlib_data/cn_data/...`) and persists across
+It lands in `./docker-data/qlib-data/qlib_data/cn_data/...` on the host and persists across
 restarts. Requires network access.
 
-## Volumes (persistent state)
+**Already have the data?** `./docker-data/qlib-data/` maps to the container's `/root/.qlib`,
+so copy your existing host data in, preserving the `qlib_data/...` layout — no re-download:
 
-| Volume | Mount | Holds |
+```bash
+mkdir -p docker-data/qlib-data
+cp -R ~/.qlib/ docker-data/qlib-data/    # → docker-data/qlib-data/qlib_data/cn_data/...
+```
+
+## Persistent state (host bind mounts under `./docker-data/`)
+
+Every artifact is a plain file on the host — browse it directly, no `docker cp`. `docker compose
+down` (without `-v`) leaves it untouched.
+
+| Host (`./docker-data/`) | Container path | Holds |
 |--------|-------|-------|
-| `qlib_data` | `/root/.qlib` | downloaded market data (~2.4 GB) |
-| `alphapilot_home` | `/root/.alphapilot` | portal settings/env, runtime, notify creds & state |
-| `git_ignore` | `/app/git_ignore_folder` | run workspaces, factor_h5 cache, job/schedule state |
-| `pickle_cache` | `/app/pickle_cache` | reusable mine/backtest result cache |
-| `logs` | `/app/log` | application + LLM message logs |
+| `qlib-data/` | `/root/.qlib` | downloaded market data (~2.4 GB) |
+| `app-config/` | `/root/.alphapilot` | portal settings/env.json, runtime, notify creds & state |
+| `workspace/` | `/app/git_ignore_folder` | mining/backtest run workspaces, factor_h5 cache, job/schedule state |
+| `pickle-cache/` | `/app/pickle_cache` | reusable mine/backtest result cache |
+| `logs/` | `/app/log` | application + LLM message logs |
 
 ## Verify
 
@@ -64,8 +76,10 @@ curl -f http://localhost:19901/
 docker compose run --rm portal \
   python -c "import alphapilot, qlib, torch, tables, xgboost, catboost; print('ok', alphapilot.__version__)"
 
-# 3) end-to-end local execution: run a small/debug mine or backtest from the portal
-#    and confirm output under git_ignore_folder/runs/<id>/  (no Docker socket involved)
+# 3) end-to-end local execution: run a small/debug mine or backtest from the portal,
+#    then on the HOST confirm output appears (no Docker socket, no `docker exec`):
+ls docker-data/workspace/runs/        # run workspace dirs
+ls docker-data/logs/                  # log session dirs
 ```
 
 ## Notes & gotchas
@@ -77,6 +91,12 @@ docker compose run --rm portal \
   and let PyPI resolve torch.
 - **Secrets.** `.env` is `.dockerignore`d and injected at runtime — never baked into the
   image. The repo's existing local `.env` holds a real `TUSHARE_TOKEN`; consider rotating it.
+- **Bind-mount ownership (Linux hosts).** The container runs as root, so files written into
+  `./docker-data/` are root-owned. Pre-create the dirs (the `mkdir -p` above) or `chown` them
+  afterwards. On macOS Docker Desktop this is transparently mapped to your user.
+- **Don't reuse a host `app-config`.** A host `~/.alphapilot/portal/env.json` may store
+  host-absolute data paths (`/Users/...`) that don't exist in the container. Let the container
+  manage its own `app-config/`, or set data paths via `.env` — don't copy the host one in.
 - **Memory / shm.** Backtests load the full dataset per worker and the portal spawns job
   workers (`multiprocessing` spawn). `portal`/`scheduler` set `shm_size: 2gb`; raise it, and
   set a `mem_limit`, if you run several concurrent jobs or hit OOM.

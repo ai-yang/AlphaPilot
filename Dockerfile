@@ -38,7 +38,20 @@ ENV PYTHONUNBUFFERED=1 \
 #  - libhdf5-dev                   : HDF5 for pytables (`tables`); also covers source builds
 #  - tini                          : PID 1 init (reap spawned job workers, forward SIGTERM)
 #  - curl + ca-certificates        : healthcheck + HTTPS for data download / LLM APIs
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Optional Debian mirror host for networks where the default deb.debian.org is
+# slow or blocked (e.g. behind a proxy that 503s plain-HTTP apt). Set via the
+# APT_MIRROR build arg (compose reads it from .env); default = official mirror.
+ARG APT_MIRROR=deb.debian.org
+RUN if [ "$APT_MIRROR" != "deb.debian.org" ]; then \
+        sed -i "s|deb.debian.org|$APT_MIRROR|g; s|security.debian.org|$APT_MIRROR|g" \
+            /etc/apt/sources.list.d/debian.sources 2>/dev/null \
+        || sed -i "s|deb.debian.org|$APT_MIRROR|g; s|security.debian.org|$APT_MIRROR|g" /etc/apt/sources.list; \
+    fi
+
+# Acquire::Retries makes apt retry flaky downloads (some mirrors / proxies return
+# transient 503s); without it a single failed .deb aborts the whole build.
+RUN apt-get update -o Acquire::Retries=5 \
+    && apt-get install -y --no-install-recommends -o Acquire::Retries=5 \
         build-essential \
         pkg-config \
         libgomp1 \
@@ -51,9 +64,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Install CPU-only torch first so the `alphaforge` extra below doesn't pull the
-# multi-GB CUDA build. NOTE: this index targets linux/amd64. If you build for
-# linux/arm64, remove this line and let PyPI resolve torch.
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+# multi-GB CUDA build. On amd64 the default PyPI wheel bundles CUDA, so use the
+# CPU index; on arm64 there is no CUDA build and that index has no aarch64
+# wheels, so let PyPI resolve torch (already CPU-only there). TARGETARCH is set
+# automatically by BuildKit.
+ARG TARGETARCH
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+        pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu; \
+    else \
+        pip install --no-cache-dir torch; \
+    fi
 
 # Runtime dependencies (declared in requirements.txt, consumed via pyproject).
 # Copied alone first so this heavy layer is cached across source-only changes.
