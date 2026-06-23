@@ -227,13 +227,6 @@ AlphaPilot/
 └── README.md            # 项目首页
 ```
 
-## 🧪 开发与测试
-
-```bash
-pip install -e .
-pytest
-```
-
 ## 🚧 开发状态与路线图
 
 > AlphaPilot 仍在持续开发中：目前存在部分已知 bug 正在修复与优化，功能和接口可能调整，项目会保持更新。
@@ -249,7 +242,7 @@ pytest
 
 ## 🙏 致谢
 
-本项目基于论文 [AlphaAgent](https://arxiv.org/abs/2502.16789)（KDD 2025）及其开源实现 [RndmVariableQ/AlphaAgent](https://github.com/RndmVariableQ/AlphaAgent) 进行开发与优化。感谢原作者与社区的工作。
+本项目受到 [RndmVariableQ/AlphaAgent](https://github.com/RndmVariableQ/AlphaAgent) 以及[DulyHao/AlphaForge](https://github.com/DulyHao/AlphaForge)启发，进行开发与优化。感谢原作者与社区的工作。
 
 <div align="center">
 <br>
