@@ -264,7 +264,9 @@ AlphaPilot/
 
 <div align="center">
 <br>
-<img src="docs/logo.svg" alt="AlphaPilot" width="56">
-<br>
-<sub><b>AlphaPilot</b> · 股票量化研究平台</sub>
+<img src="docs/logo.svg" alt="AlphaPilot" width="72" align="middle">
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>×</b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<img src="docs/zju_eagle_lab.svg" alt="ZJU Eagle Lab" width="72" align="middle">
+<br><br>
+<sub><b>AlphaPilot · 股票量化研究平台</b>&nbsp;&nbsp;×&nbsp;&nbsp;<b>ZJU Eagle Lab</b></sub>
 </div>
