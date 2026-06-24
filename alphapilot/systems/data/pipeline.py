@@ -126,6 +126,10 @@ def dispatch_prepare_action(
             raise ValueError(f"Unsupported prepare_data action: {action!r}")
 
         kwargs = dict(options)
+        # ``source`` is a download-time selector; these CLI actions (apply_adjust / refresh_factors
+        # / dump / ...) operate on default/configured dirs and don't accept it. Drop it so a stray
+        # value (e.g. from the portal form or a saved schedule) can't raise a TypeError.
+        kwargs.pop("source", None)
         if stock_csv:
             kwargs["stock_csv"] = stock_csv
         if market:

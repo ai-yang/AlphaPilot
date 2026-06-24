@@ -165,6 +165,10 @@ class FactorExport(BaseModel):
     output_path: str
 
 
+class FactorBulkDelete(BaseModel):
+    factor_names: list[str] = Field(default_factory=list)
+
+
 class FactorBacktestCreate(BaseModel):
     factor_names: list[str] = Field(default_factory=list)
     category: str | None = None
@@ -174,6 +178,14 @@ class FactorBacktestCreate(BaseModel):
 class StrategySave(BaseModel):
     strategy_name: str
     params: dict[str, Any] = Field(default_factory=dict)
+
+
+class StrategyFromFactors(BaseModel):
+    strategy_name: str
+    factor_names: list[str] = Field(default_factory=list)
+    model_name: str | None = None
+    market: str | None = None
+    yaml_params: dict[str, Any] = Field(default_factory=dict)
 
 
 class StrategyExport(BaseModel):
@@ -500,6 +512,24 @@ def create_app(
     def validate_factor(payload: FactorValidate) -> dict[str, Any]:
         return _jsonable(_engine(app).get_system("factor").validate_expression(payload.expression))
 
+    @app.get("/api/factors/duplicates")
+    def factor_duplicates(similarity_threshold: float = 0.8) -> dict[str, Any]:
+        try:
+            return _jsonable(
+                _engine(app).get_system("factor").find_duplicate_factors(
+                    similarity_threshold=similarity_threshold
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.post("/api/factors/bulk-delete")
+    def bulk_delete_factors(payload: FactorBulkDelete) -> dict[str, Any]:
+        try:
+            return _jsonable(_engine(app).get_system("factor").delete_factors(payload.factor_names))
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
     @app.delete("/api/factors/{factor_name}")
     def delete_factor(factor_name: str) -> dict[str, Any]:
         try:
@@ -590,6 +620,20 @@ def create_app(
         try:
             _engine(app).get_system("strategy").param_database.save(payload.strategy_name, payload.params)
             return {"strategy_name": payload.strategy_name, "saved": True}
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.post("/api/strategies/from-factors")
+    def create_strategy_from_factors(payload: StrategyFromFactors) -> dict[str, Any]:
+        try:
+            record = _engine(app).get_system("strategy").create_strategy_from_factors(
+                strategy_name=payload.strategy_name,
+                factor_names=payload.factor_names,
+                model_name=payload.model_name,
+                market=payload.market,
+                yaml_params=payload.yaml_params,
+            )
+            return _jsonable(record)
         except Exception as exc:  # noqa: BLE001
             raise _api_error(exc) from exc
 
@@ -909,24 +953,11 @@ def create_app(
 
     @app.post("/api/daily-trade")
     def daily_trade(payload: dict[str, Any]) -> dict[str, Any]:
+        # Run as a background job (kind "daily_signals") so the portal shows live
+        # run status / progress and the task lands in the jobs panel. The worker pops the
+        # ``notify`` control key itself and pushes on success/failure via ``_maybe_notify``.
         try:
-            kwargs = dict(payload)
-            notify_flag = bool(kwargs.pop("notify", False))  # control key, not a task arg
-            result = _engine(app).get_module("daily_trade").daily_signals(**kwargs)
-            if notify_flag and isinstance(result, dict):
-                # Best-effort push of today's positions/trades; never fail the request on it.
-                try:
-                    from alphapilot.log import logger
-                    from alphapilot.systems import notify as notify_pkg
-
-                    message = notify_pkg.build_job_message(
-                        kind="daily_signals", job_id="manual", status="succeeded",
-                        result=result, kwargs=kwargs,
-                    )
-                    result.setdefault("info", {})["notify"] = notify_pkg.send(message)
-                except Exception as notify_exc:  # noqa: BLE001 - notify is best-effort
-                    logger.warning(f"[daily-trade] notify skipped: {notify_exc}")
-            return _jsonable(result)
+            return _jsonable(jobs.start_job("daily_signals", dict(payload)))
         except Exception as exc:  # noqa: BLE001
             raise _api_error(exc) from exc
 

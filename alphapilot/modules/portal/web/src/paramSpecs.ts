@@ -120,6 +120,8 @@ export const dataActionSpecs: FieldSpec[] = [
       { label: "baostock_cn", value: "baostock_cn" },
       { label: "tushare_cn", value: "tushare_cn" },
     ],
+    // ``apply_adjust`` is source-aware too: the data system maps ``source`` to that source's
+    // raw / factor / output dirs (see DataSystem.apply_adjust) and never forwards it to the CLI.
     visibleWhen: (v) => ["pipeline", "download", "apply_adjust"].includes(String(v.action)),
   },
   { key: "start_date", label: "Start Date", type: "date", defaultValue: "2005-01-01", visibleWhen: (v) => ["pipeline", "download"].includes(String(v.action)) },
@@ -200,11 +202,13 @@ export function strategyParamFields(opts: { showAccount?: boolean } = {}): Field
 }
 
 export const llmMiningSpecs: FieldSpec[] = [
-  { key: "step_n", label: "Step N", type: "number", defaultValue: 5, required: true },
+  // One full mining round = 5 steps (假说生成 → 因子构造 → 因子计算 → 回测 → 反馈).
+  // Use a multiple of 5 to finish whole rounds; other values stop mid-round.
+  { key: "step_n", label: "Step N", type: "number", defaultValue: 5, required: true, helpText: "一整轮挖掘 = 5 步（假说生成 → 因子构造 → 因子计算 → 回测 → 反馈）。建议填 5 的整数倍，才能跑完整轮；非整数倍会停在半途。" },
   { key: "scenario", label: "Scenario", type: "text", defaultValue: "alpha_factor_mining" },
   { key: "direction", label: "Direction", type: "textarea", placeholder: "挖掘方向或假说" },
   // Auto-add each round's mined factors to the factor library (zoo) under a "mined" category.
-  { key: "save_factors_to_library", label: "挖到的因子自动加入因子库", type: "checkbox", defaultValue: false, helpText: "每轮挖出的因子表达式会校验去重后存入因子库（mined 分类）。" },
+  { key: "save_factors_to_library", label: "自动加入因子库", type: "checkbox", defaultValue: false, helpText: "每轮挖出的因子表达式会校验去重后存入因子库（mined 分类）。" },
   // Mining drives its data universe by the top-level ``market`` kwarg (run dir + factor h5 spec).
   { key: "market", label: "市场 / 股票池", type: "text", placeholder: "optional", visibleWhen: (v) => Boolean(v._show_overrides) },
   ...strategyParamFields(),
@@ -226,12 +230,31 @@ export const alphaForgeSpecs: FieldSpec[] = [
   { key: "train_end_year", label: "Train End Year", type: "number", defaultValue: 2020 },
   { key: "seed", label: "Seed", type: "number", defaultValue: 0 },
   { key: "top_n", label: "Top N", type: "number", defaultValue: 50, visibleWhen: (v) => ["mine_aff", "mine_gp"].includes(String(v.method)) },
-  { key: "raw", label: "Raw output", type: "checkbox", defaultValue: true },
+  { key: "raw", label: "Raw output", type: "checkbox", defaultValue: false, helpText: "仅当 qlib 数据带 $factor 复权因子字段时勾选；baostock 数据无此字段，勾选会导致取数为空。" },
   { key: "backtest", label: "Run backtest after mining", type: "checkbox", defaultValue: false },
   { key: "save", label: "Save to factor zoo", type: "checkbox", defaultValue: true },
   { key: "tournament_size", label: "Tournament Size", type: "number", defaultValue: 20, visibleWhen: (v) => v.method === "mine_gp" },
   { key: "num_epochs_g", label: "Generator Epochs", type: "number", defaultValue: 50, visibleWhen: (v) => v.method === "mine_aff" },
   { key: "max_loops", label: "Max Loops", type: "number", defaultValue: 10, visibleWhen: (v) => v.method === "mine_aff" },
+];
+
+// Model presets offered when creating a strategy from selected factors. The actual model is
+// determined by the qlib template at backtest time; this is stored as the strategy's model
+// label / intent (and reused for reuse_model mode later).
+const strategyModelOptions: FieldOption[] = [
+  { label: "默认（按模板，多因子 LGBM）", value: "" },
+  { label: "LGBModel（多因子）", value: "LGBModel" },
+  { label: "LinearModel（线性）", value: "LinearModel" },
+  { label: "无 / 单因子直接作为信号", value: "none" },
+];
+
+// "Create strategy from selected factors" form. ``yaml_params.*`` fields collect into a single
+// nested patch (rebalance / cost / dates) saved into the strategy's metadata.
+export const createStrategyFromFactorsSpecs: FieldSpec[] = [
+  { key: "strategy_name", label: "策略名称", type: "text", required: true, placeholder: "例如 my_multi_factor_v1" },
+  { key: "model_name", label: "模型", type: "select", defaultValue: "", options: strategyModelOptions },
+  { key: "market", label: "股票池 / market", type: "text", placeholder: "可选，留空用默认" },
+  ...strategyParamFields(),
 ];
 
 export const factorBacktestSpecs: FieldSpec[] = [
@@ -245,6 +268,25 @@ export const factorBacktestSpecs: FieldSpec[] = [
       { label: "multi_combined", value: "multi_combined" },
       { label: "single_ic", value: "single_ic" },
       { label: "multi_sequential", value: "multi_sequential" },
+    ],
+  },
+  { key: "scenario", label: "Scenario", type: "text", defaultValue: "factor_backtest" },
+  ...strategyParamFields(),
+];
+
+// Backtest options for the factor library's "backtest selected / category" actions. Same shape
+// as ``factorBacktestSpecs`` but without ``factor_path`` — the backend writes the factor CSV from
+// the selected factors / category. Replaces the previous raw-JSON-only options box.
+export const factorLibraryBacktestSpecs: FieldSpec[] = [
+  {
+    key: "mode",
+    label: "回测模式",
+    type: "select",
+    defaultValue: "multi_combined",
+    options: [
+      { label: "multi_combined（多因子合成）", value: "multi_combined" },
+      { label: "single_ic（逐因子 IC 快筛）", value: "single_ic" },
+      { label: "multi_sequential（多因子序贯）", value: "multi_sequential" },
     ],
   },
   { key: "scenario", label: "Scenario", type: "text", defaultValue: "factor_backtest" },

@@ -64,7 +64,20 @@ class QlibDataSystem(BaseDataSystem):
         return source.download(request)
 
     def apply_adjust(self, **options: Any) -> Any:
-        """Synthesize forward/backward CSVs from unadjusted bars + adjust factors."""
+        """Synthesize forward/backward CSVs from unadjusted bars + adjust factors.
+
+        ``source`` (``baostock_cn`` / ``tushare_cn``) selects which source's directories to
+        read from and write to. For the default baostock source the CLI's own dir defaults
+        apply; for other sources we resolve the source-specific raw / factor / output dirs (only
+        when not explicitly overridden). ``source`` is consumed here and never forwarded to the
+        CLI, which does not accept it.
+        """
+        source = options.pop("source", None)
+        if source not in (None, "", "baostock", "baostock_cn"):
+            target_mode = options.get("target_mode") or options.get("adjust_mode") or "forward"
+            options.setdefault("raw_dir", str(self._source_raw_dir("none", source)))
+            options.setdefault("factor_dir", str(self._source_factor_dir(source)))
+            options.setdefault("output_dir", str(self._source_raw_dir(target_mode, source)))
         return self.run_action("apply_adjust", **options)
 
     def convert(self, **options: Any) -> Any:

@@ -69,6 +69,62 @@ class StrategySystem(BaseStrategySystem):
     def register_strategy(self, record: StrategyRecord) -> None:
         self._param_db.save_record(record)
 
+    def create_strategy_from_factors(
+        self,
+        *,
+        strategy_name: str,
+        factor_names: list[str],
+        model_name: str | None = None,
+        market: str | None = None,
+        yaml_params: dict[str, Any] | None = None,
+    ) -> StrategyRecord:
+        """Build and persist a strategy asset from factor-zoo factor names.
+
+        Resolves each name to its expression via the factor system, then registers a
+        ``StrategyRecord`` whose ``metadata`` carries the stock pool (``market``) and the
+        rebalance / cost / date overrides (``yaml_params``) so the saved strategy is
+        self-contained for later retests.
+        """
+        name = (strategy_name or "").strip()
+        if not name:
+            raise ValueError("strategy_name is required")
+        # Preserve selection order while de-duplicating.
+        wanted = list(dict.fromkeys(n for n in (factor_names or []) if n))
+        if not wanted:
+            raise ValueError("No factors selected.")
+
+        rows = {row.get("factor_name"): row for row in self.context.factor().list_factors()}
+        formulas: list[str] = []
+        missing: list[str] = []
+        for n in wanted:
+            row = rows.get(n)
+            if row is None:
+                missing.append(n)
+                continue
+            formulas.append(row.get("factor_expression"))
+        if missing:
+            raise ValueError(f"Factors not found in library: {missing}")
+
+        model_label = (model_name or "").strip()
+        metadata: dict[str, Any] = {
+            "source": "factor_library",
+            "factor_names": wanted,
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        if market and market.strip():
+            metadata["market"] = market.strip()
+        if yaml_params:
+            metadata["yaml_params"] = yaml_params
+
+        record = StrategyRecord(
+            strategy_name=name,
+            factor_formulas=formulas,
+            model=StrategyModelSpec(model_name=model_label) if model_label and model_label != "none" else None,
+            metadata=metadata,
+        )
+        self.register_strategy(record)
+        return record
+
     def get_strategy(self, strategy_name: str) -> StrategyRecord | None:
         return self._param_db.load_record(strategy_name)
 
@@ -222,6 +278,10 @@ class StrategySystem(BaseStrategySystem):
             import json
 
             yaml_params = json.loads(yaml_params)
+        # Fall back to the rebalance / cost / date overrides saved with the strategy asset
+        # (e.g. strategies created from the factor library) when the request omits them.
+        if yaml_params is None:
+            yaml_params = (record.metadata or {}).get("yaml_params")
         qlib_config_name = request.qlib_config_name or (record.metadata or {}).get("qlib_config_name")
         qlib_template_dir = remap_legacy_relative_path(
             request.qlib_template_dir or (record.metadata or {}).get("qlib_template_dir")

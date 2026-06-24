@@ -80,3 +80,28 @@ dependencies = {file = ["requirements.txt"]}
 [tool.setuptools_scm]
 local_scheme = "no-local-version"
 version_scheme = "guess-next-dev"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Default run = fast, offline tier only. Opt into the heavier/external tiers with
+# an explicit ``-m`` (which overrides this), e.g. ``pytest -m real_llm``.
+addopts = "-m 'not real_cli and not real_data and not slow and not real_llm and not real_notify'"
+norecursedirs = [
+  ".git",
+  ".pytest_cache",
+  "__pycache__",
+  "alphapilot/modules/alphaforge/vendor",
+  "alphapilot/modules/portal/web/node_modules",
+  "alphapilot/modules/portal/web/dist",
+  "docker-data",
+  "git_ignore_folder",
+  "log",
+  "pickle_cache",
+]
+markers = [
+  "real_cli: runs real AlphaPilot CLI smoke tests with network and subprocesses",
+  "real_data: needs network + TUSHARE_TOKEN to download real market data",
+  "slow: heavy local computation (factor mining gp/aff/rl, qlib backtest)",
+  "real_llm: needs OPENAI_API_KEY and consumes LLM API quota",
+  "real_notify: sends real messages to external channels (telegram/feishu/email)",
+]

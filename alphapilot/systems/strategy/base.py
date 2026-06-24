@@ -94,6 +94,18 @@ class BaseStrategySystem(BaseSystem):
         """Persist a strategy asset record into the strategy system."""
 
     @abstractmethod
+    def create_strategy_from_factors(
+        self,
+        *,
+        strategy_name: str,
+        factor_names: list[str],
+        model_name: str | None = None,
+        market: str | None = None,
+        yaml_params: dict[str, Any] | None = None,
+    ) -> StrategyRecord:
+        """Build and persist a strategy asset from factor-library factor names."""
+
+    @abstractmethod
     def get_strategy(self, strategy_name: str) -> StrategyRecord | None:
         """Load a strategy asset record by name."""
 

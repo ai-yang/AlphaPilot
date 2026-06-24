@@ -56,7 +56,12 @@ class LoopMeta(type):
         """
         steps = LoopMeta._get_steps(bases)  # all the base classes of parents
         for name, attr in attrs.items():
-            if not name.startswith("__") and isinstance(attr, Callable):
+            # Only public methods are workflow steps. Any name starting with an
+            # underscore is a private helper (e.g. ``_save_strategy_asset``,
+            # ``_save_factors_to_library``) that the steps call internally — it
+            # must NOT be auto-registered as a standalone step, or it would run
+            # an extra time per round (double-saving, bypassing flag gates).
+            if not name.startswith("_") and isinstance(attr, Callable):
                 if name not in steps:
                     # NOTE: if we override the step in the subclass
                     # Then it is not the new step. So we skip it.

@@ -80,7 +80,8 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# `alphaforge` optional extra (AFF GAN + GP + RL). torch already satisfied above.
+# `alphaforge` RL optional extras (gym + SB3 stack). torch already satisfied
+# above; GP mining's gplearn is declared in requirements.txt.
 RUN pip install --no-cache-dir gym stable-baselines3 sb3-contrib shimmy
 
 # Project source. Editable install so the package keeps living at /app/alphapilot:

@@ -2,7 +2,7 @@
 
 <img src="docs/AlphaPilot_logo.svg" alt="AlphaPilot" width="760">
 
-### LLM 驱动的 A 股量化因子挖掘、回测与策略研究平台
+### LLM 驱动的量化因子挖掘、回测与策略研究平台
 
 `多 Agent 因子挖掘`&nbsp;·&nbsp;`Qlib 回测`&nbsp;·&nbsp;`Web 门户`&nbsp;·&nbsp;`数据准备`&nbsp;·&nbsp;`日频信号`&nbsp;·&nbsp;`Telegram/飞书 通讯`
 
@@ -21,7 +21,7 @@
 
 ## 项目简介
 
-AlphaPilot 是一个面向 A 股量化研究的因子挖掘与策略验证平台，围绕因子生成、回测评估、策略复测和日常研究操作提供统一工作流。项目使用 LLM 驱动多 Agent 因子研究流程，使用 Qlib 完成回测与信号验证，并提供 Web 门户管理数据、任务、通知和研究资产。
+AlphaPilot 是一个面向股票的量化研究的因子挖掘与策略验证平台，围绕因子生成、回测评估、策略复测和日常研究操作提供统一工作流。项目使用 LLM 驱动多 Agent 因子研究流程，使用 Qlib 完成回测与信号验证，并提供 Web 门户管理数据、任务、通知和研究资产。
 
 ## 核心功能
 
@@ -29,6 +29,7 @@ AlphaPilot 是一个面向 A 股量化研究的因子挖掘与策略验证平台
 |------|----------|------|
 | 因子挖掘 | `alphapilot mine` | LLM 多 Agent 流程 + AlphaForge / GP / RL / AFF 公式化方法 |
 | 回测评估 | `alphapilot backtest` | 组合回测、逐因子 IC 快筛、排行榜与收益曲线 |
+| 新建策略 | `alphapilot strategy_create` | 从因子库挑选因子沉淀为策略资产（因子 + 模型 + 调仓/成本/日期） |
 | 策略复测 | `alphapilot strategy_backtest` | 复用已沉淀的策略资产与模型继续验证 |
 | 日频信号 | `alphapilot daily_signals` | 按交易日推进持仓、生成单日调仓信号 |
 | 统一门户 | `alphapilot portal` | 数据 / 因子 / 回测 / 任务 / 通知集中到同一界面 |
@@ -241,13 +242,21 @@ AlphaPilot/
 > AlphaPilot 仍在持续开发中：目前存在部分已知 bug 正在修复与优化，功能和接口可能调整，项目会保持更新。
 
 计划中的方向：
-
+- [ ] 加入美股的支持
 - [ ] 优化交互界面，加入更多的可以调节的选项，包括调仓方法，LightGBM等模型参数设置
 - [ ] 接入更多因子挖掘方法
 - [ ] 持续修复已知问题、完善文档与稳定性
 - [ ] 加入模拟盘交易系统以及实盘交易系统（paper trading）
 
 欢迎通过 Issue / PR 反馈问题与建议。
+
+## 开发日志
+
+| 日期 | 类型 | 功能/模块 | 目标 | 关键改动 | 影响入口 | 验证 | 状态/后续 |
+|------|------|-----------|------|----------|----------|------|-----------|
+| 2026-06-24 | 优化 | Portal 市场数据 / K 线图 | 提升本地 K 线查看体验 | 主图 + 副图布局；副图支持成交额、成交量、换手率、涨跌幅切换；新增范围按钮、统一 hover、深浅主题适配 | Portal「市场数据」页 | `npm run typecheck`；`npm run build` | 已完成 |
+| 2026-06-24 | 新增 | 因子库 / 重复检查 | 帮助清理重复或近似重复因子，降低因子库维护成本 | 新增重复因子检测、建议保留/删除、批量删除相关 API 与 Portal 入口 | Portal「因子/策略库」页；`/api/factors/duplicates`；`/api/factors/bulk-delete` | 前端 `npm run typecheck`；`npm run build` 覆盖 UI 编译 | 已完成；后端接口待补单元测试 |
+
 
 ## 🙏 致谢
 
@@ -257,5 +266,5 @@ AlphaPilot/
 <br>
 <img src="docs/logo.svg" alt="AlphaPilot" width="56">
 <br>
-<sub><b>AlphaPilot</b> · A 股量化研究平台</sub>
+<sub><b>AlphaPilot</b> · 股票量化研究平台</sub>
 </div>

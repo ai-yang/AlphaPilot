@@ -7,9 +7,11 @@ import { useAsync, useJsonInput, useParamForm } from "./hooks";
 import { useI18n } from "./i18n";
 import {
   alphaForgeSpecs,
+  createStrategyFromFactorsSpecs,
   dailyTradeSpecs,
   dataActionSpecs,
   factorBacktestSpecs,
+  factorLibraryBacktestSpecs,
   llmMiningSpecs,
   scheduleSpecsFor,
   strategyBacktestSpecs,
@@ -84,6 +86,112 @@ type NotifyEvent = Record<string, unknown> & {
   reply?: string;
   error?: string;
 };
+
+type KlineMetric = "amount" | "volume" | "turn" | "pctChg";
+type KlineRange = "1M" | "3M" | "6M" | "1Y" | "ALL";
+
+type KlineRow = {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number;
+  amount?: number;
+  turn?: number;
+  pctChg?: number;
+};
+
+type KlinePayload = {
+  symbol?: string;
+  label?: string;
+  date_range?: unknown[];
+  rows?: Array<Record<string, unknown>>;
+};
+
+const KLINE_RANGES: KlineRange[] = ["1M", "3M", "6M", "1Y", "ALL"];
+const KLINE_METRICS: KlineMetric[] = ["amount", "volume", "turn", "pctChg"];
+
+function toFiniteNumber(value: unknown): number | undefined {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function normalizeKlineRows(rows: Array<Record<string, unknown>>): KlineRow[] {
+  return rows.flatMap((row) => {
+    const open = toFiniteNumber(row.open);
+    const high = toFiniteNumber(row.high);
+    const low = toFiniteNumber(row.low);
+    const close = toFiniteNumber(row.close);
+    const date = row.date ? String(row.date) : "";
+    if (!date || open === undefined || high === undefined || low === undefined || close === undefined) return [];
+    return [{
+      date,
+      open,
+      high,
+      low,
+      close,
+      volume: toFiniteNumber(row.volume),
+      amount: toFiniteNumber(row.amount),
+      turn: toFiniteNumber(row.turn),
+      pctChg: toFiniteNumber(row.pctChg)
+    }];
+  });
+}
+
+function metricValue(row: KlineRow | undefined, metric: KlineMetric, prev?: KlineRow): number | undefined {
+  if (!row) return undefined;
+  if (metric === "pctChg") {
+    if (row.pctChg !== undefined) return row.pctChg;
+    if (prev?.close) return ((row.close - prev.close) / prev.close) * 100;
+    return undefined;
+  }
+  return row[metric];
+}
+
+function hasMetric(rows: KlineRow[], metric: KlineMetric): boolean {
+  return rows.some((row, index) => metricValue(row, metric, rows[index - 1]) !== undefined);
+}
+
+function resolveKlineMetric(rows: KlineRow[], metric: KlineMetric): KlineMetric {
+  if (hasMetric(rows, metric)) return metric;
+  if (hasMetric(rows, "volume")) return "volume";
+  return metric;
+}
+
+function klineRangeValue(rows: KlineRow[], range: KlineRange): [string, string] | undefined {
+  if (range === "ALL" || rows.length < 2) return undefined;
+  const lastDate = new Date(rows[rows.length - 1].date);
+  if (Number.isNaN(lastDate.getTime())) return undefined;
+  const startDate = new Date(lastDate);
+  if (range === "1M") startDate.setMonth(startDate.getMonth() - 1);
+  if (range === "3M") startDate.setMonth(startDate.getMonth() - 3);
+  if (range === "6M") startDate.setMonth(startDate.getMonth() - 6);
+  if (range === "1Y") startDate.setFullYear(startDate.getFullYear() - 1);
+  return [startDate.toISOString().slice(0, 10), rows[rows.length - 1].date];
+}
+
+function formatDateLabel(value: unknown): string {
+  return value ? String(value).slice(0, 10) : "-";
+}
+
+function formatPrice(value?: number): string {
+  return value === undefined ? "-" : value.toFixed(2);
+}
+
+function formatCompactNumber(value?: number): string {
+  if (value === undefined) return "-";
+  return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 2 }).format(value);
+}
+
+function formatPercent(value?: number): string {
+  return value === undefined ? "-" : `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+function cssVar(name: string, fallback: string): string {
+  if (typeof window === "undefined") return fallback;
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+}
 
 export function HomePage() {
   const { t } = useI18n();
@@ -345,6 +453,21 @@ export function BacktestPage() {
   );
 }
 
+type DuplicateGroup = {
+  members: Array<{ factor_name: string; factor_expression: string; categories?: string[] }>;
+  canonical: string;
+  suggested_keep: string;
+  suggested_delete: string[];
+};
+type SimilarPair = { factor_a: string; factor_b: string; similarity: number; shared: string };
+type DuplicatesResult = {
+  groups: DuplicateGroup[];
+  similar_pairs: SimilarPair[];
+  n_factors: number;
+  n_duplicate_groups: number;
+  n_redundant_factors: number;
+};
+
 export function LibraryPage() {
   const { t } = useI18n();
   const factors = useAsync(() => api.get<{ factors: Factor[]; categories: string[]; supports_categories: boolean }>("/api/factors"), []);
@@ -365,13 +488,18 @@ export function LibraryPage() {
   const [exportPath, setExportPath] = useState("important_data/factor_zoo/factor_zoo.csv");
   const [importKind, setImportKind] = useState("csv");
   const [importSource, setImportSource] = useState("");
-  const factorBacktestOptions = useJsonInput(JSON.stringify({ mode: "multi_combined", scenario: "factor_backtest" }, null, 2));
+  const factorBacktestAdvanced = useJsonInput("{}");
+  const factorBacktestForm = useParamForm(factorLibraryBacktestSpecs, factorBacktestAdvanced.raw);
   const [strategyName, setStrategyName] = useState("");
   const [strategyExportName, setStrategyExportName] = useState("");
   const [strategyExportPath, setStrategyExportPath] = useState("");
   const [strategyImportPath, setStrategyImportPath] = useState("");
   const { busy, run } = useAction();
   const strategyParams = useJsonInput("{}");
+  const [showCreateStrategy, setShowCreateStrategy] = useState(false);
+  const createStrategyForm = useParamForm(createStrategyFromFactorsSpecs);
+  const [dupResult, setDupResult] = useState<DuplicatesResult | null>(null);
+  const [dupDelete, setDupDelete] = useState<Record<string, boolean>>({});
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return (factors.data?.factors || []).filter((f) => {
@@ -420,13 +548,13 @@ export function LibraryPage() {
 
   function backtestSelected() {
     void run(async () => {
-      await api.post<Job>("/api/factors/backtest", { factor_names: selectedFactors, options: factorBacktestOptions.parse() });
+      await api.post<Job>("/api/factors/backtest", { factor_names: selectedFactors, options: factorBacktestForm.parse() });
     }, t("started"));
   }
 
   function backtestCategory(category: string) {
     void run(async () => {
-      await api.post<Job>("/api/factors/backtest", { category, options: factorBacktestOptions.parse() });
+      await api.post<Job>("/api/factors/backtest", { category, options: factorBacktestForm.parse() });
     }, `${t("started")} · ${category}`);
   }
 
@@ -443,6 +571,41 @@ export function LibraryPage() {
       setStrategyName("");
       await strategies.refresh();
     }, t("save"));
+  }
+
+  function createStrategyFromFactors() {
+    void run(async () => {
+      const params = createStrategyForm.parse();
+      await api.post("/api/strategies/from-factors", { factor_names: selectedFactors, ...params });
+      setShowCreateStrategy(false);
+      await strategies.refresh();
+      setTab("strategies");
+    }, t("createdStrategy"));
+  }
+
+  function checkDuplicates() {
+    void run(async () => {
+      const res = await api.get<DuplicatesResult>("/api/factors/duplicates");
+      const preset: Record<string, boolean> = {};
+      res.groups.forEach((group) => group.suggested_delete.forEach((nm) => { preset[nm] = true; }));
+      setDupDelete(preset);
+      setDupResult(res);
+    }, t("checkDuplicates"));
+  }
+
+  function toggleDup(factorName: string) {
+    setDupDelete((current) => ({ ...current, [factorName]: !current[factorName] }));
+  }
+
+  function deleteDuplicates() {
+    const names = Object.keys(dupDelete).filter((nm) => dupDelete[nm]);
+    if (!names.length) return;
+    void run(async () => {
+      await api.post("/api/factors/bulk-delete", { factor_names: names });
+      setDupResult(null);
+      setDupDelete({});
+      await factors.refresh();
+    }, t("deleteSelected"));
   }
 
   return (
@@ -466,6 +629,7 @@ export function LibraryPage() {
               </select>
               <button className="button small" onClick={() => setSelectedFactors(filtered.map((factor) => factor.factor_name))}>{t("selectAllList")}</button>
               <button className="button small" onClick={() => setSelectedFactors([])}>{t("clearSelection")}</button>
+              <button className="button small" disabled={busy} onClick={() => checkDuplicates()}>{t("checkDuplicates")}</button>
             </div>
             {factors.error ? <Alert tone="error">{factors.error}</Alert> : null}
             <DataTable
@@ -499,10 +663,74 @@ export function LibraryPage() {
               <button className="button small" disabled={busy || !selectedFactors.length || !bulkCategory.trim()} onClick={() => applyBulkCategory("add")}>{t("bulkAddCategory")}</button>
               <button className="button small" disabled={busy || !selectedFactors.length || !bulkCategory.trim()} onClick={() => applyBulkCategory("remove")}>{t("bulkRemoveCategory")}</button>
               <button className="button small primary" disabled={busy || !selectedFactors.length} onClick={() => backtestSelected()}>{t("backtestSelected")}</button>
+              <button className="button small" disabled={busy || !selectedFactors.length} onClick={() => setShowCreateStrategy((v) => !v)}>{t("createStrategy")}</button>
             </div>
+            {showCreateStrategy ? (
+              <section className="panel inset">
+                <h3>{t("createStrategy")}</h3>
+                <p className="muted">{t("selected")} {selectedFactors.length} {t("factorsUnit")}</p>
+                <DynamicForm specs={createStrategyFromFactorsSpecs} values={createStrategyForm.values} onChange={createStrategyForm.setValue} errors={createStrategyForm.errors} />
+                <button className="button primary" disabled={busy || !selectedFactors.length} onClick={() => createStrategyFromFactors()}>{busy ? <Spinner /> : null}{t("save")}</button>
+              </section>
+            ) : null}
+            {dupResult ? (
+              <section className="panel inset">
+                <div className="panel-head">
+                  <h3>{t("duplicateGroups")} ({dupResult.n_duplicate_groups})</h3>
+                  <button className="button small" onClick={() => setDupResult(null)}>{t("cancel")}</button>
+                </div>
+                {dupResult.groups.length === 0 ? (
+                  <p className="muted">{t("noDuplicates")}</p>
+                ) : (
+                  <>
+                    {dupResult.groups.map((group, gi) => (
+                      <div key={gi} className="dup-group">
+                        <p className="muted">{t("sharedExpression")}: <code>{group.canonical}</code></p>
+                        {group.members.map((member) => (
+                          <label key={member.factor_name} className="inline-check">
+                            <input
+                              className="row-check"
+                              type="checkbox"
+                              checked={Boolean(dupDelete[member.factor_name])}
+                              onChange={() => toggleDup(member.factor_name)}
+                            />
+                            <span>
+                              {member.factor_name}
+                              {member.factor_name === group.suggested_keep ? ` (${t("suggestedKeep")})` : ""}
+                              : <code>{member.factor_expression}</code>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    ))}
+                    <button
+                      className="button small danger"
+                      disabled={busy || !Object.values(dupDelete).some(Boolean)}
+                      onClick={() => deleteDuplicates()}
+                    >
+                      {busy ? <Spinner /> : null}{t("deleteSelected")}
+                    </button>
+                  </>
+                )}
+                {dupResult.similar_pairs.length ? (
+                  <div className="dup-similar">
+                    <h4>{t("similarPairs")}</h4>
+                    {dupResult.similar_pairs.map((pair, pi) => (
+                      <p key={pi} className="muted">
+                        {pair.factor_a} ~ {pair.factor_b} · {Math.round(pair.similarity * 100)}% · <code>{pair.shared}</code>
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
             <details>
               <summary>{t("backtestParams")}</summary>
-              <JsonTextArea value={factorBacktestOptions.raw} onChange={factorBacktestOptions.setRaw} rows={5} />
+              <DynamicForm specs={factorLibraryBacktestSpecs} values={factorBacktestForm.values} onChange={factorBacktestForm.setValue} errors={factorBacktestForm.errors} />
+              <details>
+                <summary>{t("advancedJson")}</summary>
+                <JsonTextArea value={factorBacktestAdvanced.raw} onChange={factorBacktestAdvanced.setRaw} rows={5} />
+              </details>
             </details>
           </section>
           <aside className="panel">
@@ -611,6 +839,8 @@ export function MarketPage() {
   const [symbol, setSymbol] = useState("");
   const [symbols, setSymbols] = useState<string[]>([]);
   const [kline, setKline] = useState<Record<string, unknown> | null>(null);
+  const [klineRange, setKlineRange] = useState<KlineRange>("ALL");
+  const [klineSubMetric, setKlineSubMetric] = useState<KlineMetric>("amount");
   const [manageSource, setManageSource] = useState("baostock_cn");
   const [manageSymbols, setManageSymbols] = useState<string[]>([]);
   const [manageSymbol, setManageSymbol] = useState("");
@@ -649,6 +879,7 @@ export function MarketPage() {
 
   async function loadSymbols(path: string) {
     setDataDir(path);
+    setKline(null);
     setSymbols(await api.get<string[]>(`/api/market/symbols${qs({ data_dir: path })}`));
   }
 
@@ -704,7 +935,50 @@ export function MarketPage() {
     await dataJobs.refresh();
   }
 
-  const rows = (kline?.rows as Array<Record<string, unknown>> | undefined) || [];
+  const klinePayload = kline as KlinePayload | null;
+  const rows = useMemo(() => normalizeKlineRows(klinePayload?.rows || []), [klinePayload]);
+  const chartMetric = resolveKlineMetric(rows, klineSubMetric);
+  const latestRow = rows[rows.length - 1];
+  const previousRow = rows[rows.length - 2];
+  const latestPct = latestRow ? metricValue(latestRow, "pctChg", previousRow) : undefined;
+  const subMetricValues = rows.map((row, index) => metricValue(row, chartMetric, rows[index - 1]) ?? null);
+  const volumeColors = rows.map((row) => (row.close >= row.open ? "rgba(239, 83, 80, 0.72)" : "rgba(38, 166, 154, 0.72)"));
+  const klineLabel = String(klinePayload?.label || klinePayload?.symbol || symbol || t("kline"));
+  const klineDateRange = Array.isArray(klinePayload?.date_range)
+    ? `${formatDateLabel(klinePayload?.date_range[0])} - ${formatDateLabel(klinePayload?.date_range[1])}`
+    : rows.length
+      ? `${formatDateLabel(rows[0].date)} - ${formatDateLabel(rows[rows.length - 1].date)}`
+      : "-";
+  const metricLabels: Record<KlineMetric, string> = {
+    amount: t("klineMetricAmount"),
+    volume: t("klineMetricVolume"),
+    turn: t("klineMetricTurn"),
+    pctChg: t("klineMetricPct")
+  };
+  const chartRange = klineRangeValue(rows, klineRange);
+  const chartColors = {
+    surface: cssVar("--surface", "#ffffff"),
+    surface2: cssVar("--surface-2", "#f7f8fc"),
+    border: cssVar("--border", "#e3e6ef"),
+    text: cssVar("--text", "#1a2233"),
+    muted: cssVar("--text-muted", "#667085"),
+    up: "#ef5350",
+    down: "#26a69a"
+  };
+  const klineHoverText = rows.map((row, index) => {
+    const pct = metricValue(row, "pctChg", rows[index - 1]);
+    return [
+      `<b>${formatDateLabel(row.date)}</b>`,
+      `${t("klineOpen")}: ${formatPrice(row.open)}`,
+      `${t("klineHigh")}: ${formatPrice(row.high)}`,
+      `${t("klineLow")}: ${formatPrice(row.low)}`,
+      `${t("klineClose")}: ${formatPrice(row.close)}`,
+      `${t("klineMetricPct")}: ${formatPercent(pct)}`,
+      `${t("klineMetricAmount")}: ${formatCompactNumber(row.amount)}`,
+      `${t("klineMetricVolume")}: ${formatCompactNumber(row.volume)}`,
+      `${t("klineMetricTurn")}: ${formatPercent(row.turn)}`
+    ].join("<br>");
+  });
   const recentDataJobs = (dataJobs.data || []).filter((job) => job.kind === "data").slice(0, 5);
   return (
     <>
@@ -809,8 +1083,9 @@ export function MarketPage() {
         />
       </section>
       <section className="panel">
-          <h2>{t("kline")}</h2>
-          {sources.error ? <Alert tone="error">{sources.error}</Alert> : null}
+        <h2>{t("kline")}</h2>
+        {sources.error ? <Alert tone="error">{sources.error}</Alert> : null}
+        <div className="toolbar kline-toolbar">
           <select value={dataDir} onChange={(e) => void loadSymbols(e.target.value)}>
             <option value="">{t("selectDataDir")}</option>
             {(sources.data || []).map((s) => <option key={String(s.path)} value={String(s.path)}>{String(s.label)}</option>)}
@@ -820,22 +1095,158 @@ export function MarketPage() {
             {symbols.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
           <button className="button" disabled={busy || !dataDir || !symbol} onClick={() => loadKline()}>{busy ? <Spinner /> : null}{t("refresh")}</button>
+        </div>
       </section>
       {rows.length ? (
-        <section className="panel">
+        <section className="panel kline-panel">
+          <div className="kline-chart-head">
+            <div>
+              <h2>{klineLabel}</h2>
+              <p>{klineDateRange}</p>
+            </div>
+            <div className="kline-controls">
+              <div className="kline-range-buttons" aria-label={t("klineRange")}>
+                {KLINE_RANGES.map((range) => (
+                  <button
+                    key={range}
+                    className={range === klineRange ? "active" : ""}
+                    onClick={() => setKlineRange(range)}
+                    type="button"
+                  >
+                    {range === "ALL" ? t("klineRangeAll") : range}
+                  </button>
+                ))}
+              </div>
+              <select value={klineSubMetric} onChange={(e) => setKlineSubMetric(e.target.value as KlineMetric)} aria-label={t("klineSubMetric")}>
+                {KLINE_METRICS.map((metric) => <option key={metric} value={metric}>{metricLabels[metric]}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="kline-stats">
+            <div>
+              <span>{t("klineClose")}</span>
+              <strong>{formatPrice(latestRow?.close)}</strong>
+            </div>
+            <div className={latestPct !== undefined && latestPct >= 0 ? "up" : "down"}>
+              <span>{t("klineMetricPct")}</span>
+              <strong>{formatPercent(latestPct)}</strong>
+            </div>
+            <div>
+              <span>{t("klineHigh")}</span>
+              <strong>{formatPrice(latestRow?.high)}</strong>
+            </div>
+            <div>
+              <span>{t("klineLow")}</span>
+              <strong>{formatPrice(latestRow?.low)}</strong>
+            </div>
+            <div>
+              <span>{metricLabels[chartMetric]}</span>
+              <strong>{chartMetric === "pctChg" || chartMetric === "turn" ? formatPercent(metricValue(latestRow, chartMetric, previousRow)) : formatCompactNumber(metricValue(latestRow, chartMetric, previousRow))}</strong>
+            </div>
+          </div>
+          {chartMetric !== klineSubMetric ? <p className="kline-note">{t("klineMetricFallback")}</p> : null}
           <Plot
             data={[
               {
-                x: rows.map((r) => r.date),
-                open: rows.map((r) => r.open),
-                high: rows.map((r) => r.high),
-                low: rows.map((r) => r.low),
-                close: rows.map((r) => r.close),
+                x: rows.map((row) => row.date),
+                open: rows.map((row) => row.open),
+                high: rows.map((row) => row.high),
+                low: rows.map((row) => row.low),
+                close: rows.map((row) => row.close),
                 type: "candlestick",
-                name: symbol
+                name: klineLabel,
+                text: klineHoverText,
+                hovertemplate: "%{text}<extra></extra>",
+                increasing: { line: { color: chartColors.up, width: 1.1 }, fillcolor: chartColors.up },
+                decreasing: { line: { color: chartColors.down, width: 1.1 }, fillcolor: chartColors.down },
+                xaxis: "x",
+                yaxis: "y"
+              },
+              {
+                x: rows.map((row) => row.date),
+                y: subMetricValues,
+                type: "bar",
+                name: metricLabels[chartMetric],
+                marker: { color: chartMetric === "pctChg" ? volumeColors : volumeColors },
+                hovertemplate: `<b>%{x}</b><br>${metricLabels[chartMetric]}: %{y:.2f}<extra></extra>`,
+                xaxis: "x2",
+                yaxis: "y2"
               }
             ]}
-            layout={{ autosize: true, height: chartHeight(), margin: { l: 48, r: 24, t: 24, b: 40 }, xaxis: { rangeslider: { visible: false } } }}
+            layout={{
+              autosize: true,
+              height: Math.max(560, Math.min(780, chartHeight() + 180)),
+              margin: { l: 18, r: 64, t: 10, b: 34 },
+              paper_bgcolor: chartColors.surface,
+              plot_bgcolor: chartColors.surface,
+              font: { color: chartColors.text, size: 12 },
+              dragmode: "pan",
+              hovermode: "x unified",
+              showlegend: false,
+              bargap: 0,
+              xaxis: {
+                domain: [0, 1],
+                anchor: "y",
+                type: "date",
+                range: chartRange,
+                rangeslider: { visible: false },
+                showgrid: true,
+                gridcolor: chartColors.border,
+                showline: true,
+                linecolor: chartColors.border,
+                tickfont: { color: chartColors.muted },
+                showspikes: true,
+                spikemode: "across",
+                spikesnap: "cursor",
+                spikecolor: chartColors.muted,
+                spikethickness: 1
+              },
+              xaxis2: {
+                domain: [0, 1],
+                anchor: "y2",
+                matches: "x",
+                type: "date",
+                showgrid: true,
+                gridcolor: chartColors.border,
+                showline: true,
+                linecolor: chartColors.border,
+                tickfont: { color: chartColors.muted },
+                showspikes: true,
+                spikemode: "across",
+                spikesnap: "cursor",
+                spikecolor: chartColors.muted,
+                spikethickness: 1
+              },
+              yaxis: {
+                domain: [0.28, 1],
+                side: "right",
+                fixedrange: false,
+                showgrid: true,
+                gridcolor: chartColors.border,
+                zeroline: false,
+                tickfont: { color: chartColors.muted }
+              },
+              yaxis2: {
+                domain: [0, 0.22],
+                side: "right",
+                fixedrange: false,
+                showgrid: true,
+                gridcolor: chartColors.border,
+                zeroline: false,
+                title: { text: metricLabels[chartMetric], font: { color: chartColors.muted, size: 11 } },
+                tickfont: { color: chartColors.muted }
+              },
+              hoverlabel: {
+                bgcolor: chartColors.surface2,
+                bordercolor: chartColors.border,
+                font: { color: chartColors.text }
+              }
+            }}
+            config={{
+              responsive: true,
+              displaylogo: false,
+              modeBarButtonsToRemove: ["select2d", "lasso2d", "autoScale2d"]
+            }}
             useResizeHandler
             style={{ width: "100%" }}
           />
@@ -852,12 +1263,44 @@ export function DailyTradePage() {
   const params = useJsonInput("{}");
   const dailyForm = useParamForm(dailySpecs, params.raw);
   const [result, setResult] = useState<unknown>(null);
+  const [activeJob, setActiveJob] = useState<Job | null>(null);
+  const [progress, setProgress] = useState<JobProgress | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const { busy, run } = useAction();
+
+  // Poll the running daily-trade job for live status; on completion fetch its result. Mirrors
+  // the MarketPage data-job pattern so the page shows a run-status card instead of nothing.
+  useEffect(() => {
+    if (!activeJob?.job_id) return;
+    let alive = true;
+    const poll = async () => {
+      try {
+        const p = await api.get<JobProgress>(`/api/jobs/${activeJob.job_id}/progress`);
+        if (!alive) return;
+        setProgress(p);
+        if (p.status && ["succeeded", "failed", "cancelled", "lost"].includes(p.status)) {
+          if (p.status === "succeeded") {
+            try { setResult(await api.get(`/api/jobs/${activeJob.job_id}/result`)); } catch { /* result may be empty */ }
+          }
+          setActiveJob(null);
+        }
+      } catch (err) {
+        if (alive) setMessage(err instanceof Error ? err.message : String(err));
+      }
+    };
+    void poll();
+    const id = window.setInterval(poll, 2000);
+    return () => { alive = false; window.clearInterval(id); };
+  }, [activeJob?.job_id]);
 
   function runDailyTrade() {
     void run(async () => {
       const payload = dailyForm.parse();
-      setResult(await api.post("/api/daily-trade", payload));
+      const job = await api.post<Job>("/api/daily-trade", payload);
+      setResult(null);
+      setActiveJob(job);
+      setProgress(job.progress || { job_id: job.job_id, status: job.status, percent: 0, stage: "queued", message: "queued" });
+      setMessage(`${t("started")}: ${job.job_id}`);
     }, t("started"));
   }
 
@@ -873,12 +1316,25 @@ export function DailyTradePage() {
             <JsonTextArea value={params.raw} onChange={params.setRaw} rows={7} />
           </details>
           <button className="button primary" disabled={busy} onClick={() => runDailyTrade()}>{busy ? <Spinner /> : null}{t("run")}</button>
+          {message ? <p className="muted">{message}</p> : null}
         </section>
         <aside className="panel">
-          <h2>{t("runResult")}</h2>
+          <h2>{t("runStatus")}</h2>
+          {progress ? (
+            <div className="progress-card">
+              <div className="panel-head compact">
+                <h3>{t("currentDailyJob")}</h3>
+                <StatusPill status={progress.status || activeJob?.status} />
+              </div>
+              <ProgressBar percent={progress.percent} label={progress.message || progress.stage} active={progress.status === "running"} />
+              <code>{progress.job_id || activeJob?.job_id}</code>
+            </div>
+          ) : null}
+          <h3>{t("runResult")}</h3>
           {result ? <pre className="json">{JSON.stringify(result, null, 2)}</pre> : <div className="empty">{t("empty")}</div>}
         </aside>
       </div>
+      <JobsPanel compact />
     </>
   );
 }

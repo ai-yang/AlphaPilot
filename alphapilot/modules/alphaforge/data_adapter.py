@@ -12,7 +12,9 @@ Note on ``raw``: AlphaForge sets ``raw=True``, which rewrites features as
 ``$close*$factor`` etc. and therefore requires a ``$factor`` field in the qlib
 dump. alphapilot's baostock dump may not provide it, so ``raw`` defaults to
 False here (prices used as stored). Flip it on only if your qlib data carries
-adjustment factors.
+adjustment factors. ``build_stock_data`` now probes the dump for ``$factor`` and
+auto-downgrades ``raw=True -> False`` (with a warning) when it is absent, so a
+missing-field load no longer crashes with an empty-reshape error.
 """
 
 from __future__ import annotations
@@ -31,6 +33,19 @@ def resolve_qlib_dir(context: "Context", override: str | None = None) -> str:
     return str(context.config.data.qlib_data_dir)
 
 
+def _qlib_dump_has_factor(qlib_dir: str, freq: str) -> bool:
+    """Whether the qlib dump carries a ``$factor`` field (adjustment factor).
+
+    ``raw=True`` rewrites every feature to reference ``$factor``; on a dump without
+    it (e.g. alphapilot's baostock day dump) qlib returns an empty frame and
+    ``StockData`` crashes on reshape. ``any(glob)`` short-circuits on the first hit.
+    """
+    from pathlib import Path
+
+    feat_root = Path(qlib_dir).expanduser() / "features"
+    return feat_root.exists() and any(feat_root.glob(f"*/factor.{freq}.bin"))
+
+
 def build_stock_data(
     *,
     qlib_dir: str,
@@ -45,6 +60,16 @@ def build_stock_data(
 ) -> Any:
     """Construct one :class:`StockData` slice on *device* from the qlib dir."""
     from alphagen_qlib.stock_data import StockData
+
+    if raw and not _qlib_dump_has_factor(qlib_dir, freq):
+        from alphapilot.log import logger
+
+        logger.warning(
+            f"[alphaforge] raw=True requested but qlib dump at {qlib_dir} has no '$factor' "
+            f"field ({freq}); falling back to raw=False (prices used as stored). Otherwise the "
+            "factor-rewritten features load empty and StockData crashes on reshape."
+        )
+        raw = False
 
     return StockData(
         instrument=instruments,

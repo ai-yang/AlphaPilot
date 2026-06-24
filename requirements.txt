@@ -27,6 +27,7 @@ azure-ai-formrecognizer
 
 # factor implementations
 tables
+gplearn==0.4.2  # GP factor mining (mine_gp); 0.4.3 needs scikit-learn>=1.8 vs the 1.7.2 pin above
 
 # market data & backtest
 pyqlib

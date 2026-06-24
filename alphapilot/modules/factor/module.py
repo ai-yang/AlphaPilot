@@ -159,12 +159,44 @@ class FactorModule(BaseModule):
         print(f"Deleted category '{name}'.")
         return {"name": name, "removed": removed}
 
+    def factor_duplicates(self, similarity_threshold: float = 0.8) -> dict[str, Any]:
+        """Report duplicate / near-duplicate factors in the zoo.
+
+        Groups factors whose expressions are equivalent (commutativity and
+        ``5`` vs ``5.0`` aware) and lists near-duplicate pairs whose shared
+        subtree covers at least ``--similarity_threshold`` of the larger tree.
+        """
+        report = self.context.factor().find_duplicate_factors(
+            similarity_threshold=similarity_threshold
+        )
+        groups = report["groups"]
+        if not groups:
+            print("No duplicate factors found.")
+        for i, group in enumerate(groups, 1):
+            print(f"\nDuplicate group {i} (keep: {group['suggested_keep']}):")
+            for member in group["members"]:
+                tag = "keep" if member["factor_name"] == group["suggested_keep"] else "dup "
+                print(f"  [{tag}] {member['factor_name']}: {member['factor_expression']}")
+        if report["similar_pairs"]:
+            print("\nNear-duplicate pairs:")
+            for pair in report["similar_pairs"]:
+                print(
+                    f"  {pair['factor_a']} ~ {pair['factor_b']}  "
+                    f"({pair['similarity'] * 100:.0f}% shared: {pair['shared']})"
+                )
+        print(
+            f"\n{report['n_factors']} factors, {report['n_duplicate_groups']} duplicate "
+            f"group(s), {report['n_redundant_factors']} redundant."
+        )
+        return report
+
     def commands(self) -> dict[str, Callable[..., Any]]:
         return {
             "factor_validate": self.factor_validate,
             "factor_add": self.factor_add,
             "factor_rename": self.factor_rename,
             "factor_list": self.factor_list,
+            "factor_duplicates": self.factor_duplicates,
             "factor_categorize": self.factor_categorize,
             "factor_category_add": self.factor_category_add,
             "factor_category_remove": self.factor_category_remove,

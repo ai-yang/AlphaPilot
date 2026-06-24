@@ -544,6 +544,17 @@ def _query_daily_bars(
         )
 
     adj = _TUSHARE_ADJ_BY_MODE[mode]
+    direct_pro_bar = getattr(client, "pro_bar", None)
+    if callable(direct_pro_bar):
+        return direct_pro_bar(
+            ts_code=ts_code,
+            start_date=start_date,
+            end_date=end_date,
+            adj=adj,
+            freq="D",
+            asset="E",
+        )
+
     try:
         import tushare as ts
     except ImportError as exc:
