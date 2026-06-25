@@ -64,6 +64,13 @@ type PortalEnvSettings = {
   masked_secret: string;
 };
 
+type LogCleanupResult = {
+  log_root: string;
+  execute: boolean;
+  removed: number;
+  paths: string[];
+};
+
 type NotifyCommandsStatus = {
   daemon: {
     running?: boolean;
@@ -1765,10 +1772,13 @@ export function AdvancedPage() {
   const [runRawError, setRunRawError] = useState<string | null>(null);
   const [result, setResult] = useState<unknown>(null);
   const [restartMessage, setRestartMessage] = useState<string | null>(null);
+  const [logDir, setLogDir] = useState("");
+  const [logCleanupResult, setLogCleanupResult] = useState<LogCleanupResult | null>(null);
   const { busy, run: runAction } = useAction();
   const { busy: savingPortal, run: savePortal } = useAction();
   const { busy: savingEnv, run: saveEnv } = useAction();
   const { busy: restartingPortal, run: restartPortal } = useAction();
+  const { busy: cleaningLogs, run: runLogCleanup } = useAction();
   const moduleNames = useMemo(() => Object.keys(modules.data || {}).sort(), [modules.data]);
   const commandNames = useMemo(
     () => ((modules.data?.[runModule]?.commands || []).map((cmd) => String(cmd.name))),
@@ -2038,6 +2048,62 @@ export function AdvancedPage() {
             {restartingPortal ? <Spinner /> : null}{t("restartPortalButton")}
           </button>
         </div>
+      </section>
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <h2>{t("logCleanupTitle")}</h2>
+            <p className="muted no-margin">{t("logCleanupSubtitle")}</p>
+          </div>
+        </div>
+        <div className="dynamic-form cols-2">
+          <label>
+            {t("logDirLabel")}
+            <input
+              value={logDir}
+              placeholder={portalSettings.data?.settings ? t("logDirDefaultPlaceholder") : "log"}
+              onChange={(e) => setLogDir(e.target.value)}
+            />
+            <small>{t("logDirHelp")}</small>
+          </label>
+        </div>
+        <div className="row-actions left">
+          <button
+            className="button"
+            disabled={cleaningLogs}
+            onClick={() => void runLogCleanup(async () => {
+              setLogCleanupResult(await api.post<LogCleanupResult>("/api/logs/cleanup", { log_dir: logDir || undefined, execute: false }));
+            }, t("logCleanupPreviewed"))}
+          >
+            {cleaningLogs ? <Spinner /> : null}{t("preview")}
+          </button>
+          <button
+            className="button danger"
+            disabled={cleaningLogs}
+            onClick={() => {
+              if (!window.confirm(t("logCleanupExecuteConfirm"))) return;
+              void runLogCleanup(async () => {
+                setLogCleanupResult(await api.post<LogCleanupResult>("/api/logs/cleanup", { log_dir: logDir || undefined, execute: true }));
+              }, t("logCleanupDeleted"));
+            }}
+          >
+            {cleaningLogs ? <Spinner /> : null}{t("delete")}
+          </button>
+        </div>
+        {logCleanupResult ? (
+          <>
+            <div className="settings-summary">
+              <span>{t("logRootLabel")}: {logCleanupResult.log_root}</span>
+              <span>{t("logCleanupMatched")}: {logCleanupResult.removed}</span>
+              <span>{t("modeLabel")}: {logCleanupResult.execute ? t("delete") : t("preview")}</span>
+            </div>
+            <DataTable
+              rows={logCleanupResult.paths.map((path) => ({ path }))}
+              empty={t("empty")}
+              columns={[{ key: "path", label: t("pathLabel"), render: (row) => <span className="mono small-text">{String(row.path || "")}</span> }]}
+            />
+          </>
+        ) : null}
       </section>
       {modules.error ? <Alert tone="error">{modules.error}</Alert> : null}
       <div className="grid side">

@@ -133,6 +133,11 @@ class PortalEnvUpdate(BaseModel):
     values: dict[str, Any] = Field(default_factory=dict)
 
 
+class LogCleanupRequest(BaseModel):
+    log_dir: str | None = None
+    execute: bool = False
+
+
 class FactorCreate(BaseModel):
     factor_name: str
     factor_expression: str
@@ -367,6 +372,17 @@ def create_app(
         except Exception as exc:  # noqa: BLE001
             raise _api_error(exc) from exc
         return _jsonable(portal_env_payload())
+
+    @app.post("/api/logs/cleanup")
+    def cleanup_logs(payload: LogCleanupRequest) -> dict[str, Any]:
+        from alphapilot.log.cleanup import clean_log_dirs
+
+        try:
+            eng = _engine(app)
+            log_root = payload.log_dir or str(getattr(eng.config, "log_dir", Path.cwd() / "log"))
+            return _jsonable(clean_log_dirs(log_root, execute=payload.execute).as_dict())
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
 
     @app.get("/api/jobs")
     def list_jobs() -> list[dict[str, Any]]:

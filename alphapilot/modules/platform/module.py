@@ -135,6 +135,17 @@ class PlatformModule(BaseModule):
             result["rebuild_h5"] = self._rebuild_h5(data, market)
         return result
 
+    def clean_logs(self, log_dir: str | None = None, execute: bool = False) -> dict[str, object]:
+        """Clean empty/stub AlphaPilot log directories.
+
+        Defaults to preview mode. Pass ``execute=True`` to actually delete the
+        directories reported by the same cleanup rules.
+        """
+        from alphapilot.log.cleanup import clean_log_dirs
+
+        root = log_dir or str(self.context.config.log_dir)
+        return clean_log_dirs(root, execute=execute).as_dict()
+
     @staticmethod
     def _rebuild_h5(data: Any, market: str | None) -> Any:
         return data.rebuild_h5(market=market) if market else data.rebuild_h5()
@@ -177,6 +188,7 @@ class PlatformModule(BaseModule):
             "delete_stock": self.delete_stock,
             "trim_stock": self.trim_stock,
             "refresh_stock": self.refresh_stock,
+            "clean_logs": self.clean_logs,
             "ui": self.ui,
             "backtest_ui": self.backtest_ui,
             "modules": self.modules,
