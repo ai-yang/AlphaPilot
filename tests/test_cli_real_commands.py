@@ -33,6 +33,7 @@ EXPECTED_COMMANDS = {
     "category_delete",
     "category_list",
     "category_rename",
+    "clean_logs",
     "daily_signals",
     "daily_state",
     "data_viz",
@@ -375,6 +376,7 @@ def test_real_cli_command_smoke(cli_ctx: CliContext) -> None:
     _run_ok(ctx, "delete_run", "--run_id=smoke-run")
     _run_ok(ctx, "list_mine_logs")
     _run_ok(ctx, "delete_mine_log", "--session=smoke-session")
+    _run_ok(ctx, "clean_logs")
 
     _run_ok(ctx, "timezone")
     _run_expected_failure(

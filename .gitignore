@@ -4,10 +4,6 @@
 Pipfile
 public
 release-notes.md
-/tests
-!/tests/
-/tests/*
-!/tests/test_cli_real_commands.py
 Working_AlphaPilot.md
 
 # Byte-compiled / optimized / DLL files
