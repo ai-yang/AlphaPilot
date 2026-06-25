@@ -1,0 +1,46 @@
+name: "Feature Request / 功能建议"
+description: "Suggest an improvement or new capability / 提出功能改进或新能力"
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: use_case
+    attributes:
+      label: "Use case / 使用场景"
+      placeholder: "What problem or workflow should this improve? / 它要改善什么问题或工作流？"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: "Area / 相关模块"
+      options:
+        - "CLI"
+        - "Portal / Web UI"
+        - "Data preparation"
+        - "Factor mining"
+        - "Backtest / Strategy"
+        - "Notifications"
+        - "Documentation"
+        - "Other"
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: "Requested change / 期望改动"
+      placeholder: "What should AlphaPilot support or change? / 希望 AlphaPilot 支持或修改什么？"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: "Extra context / 补充信息"
+      description: "Examples, alternatives, screenshots, or acceptance criteria. / 示例、替代方案、截图或验收标准。"
+      placeholder: |
+        - Example:
+        - Alternative:
+        - Done when:

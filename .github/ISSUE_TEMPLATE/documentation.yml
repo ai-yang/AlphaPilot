@@ -1,0 +1,40 @@
+name: "Documentation / 文档问题"
+description: "Report missing, unclear, or incorrect documentation / 反馈缺失、不清晰或错误的文档"
+title: "[Docs]: "
+labels: ["documentation"]
+body:
+  - type: input
+    id: location
+    attributes:
+      label: "Location / 文档位置"
+      placeholder: "README.md#quick-start, docs/alphapilot-cli.md, docs/DOCKER.md..."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: issue_type
+    attributes:
+      label: "Issue Type / 问题类型"
+      options:
+        - "Missing documentation / 文档缺失"
+        - "Incorrect documentation / 文档错误"
+        - "Unclear wording / 表述不清"
+        - "Outdated instructions / 说明过期"
+        - "Example does not work / 示例不可用"
+        - "Other / 其他"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Problem / 问题"
+      placeholder: "What is confusing, missing, or wrong? / 哪里令人困惑、缺失或有误？"
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: "Suggested change / 建议修改"
+      placeholder: "Optional: what should it say instead? / 可选：你建议改成什么？"

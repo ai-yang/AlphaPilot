@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "README / 项目说明"
+    url: "https://github.com/ai-yang/money_is_all_you_need#readme"
+    about: "Start here for installation, core features, and workflows. / 安装、核心功能和典型工作流请先查看这里。"
+  - name: "CLI Reference / CLI 命令参考"
+    url: "https://github.com/ai-yang/money_is_all_you_need/blob/main/docs/alphapilot-cli.md"
+    about: "Command usage and options. / 命令用法和参数说明。"
+  - name: "Docker Deployment / Docker 部署"
+    url: "https://github.com/ai-yang/money_is_all_you_need/blob/main/docs/DOCKER.md"
+    about: "Docker setup and deployment notes. / Docker 安装和部署说明。"

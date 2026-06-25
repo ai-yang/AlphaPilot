@@ -1,0 +1,46 @@
+name: "Question / Support / 使用问题"
+description: "Ask for help using AlphaPilot / 咨询 AlphaPilot 使用问题"
+title: "[Question]: "
+labels: ["question"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: "Question / 问题"
+      placeholder: "What do you need help with? / 你需要什么帮助？"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: "Area / 相关模块"
+      options:
+        - "CLI"
+        - "Portal / Web UI"
+        - "Data preparation"
+        - "Factor mining"
+        - "Backtest / Strategy"
+        - "Notifications"
+        - "Documentation"
+        - "Other"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: "Context / 背景信息"
+      placeholder: |
+        - Goal:
+        - Command or Portal page:
+        - What you tried:
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: "Related output / 相关输出"
+      description: "Optional logs, screenshots, or command output. Remove secrets. / 可选日志、截图或命令输出，请移除密钥。"
+      render: shell

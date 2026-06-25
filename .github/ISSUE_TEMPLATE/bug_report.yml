@@ -1,0 +1,62 @@
+name: "Bug Report / 缺陷报告"
+description: "Report a reproducible problem in AlphaPilot / 报告 AlphaPilot 中可复现的问题"
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: "What happened? / 发生了什么？"
+      placeholder: "Briefly describe the problem. / 简要描述问题。"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: "Area / 相关模块"
+      options:
+        - "CLI"
+        - "Portal / Web UI"
+        - "Data preparation"
+        - "Factor mining"
+        - "Backtest / Strategy"
+        - "Notifications"
+        - "Documentation"
+        - "Other"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: "How to reproduce / 如何复现"
+      placeholder: |
+        1. Run / 执行 ...
+        2. Open / 打开 ...
+        3. Error / 报错 ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: "Expected vs actual / 期望与实际表现"
+      placeholder: |
+        Expected / 期望:
+        Actual / 实际:
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment_logs
+    attributes:
+      label: "Environment and logs / 环境与日志"
+      description: "Include OS, Python version, command/page, and relevant logs. Remove secrets. / 请包含系统、Python 版本、命令或页面、相关日志，并移除密钥。"
+      placeholder: |
+        - OS:
+        - Python:
+        - Command/Page:
+        - Logs:
+    validations:
+      required: true

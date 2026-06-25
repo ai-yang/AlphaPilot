@@ -2,9 +2,11 @@
 
 <img src="docs/AlphaPilot_logo.svg" alt="AlphaPilot" width="760">
 
-### LLM 驱动的量化因子挖掘、回测与策略研究平台
+### LLM-driven quantitative factor mining, backtesting, and strategy research platform
 
-`多 Agent 因子挖掘`&nbsp;·&nbsp;`Qlib 回测`&nbsp;·&nbsp;`Web 门户`&nbsp;·&nbsp;`数据准备`&nbsp;·&nbsp;`日频信号`&nbsp;·&nbsp;`Telegram/飞书 通讯`
+[中文](README_cn.md)&nbsp;|&nbsp;[English](README.md)
+
+`Multi-agent factor mining`&nbsp;·&nbsp;`Qlib backtesting`&nbsp;·&nbsp;`Web portal`&nbsp;·&nbsp;`Data preparation`&nbsp;·&nbsp;`Daily signals`&nbsp;·&nbsp;`Telegram/Feishu notifications`
 
 <p>
   <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white">
@@ -13,132 +15,132 @@
   <img alt="Notify" src="https://img.shields.io/badge/Notify-Telegram%20%7C%20Feishu-26A5E4?logo=telegram&logoColor=white">
 </p>
 
-[快速开始](#-快速开始)&nbsp;·&nbsp;[核心功能](#-核心功能)&nbsp;·&nbsp;[典型工作流](#-典型工作流)&nbsp;·&nbsp;[文档](#-更多文档)&nbsp;·&nbsp;[Docker 部署](docs/DOCKER.md)
+[Quick Start](#-quick-start)&nbsp;·&nbsp;[Core Features](#core-features)&nbsp;·&nbsp;[Typical Workflow](#-typical-workflow)&nbsp;·&nbsp;[Docs](#-more-documentation)&nbsp;·&nbsp;[Docker Deployment](docs/DOCKER.md)
 
 </div>
 
 ---
 
-## 项目简介
+## Project Overview
 
-AlphaPilot 是一个面向股票的量化研究的因子挖掘与策略验证平台，围绕因子生成、回测评估、策略复测和日常研究操作提供统一工作流。项目使用 LLM 驱动多 Agent 因子研究流程，使用 Qlib 完成回测与信号验证，并提供 Web 门户管理数据、任务、通知和研究资产。
+AlphaPilot is a stock-focused quantitative research platform for factor mining and strategy validation. It provides a unified workflow around factor generation, backtest evaluation, strategy retesting, and daily research operations. The project uses an LLM-driven multi-agent research pipeline for factor discovery, Qlib for backtesting and signal validation, and a Web portal for managing data, tasks, notifications, and research assets.
 
-## 核心功能
+## Core Features
 
-| 能力 | 关键入口 | 说明 |
-|------|----------|------|
-| 因子挖掘 | `alphapilot mine` | LLM 多 Agent 流程 + AlphaForge / GP / RL / AFF 公式化方法 |
-| 回测评估 | `alphapilot backtest` | 组合回测、逐因子 IC 快筛、排行榜与收益曲线 |
-| 新建策略 | `alphapilot strategy_create` | 从因子库挑选因子沉淀为策略资产（因子 + 模型 + 调仓/成本/日期） |
-| 策略复测 | `alphapilot strategy_backtest` | 复用已沉淀的策略资产与模型继续验证 |
-| 日频信号 | `alphapilot daily_signals` | 按交易日推进持仓、生成单日调仓信号 |
-| 统一门户 | `alphapilot portal` | 数据 / 因子 / 回测 / 任务 / 通知集中到同一界面 |
-| 数据准备 | `alphapilot prepare_data` | baostock / tushare → Qlib → 因子 h5 全链路 |
-| 通知与远程 | `alphapilot notify_commands` | 任务完成推送（Telegram / 飞书 / 邮件）+ 聊天命令远程发起与查询任务 |
+| Capability | Main Entry | Description |
+|------------|------------|-------------|
+| Factor mining | `alphapilot mine` | LLM multi-agent workflow plus formula-based AlphaForge / GP / RL / AFF methods |
+| Backtest evaluation | `alphapilot backtest` | Portfolio backtests, per-factor IC screening, leaderboards, and return curves |
+| Strategy creation | `alphapilot strategy_create` | Save selected factors as strategy assets with factors, model, rebalance settings, costs, and dates |
+| Strategy retesting | `alphapilot strategy_backtest` | Reuse saved strategy assets and models for continued validation |
+| Daily signals | `alphapilot daily_signals` | Advance positions by trading day and generate single-day rebalance signals |
+| Unified portal | `alphapilot portal` | Central UI for data, factors, backtests, tasks, and notifications |
+| Data preparation | `alphapilot prepare_data` | baostock / tushare to Qlib to factor h5 pipeline |
+| Notifications and remote control | `alphapilot notify_commands` | Task completion notifications through Telegram / Feishu / email plus remote chat commands |
 
-### 因子挖掘
+### Factor Mining
 
-AlphaPilot 的主线能力是自动化因子研究。你可以用自然语言启动 LLM 驱动的多 Agent 挖掘流程，也可以在同一套项目里使用公式化方法生成候选因子，再统一进入校验、回测和资产沉淀。
+AlphaPilot's primary workflow is automated factor research. You can start an LLM-driven multi-agent mining process with natural language, or use formula-based methods in the same project to generate candidate factors before validation, backtesting, and asset persistence.
 
-- 统一管理 Idea Agent、Factor Agent、Eval Agent 三段研究流程
-- 支持 `alphapilot mine` 启动 LLM 驱动的因子挖掘
-- 支持 GP、RL、AFF 等公式化挖掘方法
-- 因子可落入因子库，并继续进入回测或策略资产管理
+- Unified management for the Idea Agent, Factor Agent, and Eval Agent research stages
+- Supports `alphapilot mine` for LLM-driven factor mining
+- Supports formula-based mining methods including GP, RL, and AFF
+- Factors can be saved into the factor library and reused for backtests or strategy assets
 
-关键入口：`alphapilot mine --direction "你的市场假说"`
+Main entry: `alphapilot mine --direction "your market hypothesis"`
 
 <div align="center">
-  <img src="docs/mining.png" alt="因子挖掘页面：LLM 因子挖掘与公式化挖掘" width="860">
+  <img src="docs/mining.png" alt="Factor mining page: LLM factor mining and formula-based mining" width="860">
   <br><br>
-  <img src="docs/factor_zoo.png" alt="因子 / 策略库：因子资产统一管理" width="860">
+  <img src="docs/factor_zoo.png" alt="Factor / strategy library: unified factor asset management" width="860">
 </div>
 
-### 回测与评估
+### Backtesting and Evaluation
 
-项目内置多种回测与评估模式，既能做正式组合回测，也能快速筛选大量候选因子。首页只保留常用入口，更多回测命令与参数见 [CLI 命令参考](docs/alphapilot-cli.md)。
+The project includes multiple backtesting and evaluation modes. It supports formal portfolio backtests and quick screening for large candidate factor sets. The README keeps only the common entries; see the [CLI command reference](docs/alphapilot-cli.md) for more commands and parameters.
 
-- `multi_combined`：多因子合并训练并完成组合回测
-- `single_ic`：逐因子快速计算 IC、RankIC、ICIR
-- `multi_sequential`：逐因子分别跑完整组合回测
-- 门户「回测」页统一可视化：收益 / 超额 / 账户 / 换手率曲线、每日明细、因子排行榜与对比基准
+- `multi_combined`: combine multiple factors, train a model, and run a portfolio backtest
+- `single_ic`: quickly calculate IC, RankIC, and ICIR for each factor
+- `multi_sequential`: run full portfolio backtests for factors one by one
+- Portal backtest page: visualizes returns, excess returns, account composition, turnover, daily details, factor leaderboards, and benchmark comparisons
 
-关键入口：`alphapilot backtest --factor_path /path/to/factors.csv`
+Main entry: `alphapilot backtest --factor_path /path/to/factors.csv`
 
 <div align="center">
-  <img src="docs/backtest.png" alt="回测：累计收益 / 超额收益 / 账户资产构成" width="860">
+  <img src="docs/backtest.png" alt="Backtesting: cumulative returns, excess returns, and account composition" width="860">
 </div>
 
-### 策略复测与日频信号
+### Strategy Retesting and Daily Signals
 
-当你已经沉淀了策略资产后，可以直接复用已有因子和模型继续验证，而不必重新跑完整挖掘流程。对于按日推进的研究或模拟交易场景，还可以基于已有策略生成单日调仓信号。
+After a strategy asset has been saved, you can reuse existing factors and models for further validation without running the full mining pipeline again. For daily research or simulated trading scenarios, AlphaPilot can also generate single-day rebalance signals from saved strategies.
 
-- `strategy_backtest` 支持对已保存策略资产重新回测
-- `daily_signals` 支持按指定交易日推进持仓状态
-- 适合做模型复用、策略复验和单日调仓演练
-- 结果可回流到策略资产和门户页面中统一查看
+- `strategy_backtest` retests saved strategy assets
+- `daily_signals` advances position state by a specified trading day
+- Suitable for model reuse, strategy revalidation, and single-day rebalance drills
+- Results can flow back into strategy assets and the portal for unified review
 
-关键入口：`alphapilot strategy_backtest --strategy_name "<策略名>" --mode=retrain`
+Main entry: `alphapilot strategy_backtest --strategy_name "<strategy name>" --mode=retrain`
 
-### 统一 Web 门户
+### Unified Web Portal
 
-AlphaPilot 提供统一 Web 门户作为日常研究入口，将数据、因子、回测、任务和通知集中到同一个界面，避免在多个独立脚本和页面之间切换。
+AlphaPilot provides a unified Web portal as the daily research entry point. It brings data, factors, backtests, tasks, and notifications into one interface, reducing context switching across scripts and standalone pages.
 
-- 统一访问因子挖掘、回测、策略库、市场数据和通知配置
-- 支持后台任务、定时任务和结果查看
-- 「回测」页内置完整可视化：累计收益 / 超额 / 账户 / 换手率图表、日期范围筛选、每日明细、因子排行榜与对比基准
-- 适合本地研究环境和服务器部署场景
+- Unified access to factor mining, backtesting, strategy libraries, market data, and notification settings
+- Supports background tasks, scheduled tasks, and result review
+- Built-in backtest visualizations: cumulative returns, excess returns, account composition, turnover charts, date-range filters, daily details, factor leaderboards, and benchmark comparisons
+- Suitable for both local research environments and server deployments
 
-关键入口：`alphapilot portal`
+Main entry: `alphapilot portal`
 
 <div align="center">
-  <img src="docs/portal.png" alt="门户首页与任务面板" width="860">
+  <img src="docs/portal.png" alt="Portal home page and task panel" width="860">
 </div>
 
-### 数据准备与管理
+### Data Preparation and Management
 
-项目内置 A 股数据准备流程，可从原始行情到 Qlib 数据、再到因子计算所需 h5 文件形成完整链路。首页只保留最短路径，下载源、复权方式和高级参数见详细文档。
+The project includes a complete A-share data preparation pipeline, from raw market data to Qlib data and factor h5 files. This README keeps the shortest path; see the detailed documentation for data sources, adjustment modes, and advanced parameters.
 
-- 支持 baostock 和 tushare 数据源
-- 支持行情下载、复权处理、Qlib 转换和 h5 生成
-- 支持股票池管理与单股数据维护
-- 与因子挖掘、回测和日频信号直接衔接
+- Supports baostock and tushare data sources
+- Supports market data downloads, price adjustment, Qlib conversion, and h5 generation
+- Supports stock pool management and single-stock data maintenance
+- Connects directly with factor mining, backtesting, and daily signal generation
 
-关键入口：`alphapilot prepare_data download --stock_csv important_data/stock_lists/main_stock_2026_4_27.csv`
+Main entry: `alphapilot prepare_data download --stock_csv important_data/stock_lists/main_stock_2026_4_27.csv`
 
 <div align="center">
-  <img src="docs/stock_zoo.png" alt="市场数据：数据动作、股票池与单股管理" width="860">
+  <img src="docs/stock_zoo.png" alt="Market data: data actions, stock pools, and single-stock management" width="860">
   <br><br>
-  <img src="docs/data_zoo.png" alt="市场数据：本地 K 线查看" width="860">
+  <img src="docs/data_zoo.png" alt="Market data: local K-line viewer" width="860">
 </div>
 
-### 通知与远程控制
+### Notifications and Remote Control
 
-研究任务往往耗时较长，AlphaPilot 内置任务通知与双向聊天命令系统：后台任务结束会主动推送结果，你也可以直接通过聊天工具远程发起、查询和管理任务，无需一直守在终端前。
+Research tasks often take a long time. AlphaPilot includes task notifications and a two-way chat command system: completed background tasks can proactively push results, and you can also start, query, and manage tasks remotely from chat tools without watching a terminal.
 
-- 支持 **Telegram、飞书、邮件** 三种通知渠道
-- 任务完成（或全部任务）自动推送结果与状态
-- Telegram / 飞书 命令接收器，支持 `/mine`、`/backtest`、`/data`、`/status`、`/jobs`、`/cancel`、`/log`、`/result` 等命令
-- 白名单用户鉴权，可远程发起任务并查看日志、产物与运行状态
-- 凭证在门户「通知」页配置，或通过 `ALPHAPILOT_NOTIFY_*` 环境变量注入
+- Supports **Telegram, Feishu, and email** notification channels
+- Automatically pushes task completion or all-task status updates
+- Telegram / Feishu command receivers support `/mine`, `/backtest`, `/data`, `/status`, `/jobs`, `/cancel`, `/log`, `/result`, and more
+- Whitelisted user authentication for remote task submission, log review, artifact lookup, and status checks
+- Credentials can be configured in the portal notification page or injected through `ALPHAPILOT_NOTIFY_*` environment variables
 
-关键入口：`alphapilot notify_commands --channel telegram`
+Main entry: `alphapilot notify_commands --channel telegram`
 
 <div align="center">
-  <img src="docs/notification.png" alt="通知配置与命令接收器" width="860">
+  <img src="docs/notification.png" alt="Notification settings and command receiver" width="860">
 </div>
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-以下流程以本地安装为主，目标是尽快跑通一条最短闭环。**Docker 一键部署**请直接看 [docs/DOCKER.md](docs/DOCKER.md)。
+The following flow focuses on local installation and a minimal working loop. For **one-command Docker deployment**, see [docs/DOCKER.md](docs/DOCKER.md).
 
-### 1. 创建环境
+### 1. Create an Environment
 
 ```bash
 conda create -n alphapilot python=3.11
 conda activate alphapilot
 ```
 
-### 2. 安装项目
+### 2. Install the Project
 
 ```bash
 git clone <your-repo-url>
@@ -146,7 +148,7 @@ cd AlphaPilot
 pip install -e .
 ```
 
-如需使用 Web 门户前端，请额外准备 Node.js，并在 `alphapilot/modules/portal/web` 下构建前端资源：
+If you need the Web portal frontend, install Node.js and build the frontend assets under `alphapilot/modules/portal/web`:
 
 ```bash
 cd alphapilot/modules/portal/web
@@ -155,13 +157,13 @@ npm run build
 cd ../../../../
 ```
 
-### 3. 配置环境变量
+### 3. Configure Environment Variables
 
 ```bash
 cp .env.example .env
 ```
 
-至少补齐以下配置：
+At minimum, fill in:
 
 ```env
 OPENAI_API_KEY=<your_api_key>
@@ -170,7 +172,7 @@ CHAT_MODEL=<your_chat_model>
 REASONING_MODEL=<your_reasoning_model>
 ```
 
-### 4. 准备数据
+### 4. Prepare Data
 
 ```bash
 alphapilot prepare_data download \
@@ -185,82 +187,82 @@ alphapilot prepare_data convert \
 alphapilot prepare_data h5
 ```
 
-### 5. 启动门户
+### 5. Start the Portal
 
 ```bash
 alphapilot portal
 ```
 
-默认访问地址：`http://127.0.0.1:19901`
+Default URL: `http://127.0.0.1:19901`
 
-> 时区默认 **Asia/Shanghai**（影响定时任务触发与时间戳显示）。可在门户「高级」页「门户设置」修改，或用 `alphapilot timezone Asia/Shanghai` 设置。
+> The default timezone is **Asia/Shanghai**, which affects scheduled tasks and timestamp display. You can change it in the portal's Advanced page under Portal Settings, or run `alphapilot timezone Asia/Shanghai`.
 
-### 6. 运行一次任务
+### 6. Run a Task
 
-启动一次因子挖掘：
+Start a factor mining task:
 
 ```bash
-alphapilot mine --direction "行为金融学假说" --step_n 5
+alphapilot mine --direction "behavioral finance hypothesis" --step_n 5
 ```
 
-或对已有因子文件执行一次回测：
+Or run a backtest on an existing factor file:
 
 ```bash
 alphapilot backtest --factor_path /path/to/factors.csv
 ```
 
-## 🧭 典型工作流
+## 🧭 Typical Workflow
 
-1. 先用 `prepare_data` 准备行情、Qlib 数据和 `daily_pv.h5`。
-2. 用 `mine` 或 AlphaForge 系列命令生成候选因子。
-3. 用 `backtest` 做组合回测或 IC 快筛，并在门户中查看结果。
-4. 将有效策略沉淀到策略资产，再用 `strategy_backtest` 或 `daily_signals` 持续验证。
+1. Use `prepare_data` to prepare market data, Qlib data, and `daily_pv.h5`.
+2. Use `mine` or AlphaForge commands to generate candidate factors.
+3. Use `backtest` for portfolio backtests or quick IC screening, then review results in the portal.
+4. Save effective strategies as strategy assets, then continue validation with `strategy_backtest` or `daily_signals`.
 
-## 📚 更多文档
+## 📚 More Documentation
 
-- [完整 CLI 命令参考](docs/alphapilot-cli.md)
-- [项目目录与架构说明](docs/alphapilot-structure.md)
-- [Docker 部署与服务化运行](docs/DOCKER.md)
-- [Docker 实际运行记录与排错](docs/DOCKER-RUN.md)
-- [important_data 目录、模板与资产说明](important_data/README.md)
-- [AlphaForge 相关说明](alphapilot/modules/alphaforge/README.md)
+- [Full CLI command reference](docs/alphapilot-cli.md)
+- [Project structure and architecture](docs/alphapilot-structure.md)
+- [Docker deployment and service mode](docs/DOCKER.md)
+- [Docker run notes and troubleshooting](docs/DOCKER-RUN.md)
+- [important_data directory, templates, and assets](important_data/README.md)
+- [AlphaForge notes](alphapilot/modules/alphaforge/README.md)
 
-## 📂 目录结构
+## 📂 Directory Structure
 
 ```text
 AlphaPilot/
-├── alphapilot/          # 主程序与模块
-├── important_data/      # 因子库、策略资产、模板、股票池
-├── docs/                # 详细文档
-├── tests/               # 测试用例
-├── docker-compose.yml   # Docker 服务编排
-└── README.md            # 项目首页
+├── alphapilot/          # Main application and modules
+├── important_data/      # Factor library, strategy assets, templates, and stock pools
+├── docs/                # Detailed documentation
+├── tests/               # Test cases
+├── docker-compose.yml   # Docker service orchestration
+└── README.md            # Project home page
 ```
 
-## 🚧 开发状态与路线图
+## 🚧 Development Status and Roadmap
 
-> AlphaPilot 仍在持续开发中：目前存在部分已知 bug 正在修复与优化，功能和接口可能调整，项目会保持更新。
+> AlphaPilot is still under active development. Some known bugs are being fixed and optimized, features and interfaces may change, and the project will continue to be updated.
 
-计划中的方向：
-- [ ] 加入美股的支持
-- [ ] 优化交互界面，加入更多的可以调节的选项，包括调仓方法，LightGBM等模型参数设置
-- [ ] 接入更多因子挖掘方法
-- [ ] 持续修复已知问题、完善文档与稳定性
-- [ ] 加入模拟盘交易系统以及实盘交易系统（paper trading）
+Planned directions:
 
-欢迎通过 Issue / PR 反馈问题与建议。
+- [ ] Add support for US equities
+- [ ] Improve the interactive UI and add more tunable options, including rebalancing methods and LightGBM model parameters
+- [ ] Integrate more factor mining methods
+- [ ] Continue fixing known issues and improving documentation and stability
+- [ ] Add paper trading and live trading systems
 
-## 开发日志
+Issues and PRs are welcome.
 
-| 日期 | 类型 | 功能/模块 | 目标 | 关键改动 | 影响入口 | 验证 | 状态/后续 |
-|------|------|-----------|------|----------|----------|------|-----------|
-| 2026-06-24 | 优化 | Portal 市场数据 / K 线图 | 提升本地 K 线查看体验 | 主图 + 副图布局；副图支持成交额、成交量、换手率、涨跌幅切换；新增范围按钮、统一 hover、深浅主题适配 | Portal「市场数据」页 | `npm run typecheck`；`npm run build` | 已完成 |
-| 2026-06-24 | 新增 | 因子库 / 重复检查 | 帮助清理重复或近似重复因子，降低因子库维护成本 | 新增重复因子检测、建议保留/删除、批量删除相关 API 与 Portal 入口 | Portal「因子/策略库」页；`/api/factors/duplicates`；`/api/factors/bulk-delete` | 前端 `npm run typecheck`；`npm run build` 覆盖 UI 编译 | 已完成；后端接口待补单元测试 |
+## Development Log
 
+| Date | Type | Feature / Module | Goal | Key Changes | Affected Entry | Verification | Status / Follow-up |
+|------|------|------------------|------|-------------|----------------|--------------|--------------------|
+| 2026-06-24 | Optimization | Portal market data / K-line chart | Improve the local K-line viewing experience | Main chart plus sub-chart layout; sub-chart supports amount, volume, turnover, and price-change switching; added range buttons, unified hover behavior, and light/dark theme adaptation | Portal Market Data page | `npm run typecheck`; `npm run build` | Completed |
+| 2026-06-24 | New | Factor library / duplicate check | Help clean duplicate or near-duplicate factors and reduce factor library maintenance cost | Added duplicate factor detection, keep/delete suggestions, bulk-delete APIs, and Portal entry | Portal Factor / Strategy Library page; `/api/factors/duplicates`; `/api/factors/bulk-delete` | Frontend `npm run typecheck`; `npm run build` covered UI compilation | Completed; backend API unit tests still needed |
 
-## 🙏 致谢
+## 🙏 Acknowledgements
 
-本项目受到 [RndmVariableQ/AlphaAgent](https://github.com/RndmVariableQ/AlphaAgent) 以及[DulyHao/AlphaForge](https://github.com/DulyHao/AlphaForge)启发，进行开发与优化。感谢原作者与社区的工作。
+This project is inspired by [RndmVariableQ/AlphaAgent](https://github.com/RndmVariableQ/AlphaAgent) and [DulyHao/AlphaForge](https://github.com/DulyHao/AlphaForge), with further development and optimization. Thanks to the original authors and the community.
 
 <div align="center">
 <br>
@@ -268,5 +270,5 @@ AlphaPilot/
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>×</b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 <img src="docs/zju_eagle_lab.svg" alt="ZJU Eagle Lab" width="72" align="middle">
 <br><br>
-<sub><b>AlphaPilot · 股票量化研究平台</b>&nbsp;&nbsp;×&nbsp;&nbsp;<b>ZJU Eagle Lab</b></sub>
+<sub><b>AlphaPilot · Stock Quantitative Research Platform</b>&nbsp;&nbsp;×&nbsp;&nbsp;<b>ZJU Eagle Lab</b></sub>
 </div>
