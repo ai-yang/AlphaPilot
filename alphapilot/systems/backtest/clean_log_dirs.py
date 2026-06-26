@@ -13,6 +13,13 @@ import argparse
 import sys
 from pathlib import Path
 
+# 允许以脚本方式直接运行（python .../clean_log_dirs.py）：
+# 将项目根目录加入 sys.path，使 `alphapilot` 包可被导入。
+# 以模块方式运行（python -m alphapilot.systems.backtest.clean_log_dirs）时此段无副作用。
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
 from alphapilot.log.cleanup import (
     clean_log_dirs as _clean_log_dirs,
     collect_removable_log_dirs,
