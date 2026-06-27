@@ -44,6 +44,33 @@ def _records(df: Any, columns: list[str]) -> list[dict]:
     return df[cols].to_dict("records") if cols else df.to_dict("records")
 
 
+def _report_metrics(report: Any, date: str) -> dict[str, float]:
+    """Pull the execution day's portfolio metrics out of qlib's ``report_normal``.
+
+    qlib computes account value / return / cost / turnover per day during the one-day rebalance,
+    but the DataFrame is otherwise discarded. Capture the executed day's row so a session can later
+    chart its P&L (nav curve, cumulative return in points, fees). Returns ``{}`` if unavailable so
+    the rest of the summary (and older sessions) keep working.
+    """
+    if report is None or getattr(report, "empty", True):
+        return {}
+    import pandas as pd
+
+    try:
+        row = report.loc[pd.Timestamp(date)]
+    except Exception:  # noqa: BLE001 — date not in index (or single row); use the last row
+        row = report.iloc[-1]
+    out: dict[str, float] = {}
+    for key, col in (("nav", "account"), ("ret", "return"), ("cost", "cost"), ("turnover", "turnover")):
+        try:
+            val = row.get(col)
+        except Exception:  # noqa: BLE001 — column absent
+            val = None
+        if val is not None and pd.notna(val):
+            out[key] = float(val)
+    return out
+
+
 def summarize(result: "DailyTradeResult") -> dict[str, Any]:
     """CLI-friendly summary of a daily trade result."""
     scores = result.scores
@@ -70,6 +97,7 @@ def summarize(result: "DailyTradeResult") -> dict[str, Any]:
         "trades": _records(result.trades, trade_cols),
         "holdings": _records(result.holdings, trade_cols),
         "top_scores": top_scores,
+        "metrics": _report_metrics(result.report, result.date),
         "info": result.info,
     }
 
@@ -182,6 +210,16 @@ class DailyTradeModule(BaseModule):
 
         return {"name": name, "deleted": live_session.delete_session(name)}
 
+    def trade_session_cash(self, name: str, amount: float, note: str | None = None) -> dict[str, Any]:
+        """Simulate a cash deposit / withdrawal on a session's rolling balance.
+
+        ``--amount`` is positive to deposit (转入) and negative to withdraw (转出); the change
+        applies immediately to the session's cash and is recorded in its cash-flow ledger.
+        """
+        from alphapilot.systems.backtest.live import session as live_session
+
+        return live_session.adjust_cash(name, amount, note=note)
+
     def daily_state(
         self,
         strategy_name: str | None = None,
@@ -217,4 +255,5 @@ class DailyTradeModule(BaseModule):
             "trade_session_show": self.trade_session_show,
             "trade_session_history": self.trade_session_history,
             "trade_session_delete": self.trade_session_delete,
+            "trade_session_cash": self.trade_session_cash,
         }

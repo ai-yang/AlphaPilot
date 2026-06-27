@@ -69,6 +69,7 @@ EXPECTED_COMMANDS = {
     "strategy_backtest_list",
     "strategy_create",
     "timezone",
+    "trade_session_cash",
     "trade_session_create",
     "trade_session_delete",
     "trade_session_history",
@@ -629,6 +630,13 @@ def test_real_cli_command_smoke(cli_ctx: CliContext) -> None:
         ctx,
         "trade_session_show",
         "--name=__nope__",
+        patterns=("not found", "Trade session"),
+    )
+    _run_expected_failure(
+        ctx,
+        "trade_session_cash",
+        "--name=__nope__",
+        "--amount=1000",
         patterns=("not found", "Trade session"),
     )
     _run_optional(

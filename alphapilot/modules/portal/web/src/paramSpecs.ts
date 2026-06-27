@@ -326,7 +326,15 @@ export const dailyTradeSpecs: FieldSpec[] = [
   // to run a one-off against the strategy asset below.
   { key: "session", label: "交易会话 Session", type: "select", options: [], helpText: "选择会话则续跑其滚动持仓并把每日调仓写入会话历史;留空则用下方策略单次运行。" },
   { key: "strategy_name", label: "Strategy Asset", type: "select", options: [] },
-  { key: "date", label: "Date", type: "date" },
+  // 当天(自动): 不写死日期, 让每次触发解析当日最新交易日; 指定日期: 显示日期选择器写死.
+  // 前缀 "_" => UI-only, 不下发后端; "today" 时 date 隐藏且为空 => 调度 kwargs 无 date => 后端解析最新交易日.
+  { key: "_date_mode", label: "日期模式 Date mode", type: "select", defaultValue: "today",
+    options: [
+      { label: "当天(自动·最新交易日)", value: "today" },
+      { label: "指定日期", value: "fixed" },
+    ],
+    helpText: "当天=每次按运行当日的最新交易日自动更新(周末/节假日回退到最近交易日);指定日期=固定跑某一天。" },
+  { key: "date", label: "Date", type: "date", visibleWhen: (v) => v._date_mode === "fixed" },
   { key: "init_cash", label: "Initial Cash", type: "number", defaultValue: 1000000 },
   // Board-lot size: buy/sell amounts are rounded to whole multiples of this (A-shares = 100).
   { key: "trade_unit", label: "每手股数 Lot size", type: "number", defaultValue: 100, helpText: "买卖按整手撮合并取整为该数的倍数(A股=100);填 0 关闭整手约束。" },
@@ -336,6 +344,32 @@ export const dailyTradeSpecs: FieldSpec[] = [
   { key: "refresh_data", label: "Refresh data before run", type: "checkbox", defaultValue: false },
   { key: "notify", label: "Push notification", type: "checkbox", defaultValue: false },
   // Money is set above via ``init_cash``; only expose rebalance / cost / date overrides here.
+  ...strategyParamFields({ showAccount: false }),
+];
+
+// Lot-size field shared by both run modes below.
+const lotField: FieldSpec = { key: "trade_unit", label: "每手股数 Lot size", type: "number", defaultValue: 100, helpText: "买卖按整手撮合并取整为该数的倍数(A股=100);填 0 关闭整手约束。" };
+
+// Resume an existing trade session: strategy + cash are fixed by the snapshot, so the run form
+// only needs the per-run knobs (the DailyTradePage shows the session's strategy/cash read-only).
+export const sessionRunSpecs: FieldSpec[] = [
+  { key: "date", label: "Date", type: "date" },
+  lotField,
+  { key: "refresh_data", label: "Refresh data before run", type: "checkbox", defaultValue: false },
+  { key: "notify", label: "Push notification", type: "checkbox", defaultValue: false },
+];
+
+// Ad-hoc one-off run (no session): pick the strategy + seed cash here.
+export const oneOffRunSpecs: FieldSpec[] = [
+  { key: "strategy_name", label: "Strategy Asset", type: "select", options: [] },
+  { key: "init_cash", label: "Initial Cash", type: "number", defaultValue: 1000000 },
+  { key: "date", label: "Date", type: "date" },
+  lotField,
+  { key: "refresh_data", label: "Refresh data before run", type: "checkbox", defaultValue: false },
+  { key: "notify", label: "Push notification", type: "checkbox", defaultValue: false },
+  { key: "state_path", label: "State Path", type: "text" },
+  { key: "factor_path", label: "Factor Path", type: "text" },
+  { key: "model_pickle_path", label: "Model Pickle Path", type: "text" },
   ...strategyParamFields({ showAccount: false }),
 ];
 

@@ -6,6 +6,12 @@ Pure-function coverage for the lot constraint added to ``live/rebalance.py`` + t
 
 from __future__ import annotations
 
+import sys
+import types
+
+import pandas as pd
+
+from alphapilot.systems.backtest.live import rebalance
 from alphapilot.systems.backtest.live.rebalance import (
     _lot_size,
     _round_to_lot,
@@ -41,6 +47,56 @@ def test_build_exchange_kwargs_includes_trade_unit_only_when_positive() -> None:
 
     custom = params.model_copy(update={"trade_unit": 200})
     assert build_exchange_kwargs(custom)["trade_unit"] == 200
+
+
+def test_run_one_day_preserves_qlib_book_without_lot_flooring(monkeypatch) -> None:
+    """Regression: the rolled state must mirror qlib's actual end-of-day book exactly.
+
+    qlib falls back to adjusted-price mode whenever any instrument lacks a ``$factor``; there it
+    ignores ``trade_unit`` and holds *fractional* adjusted-share amounts (incl. sub-lot positions).
+    The daily-trade code used to floor those to whole lots and drop sub-lot holdings, which silently
+    deleted most of the account every day and compounded it toward zero. ``run_one_day`` must now
+    return ``new_state`` with qlib's exact cash + fractional positions (lots are qlib's job, inside
+    the exchange) so the account value rolls forward intact.
+    """
+    date = "2026-06-01"
+    # qlib's real book: fractional amounts, including two sub-lot holdings (17.9 and 2.0 shares).
+    qlib_amounts = {"SH600759": 111.20, "SH601633": 17.90, "SZ000895": 2.0, "SH600918": 213.83}
+
+    class _FakePos:
+        def get_cash(self):
+            return 1925.0
+
+        def get_stock_amount_dict(self):
+            return dict(qlib_amounts)
+
+    report = pd.DataFrame(
+        {"account": [20000.0, 20169.0], "return": [0.0, 0.012]},
+        index=pd.to_datetime(["2026-05-29", date]),
+    )
+    positions_normal = {pd.Timestamp(date): _FakePos()}
+
+    # Stub qlib entirely (the backtest + the two price lookups) so the test stays offline.
+    fake_backtest_mod = types.ModuleType("qlib.backtest")
+    fake_backtest_mod.backtest = lambda **kw: ({"1day": (report, positions_normal)}, {})
+    monkeypatch.setitem(sys.modules, "qlib", types.ModuleType("qlib"))
+    monkeypatch.setitem(sys.modules, "qlib.backtest", fake_backtest_mod)
+    monkeypatch.setattr(rebalance, "_seed_with_prices", lambda seed, start: (dict(seed), []))
+    monkeypatch.setattr(rebalance, "_fetch_close", lambda stocks, d: {s: 10.0 for s in stocks})
+
+    params = QlibYamlParams.defaults_for("combined")  # trade_unit=100 (lot mode on)
+    out = rebalance.run_one_day(
+        date, scores=object(), account_seed={"cash": 20000.0},
+        start_date="2026-05-29", yaml_params=params,
+    )
+
+    st = out["new_state"]
+    assert st.cash == 1925.0
+    # Exact fractional book preserved — nothing floored to 100, nothing dropped.
+    assert st.positions == qlib_amounts
+    assert "SZ000895" in st.positions and st.positions["SZ000895"] == 2.0
+    # Holdings reflect the same full book (so displayed value matches the rolled NAV).
+    assert set(out["holdings"]["instrument"]) == set(qlib_amounts)
 
 
 def test_trade_unit_is_inert_for_qrun_templates() -> None:

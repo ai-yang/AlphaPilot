@@ -1020,6 +1020,18 @@ def create_app(
         except Exception as exc:  # noqa: BLE001
             raise _api_error(exc) from exc
 
+    @app.post("/api/trade-sessions/{name}/cash")
+    def adjust_trade_session_cash(name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        # Simulate a deposit (delta>0) / withdrawal (delta<0) on the session's rolling cash.
+        try:
+            return _jsonable(
+                _engine(app).get_module("daily_trade").trade_session_cash(
+                    name, payload.get("delta"), payload.get("note"),
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
     @app.get("/api/notify")
     def notify_config() -> dict[str, Any]:
         from alphapilot.systems.notify import config as notify_config

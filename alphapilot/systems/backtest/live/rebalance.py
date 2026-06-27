@@ -223,18 +223,16 @@ def run_one_day(
     else:
         _freq, (report_normal, positions_normal) = next(iter(portfolio_dict.items()))
 
+    # ``new_state`` / trades / holdings must mirror qlib's actual end-of-day book (full positions +
+    # cash) so the account value rolls forward intact — the next day re-seeds from this state. Do
+    # NOT lot-round or drop positions here. Board lots are enforced *inside* qlib's exchange via
+    # ``trade_unit`` (see build_exchange_kwargs), which qlib honours in real shares whenever every
+    # instrument carries a valid ``$factor`` (non-adjusted-price mode). When any instrument lacks a
+    # ``$factor`` qlib falls back to adjusted prices, ignores ``trade_unit`` and holds *fractional*
+    # adjusted-share amounts; post-flooring those to whole lots (and dropping the many sub-lot
+    # holdings) silently deletes most of the portfolio every day, compounding the account to ~zero
+    # in a few sessions. So lots are qlib's job, not a destructive post-process on the rolled state.
     new_state = _state_from_positions(date, positions_normal)
-
-    unit = _lot_size(params)
-    if unit > 0:
-        # Round the held seed and the resulting positions to whole lots so the trade plan
-        # (buy/sell deltas), the holdings, and the rolled-forward state are all multiples of the
-        # lot size. Cash keeps qlib's value; the dropped sub-lot fraction is negligible for a
-        # plan/paper book. A position that rounds below one lot is dropped.
-        seed_amounts = {k: _round_to_lot(v, unit) for k, v in seed_amounts.items()}
-        new_state.positions = {
-            k: lot for k, v in new_state.positions.items() if (lot := _round_to_lot(v, unit)) > 0
-        }
 
     prices_today = _fetch_close(set(seed_amounts) | set(new_state.positions), date)
     trades = _compute_trades(seed_amounts, new_state.positions, prices_today)

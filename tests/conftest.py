@@ -83,6 +83,7 @@ EXPECTED_CLI_COMMANDS: frozenset[str] = frozenset(
         "strategy_backtest_list",
         "strategy_create",
         "timezone",
+        "trade_session_cash",
         "trade_session_create",
         "trade_session_delete",
         "trade_session_history",

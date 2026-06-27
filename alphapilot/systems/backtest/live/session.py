@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any
 
 from alphapilot.core.path_safety import ensure_child_path
 from alphapilot.log import logger
+from alphapilot.systems.backtest.live.portfolio_state import init_state, load_state, save_state
 from alphapilot.systems.strategy.database import FileStrategyParamDatabase
 
 if TYPE_CHECKING:
@@ -226,6 +227,7 @@ def append_history(name: str, summary: dict[str, Any], *, root: Path | str | Non
 
     trades = summary.get("trades") or []
     info = summary.get("info") or {}
+    metrics = summary.get("metrics") or {}
     log_line = {
         "date": date,
         "n_trades": len(trades),
@@ -233,6 +235,11 @@ def append_history(name: str, summary: dict[str, Any], *, root: Path | str | Non
         "n_sell": sum(1 for t in trades if str(t.get("status_label")) == "卖出"),
         "cash": summary.get("new_cash"),
         "n_positions": summary.get("n_positions"),
+        # qlib portfolio metrics for the executed day (absent on older sessions) — power the P&L chart.
+        "nav": metrics.get("nav"),
+        "ret": metrics.get("ret"),
+        "cost": metrics.get("cost"),
+        "turnover": metrics.get("turnover"),
         "strategy": info.get("strategy"),
     }
     with (sdir / "daily_log.jsonl").open("a", encoding="utf-8") as fh:
@@ -246,8 +253,7 @@ def append_history(name: str, summary: dict[str, Any], *, root: Path | str | Non
     return day_path
 
 
-def read_log(name: str, *, root: Path | str | None = None) -> list[dict[str, Any]]:
-    path = session_dir(name, root=root) / "daily_log.jsonl"
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     out: list[dict[str, Any]] = []
@@ -262,11 +268,79 @@ def read_log(name: str, *, root: Path | str | None = None) -> list[dict[str, Any
     return out
 
 
+def read_log(name: str, *, root: Path | str | None = None) -> list[dict[str, Any]]:
+    return _read_jsonl(session_dir(name, root=root) / "daily_log.jsonl")
+
+
 def read_history_day(name: str, date: str, *, root: Path | str | None = None) -> dict[str, Any] | None:
     path = session_dir(name, root=root) / "history" / f"{date}.json"
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+# --------------------------------------------------------------------------- #
+# Cash flow (simulated deposit / withdrawal)
+# --------------------------------------------------------------------------- #
+def adjust_cash(
+    name: str,
+    delta: float,
+    *,
+    note: str | None = None,
+    date: str | None = None,
+    root: Path | str | None = None,
+) -> dict[str, Any]:
+    """Simulate a cash deposit (``delta>0``) / withdrawal (``delta<0``) on a session.
+
+    Applies immediately to the rolling ``state.json`` (seeding from the manifest's ``init_cash``
+    when the session has not run yet) and appends an audit line to ``cashflows.jsonl``. Refuses a
+    withdrawal that would drive cash negative. Returns ``{previous_cash, new_cash, delta}``.
+    """
+    sdir = session_dir(name, root=root)
+    if not _manifest_path(sdir).exists():
+        raise ValueError(f"Trade session not found: {name}")
+    try:
+        delta = float(delta)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid cash amount: {delta!r}") from exc
+    if delta == 0:
+        raise ValueError("Cash adjustment amount must be non-zero")
+
+    spath = state_path_for(name, root=root)
+    state = load_state(spath)
+    if state is None:
+        seed = _read_manifest(sdir).get("init_cash") or 0.0
+        state = init_state(float(seed), date="", metadata={"seeded": True})
+
+    prev_cash = float(state.cash)
+    new_cash = prev_cash + delta
+    if new_cash < 0:
+        raise ValueError(
+            f"现金不足,无法转出:当前 {prev_cash:.2f},转出 {abs(delta):.2f} 后将为负。"
+        )
+    state.cash = new_cash
+    save_state(state, spath)
+
+    entry = {
+        "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "date": date or state.date or datetime.now().strftime("%Y-%m-%d"),
+        "delta": delta,
+        "balance_after": new_cash,
+        "note": note or "",
+    }
+    with (sdir / "cashflows.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
+
+    manifest = _read_manifest(sdir)
+    manifest["updated_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
+    _write_manifest(sdir, manifest)
+
+    logger.info(f"[trade_session] {name!r} cash {prev_cash:.2f} -> {new_cash:.2f} (delta {delta:+.2f})")
+    return {"previous_cash": prev_cash, "new_cash": new_cash, "delta": delta}
+
+
+def read_cashflows(name: str, *, root: Path | str | None = None) -> list[dict[str, Any]]:
+    return _read_jsonl(session_dir(name, root=root) / "cashflows.jsonl")
 
 
 # --------------------------------------------------------------------------- #
@@ -303,7 +377,10 @@ def load_session(name: str, *, root: Path | str | None = None, history_limit: in
     log = read_log(name, root=root)
     if history_limit and len(log) > history_limit:
         log = log[-history_limit:]
-    return {"manifest": manifest, "state": state, "history": log}
+    cashflows = read_cashflows(name, root=root)
+    if history_limit and len(cashflows) > history_limit:
+        cashflows = cashflows[-history_limit:]
+    return {"manifest": manifest, "state": state, "history": log, "cashflows": cashflows}
 
 
 def delete_session(name: str, *, root: Path | str | None = None) -> bool:

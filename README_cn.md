@@ -174,6 +174,14 @@ CHAT_MODEL=<your_chat_model>
 REASONING_MODEL=<your_reasoning_model>
 ```
 
+API key 填写说明：
+
+- `OPENAI_API_KEY` 要填写你实际使用的模型服务商签发的 key。
+- 如果使用官方 OpenAI API，`OPENAI_BASE_URL` 一般填写 `https://api.openai.com/v1`。
+- 如果使用 Azure OpenAI 或其他 OpenAI 兼容网关，需要同时把 `OPENAI_BASE_URL` 和 `OPENAI_API_KEY` 都替换成同一平台提供的值，不要把一个平台的 key 和另一个平台的 base URL 混用。
+- `CHAT_MODEL` 和 `REASONING_MODEL` 也必须填写当前 `OPENAI_BASE_URL` 下真实可用的模型 ID。
+- `.env` 中直接填写原始字符串即可，不要把真实 key 提交到仓库。
+
 ### 4. 准备数据
 
 ```bash

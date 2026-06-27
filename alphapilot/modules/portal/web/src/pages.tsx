@@ -1,23 +1,24 @@
 import Plot from "react-plotly.js";
 import { Link } from "react-router-dom";
 import { api, Factor, Job, JobProgress, qs, Schedule } from "./api";
-import { Alert, chartHeight, DataTable, DynamicForm, HybridJsonEditor, JobsPanel, JsonTextArea, PageTitle, PanelHelp, ProgressBar, RefreshButton, Spinner, StatusPill } from "./components";
+import { Alert, chartHeight, DataTable, DynamicForm, HybridJsonEditor, JobsPanel, JsonTextArea, PageTitle, PanelHelp, ProgressBar, RefreshButton, Spinner, StatusPill, Tabs } from "./components";
 import { BacktestDetail, BacktestDetailData, LeaderboardPanel } from "./backtestDetail";
 import { useAsync, useJsonInput, useParamForm } from "./hooks";
 import { useI18n } from "./i18n";
 import {
   alphaForgeSpecs,
   createStrategyFromFactorsSpecs,
-  dailyTradeSpecs,
   dataActionSpecs,
   factorBacktestSpecs,
   factorLibraryBacktestSpecs,
   llmMiningSpecs,
+  oneOffRunSpecs,
   scheduleSpecsFor,
+  sessionRunSpecs,
   strategyBacktestSpecs,
-  withSessionOptions,
   withStrategyOptions,
 } from "./paramSpecs";
+import { computeSessionPnl } from "./sessionPnl";
 import { useAction, useToast } from "./toast";
 import React, { useEffect, useMemo, useState } from "react";
 
@@ -535,6 +536,18 @@ type DuplicatesResult = {
   n_duplicate_groups: number;
   n_redundant_factors: number;
 };
+type FactorValidationResponse = {
+  acceptable?: boolean;
+  code?: string;
+  message?: string;
+  details?: Record<string, unknown> | null;
+};
+
+function factorValidationMessage(result: FactorValidationResponse): string {
+  const message = typeof result.message === "string" && result.message.trim() ? result.message.trim() : "";
+  const code = typeof result.code === "string" && result.code.trim() ? result.code.trim() : "";
+  return message || code || "Factor was not saved.";
+}
 
 export function LibraryPage() {
   const { t } = useI18n();
@@ -590,8 +603,11 @@ export function LibraryPage() {
   function addFactor() {
     void run(async () => {
       const categories = newFactorCategories.split(",").map((item) => item.trim()).filter(Boolean);
-      const result = await api.post<Record<string, unknown>>("/api/factors", { factor_name: name, factor_expression: expr, categories });
+      const result = await api.post<FactorValidationResponse>("/api/factors", { factor_name: name, factor_expression: expr, categories });
       setValidation(result);
+      if (result.acceptable === false) {
+        throw new Error(factorValidationMessage(result));
+      }
       setName("");
       setExpr("");
       setNewFactorCategories("");
@@ -603,6 +619,16 @@ export function LibraryPage() {
     void run(async () => {
       setValidation(await api.post<Record<string, unknown>>("/api/factors/validate", { expression: expr }));
     });
+  }
+
+  function deleteFactor(factorName: string) {
+    const target = factorName.trim();
+    if (!target || !window.confirm(`${t("delete")} ${target}?`)) return;
+    void run(async () => {
+      await api.delete(`/api/factors/${encodeURIComponent(target)}`);
+      setSelectedFactors((current) => current.filter((name) => name !== target));
+      await factors.refresh();
+    }, t("delete"));
   }
 
   function applyBulkCategory(op: "add" | "remove") {
@@ -641,6 +667,15 @@ export function LibraryPage() {
     }, t("save"));
   }
 
+  function deleteStrategy(strategyName: string) {
+    const target = strategyName.trim();
+    if (!target || !window.confirm(`${t("delete")} ${target}?`)) return;
+    void run(async () => {
+      await api.delete(`/api/strategies/${encodeURIComponent(target)}`);
+      await strategies.refresh();
+    }, t("delete"));
+  }
+
   function createStrategyFromFactors() {
     void run(async () => {
       const params = createStrategyForm.parse();
@@ -668,10 +703,12 @@ export function LibraryPage() {
   function deleteDuplicates() {
     const names = Object.keys(dupDelete).filter((nm) => dupDelete[nm]);
     if (!names.length) return;
+    if (!window.confirm(`${t("deleteSelected")} ${names.length} ${t("factorsUnit")}?`)) return;
     void run(async () => {
       await api.post("/api/factors/bulk-delete", { factor_names: names });
       setDupResult(null);
       setDupDelete({});
+      setSelectedFactors((current) => current.filter((name) => !names.includes(name)));
       await factors.refresh();
     }, t("deleteSelected"));
   }
@@ -734,7 +771,7 @@ export function LibraryPage() {
                   render: (row) => (
                     <div className="row-actions">
                       <button className="button small" disabled={busy} onClick={() => { const name = String(row.factor_name); const next = window.prompt(t("renameFactorPrompt"), name); if (next && next.trim() && next.trim() !== name) void run(async () => { await api.patch(`/api/factors/${encodeURIComponent(name)}`, { new_name: next.trim() }); await factors.refresh(); }, t("renameFactor")); }}>{t("rename")}</button>
-                      <button className="button small danger" disabled={busy} onClick={() => void run(async () => { await api.delete(`/api/factors/${encodeURIComponent(String(row.factor_name))}`); await factors.refresh(); })}>{t("delete")}</button>
+                      <button className="button small danger" disabled={busy} onClick={() => deleteFactor(String(row.factor_name))}>{t("delete")}</button>
                     </div>
                   )
                 }
@@ -897,7 +934,7 @@ export function LibraryPage() {
                   render: (row) => (
                     <div className="row-actions">
                       <button className="button small" onClick={() => { setStrategyExportName(String(row.strategy_name)); setStrategyExportPath(`important_data/strategy_zoo/${String(row.strategy_name)}.json`); }}>{t("exportShort")}</button>
-                      <button className="button small danger" disabled={busy} onClick={() => void run(async () => { await api.delete(`/api/strategies/${encodeURIComponent(String(row.strategy_name))}`); await strategies.refresh(); })}>{t("delete")}</button>
+                      <button className="button small danger" disabled={busy} onClick={() => deleteStrategy(String(row.strategy_name))}>{t("delete")}</button>
                     </div>
                   )
                 }
@@ -1410,12 +1447,109 @@ type TradeSessionManifest = {
   market?: string | null;
   n_factors?: number;
 };
-type SessionLogRow = { date: string; n_buy?: number; n_sell?: number; cash?: number; n_positions?: number };
+type SessionLogRow = { date: string; n_buy?: number; n_sell?: number; cash?: number; n_positions?: number; nav?: number; ret?: number; cost?: number; turnover?: number };
+type CashflowRow = { ts?: string; date?: string; delta?: number; balance_after?: number; note?: string };
 type TradeSessionDetail = {
   manifest: TradeSessionManifest;
   state?: { date?: string; cash?: number; positions?: Record<string, number> } | null;
   history?: SessionLogRow[];
+  cashflows?: CashflowRow[];
 };
+
+function fmtNum(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "—";
+  const n = Number(v);
+  return Number.isNaN(n) ? String(v) : n.toLocaleString();
+}
+function fmtSigned(v: unknown): string {
+  const n = Number(v);
+  if (Number.isNaN(n)) return "—";
+  return (n > 0 ? "+" : "") + n.toLocaleString();
+}
+function cashflowColumns(t: (k: string) => string) {
+  return [
+    { key: "date", label: t("dateLabel") },
+    { key: "delta", label: t("amount"), render: (r: Record<string, unknown>) => <>{fmtSigned(r.delta)}</> },
+    { key: "balance_after", label: t("balance"), render: (r: Record<string, unknown>) => <>{fmtNum(r.balance_after)}</> },
+    { key: "note", label: t("note") },
+  ];
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+const PNL_MARGIN = { l: 56, r: 48, t: 28, b: 40 };
+const fmtMoney = (v: number | null): string => (v === null ? "—" : (v > 0 ? "+" : "") + Math.round(v).toLocaleString());
+const fmtPts = (v: number): string => (v > 0 ? "+" : "") + v.toFixed(2);
+
+/** "概览" tab: KPI strip + P&L charts (NAV curve, cumulative return, turnover & fee) for a session. */
+function SessionOverview({ detail }: { detail: TradeSessionDetail }) {
+  const { t } = useI18n();
+  const pnl = useMemo(
+    () => computeSessionPnl(detail.history || [], detail.manifest?.init_cash ?? 0, detail.cashflows || []),
+    [detail],
+  );
+  const nPositions = detail.state?.positions ? Object.keys(detail.state.positions).length : 0;
+  if (!pnl.hasData) return <p className="empty">{t("pnlNoData")}</p>;
+  return (
+    <>
+      <div className="metric-grid compact">
+        <Metric label={t("pnlMoney")} value={fmtMoney(pnl.totals.pnlMoney)} />
+        <Metric label={t("cumReturnPts")} value={fmtPts(pnl.totals.cumReturnPts)} />
+        <Metric label={t("totalFees")} value={fmtNum(Math.round(pnl.totals.totalFees))} />
+        <Metric label={t("navLabel")} value={fmtNum(pnl.totals.latestNav)} />
+        <Metric label={t("currentCash")} value={fmtNum(detail.state?.cash)} />
+        <Metric label={t("positions")} value={String(nPositions)} />
+      </div>
+      <h4 className="muted compact">{t("equityCurve")}</h4>
+      <Plot
+        data={[
+          { x: pnl.dates, y: pnl.nav, type: "scatter", mode: "lines", name: t("navLabel"), line: { color: "#2563eb", width: 2 } },
+          { x: pnl.dates, y: pnl.cash, type: "scatter", mode: "lines", name: t("currentCash"), line: { color: "#94a3b8", width: 1.5 } },
+        ]}
+        layout={{ autosize: true, height: chartHeight(), margin: PNL_MARGIN, hovermode: "x unified", legend: { orientation: "h" } }}
+        useResizeHandler
+        style={{ width: "100%" }}
+      />
+      <h4 className="muted compact">{t("cumReturnChart")}</h4>
+      <Plot
+        data={[{ x: pnl.dates, y: pnl.cumReturnPct, type: "scatter", mode: "lines", name: t("cumReturnPts"), line: { color: "#16a34a", width: 2 } }]}
+        layout={{
+          autosize: true,
+          height: 320,
+          margin: PNL_MARGIN,
+          hovermode: "x unified",
+          shapes: [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: 0, y1: 0, line: { dash: "dot", color: "#94a3b8" } }],
+        }}
+        useResizeHandler
+        style={{ width: "100%" }}
+      />
+      <h4 className="muted compact">{t("turnoverFee")}</h4>
+      <Plot
+        data={[
+          { x: pnl.dates, y: pnl.turnover, type: "bar", name: t("turnoverLabel"), marker: { color: "#60a5fa" }, opacity: 0.7 },
+          { x: pnl.dates, y: pnl.feeMoney, type: "scatter", mode: "lines", name: t("feeMoney"), line: { color: "#ef4444", width: 1.5 }, yaxis: "y2" },
+        ]}
+        layout={{
+          autosize: true,
+          height: 320,
+          margin: PNL_MARGIN,
+          hovermode: "x unified",
+          yaxis: { title: t("turnoverLabel") },
+          yaxis2: { title: t("feeMoney"), overlaying: "y", side: "right" },
+        }}
+        useResizeHandler
+        style={{ width: "100%" }}
+      />
+    </>
+  );
+}
 
 export function DailyTradePage() {
   const { t } = useI18n();
@@ -1423,17 +1557,46 @@ export function DailyTradePage() {
   const sessions = useAsync(() => api.get<TradeSessionManifest[]>("/api/trade-sessions"), []);
   const strategyNames = strategies.data?.names || [];
   const sessionNames = (sessions.data || []).map((s) => s.name);
-  const dailySpecs = useMemo(
-    () => withSessionOptions(withStrategyOptions(dailyTradeSpecs, strategyNames), sessionNames),
-    [strategies.data, sessions.data],
+
+  // The run mode is driven by a session dropdown: a session -> resume it (strategy + cash fixed by
+  // the snapshot); empty -> an ad-hoc one-off run (pick strategy + seed cash).
+  const [runSessionName, setRunSessionName] = useState("");
+  const [runSession, setRunSession] = useState<TradeSessionDetail | null>(null);
+  const runSpecs = useMemo(
+    () => (runSessionName ? sessionRunSpecs : withStrategyOptions(oneOffRunSpecs, strategyNames)),
+    [runSessionName, strategies.data],
   );
   const params = useJsonInput("{}");
-  const dailyForm = useParamForm(dailySpecs, params.raw);
+  const runForm = useParamForm(runSpecs, params.raw);
   const [result, setResult] = useState<unknown>(null);
   const [activeJob, setActiveJob] = useState<Job | null>(null);
   const [progress, setProgress] = useState<JobProgress | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [cashAmount, setCashAmount] = useState("");
+  const [cashNote, setCashNote] = useState("");
   const { busy, run } = useAction();
+
+  async function refreshRunSession(name: string) {
+    if (!name) { setRunSession(null); return; }
+    try {
+      setRunSession(await api.get<TradeSessionDetail>(`/api/trade-sessions/${encodeURIComponent(name)}`));
+    } catch { setRunSession(null); }
+  }
+  function selectRunSession(name: string) {
+    setRunSessionName(name);
+    void refreshRunSession(name);
+  }
+  function adjustCash(sign: 1 | -1) {
+    void run(async () => {
+      const amt = Number(cashAmount);
+      if (!cashAmount.trim() || Number.isNaN(amt) || amt <= 0) throw new Error(t("invalidAmount"));
+      await api.post(`/api/trade-sessions/${encodeURIComponent(runSessionName)}/cash`, { delta: sign * amt, note: cashNote || undefined });
+      setCashAmount("");
+      setCashNote("");
+      await refreshRunSession(runSessionName);
+      await sessions.refresh();
+    }, sign > 0 ? t("depositDone") : t("withdrawDone"));
+  }
 
   // Trade-session create form + detail view.
   const [sessName, setSessName] = useState("");
@@ -1441,6 +1604,7 @@ export function DailyTradePage() {
   const [sessInitCash, setSessInitCash] = useState("1000000");
   const [sessOverwrite, setSessOverwrite] = useState(false);
   const [detail, setDetail] = useState<TradeSessionDetail | null>(null);
+  const [detailTab, setDetailTab] = useState("overview");
 
   function createSession() {
     void run(async () => {
@@ -1456,13 +1620,19 @@ export function DailyTradePage() {
   function viewSession(name: string) {
     void run(async () => {
       setDetail(await api.get<TradeSessionDetail>(`/api/trade-sessions/${encodeURIComponent(name)}`));
+      setDetailTab("overview");
     });
   }
 
   function removeSession(name: string) {
+    if (!window.confirm(`${t("delete")} ${name}?`)) return;
     void run(async () => {
       await api.delete(`/api/trade-sessions/${encodeURIComponent(name)}`);
       if (detail?.manifest?.name === name) setDetail(null);
+      if (runSessionName === name) {
+        setRunSessionName("");
+        setRunSession(null);
+      }
       await sessions.refresh();
     }, t("sessionDeleted"));
   }
@@ -1480,6 +1650,8 @@ export function DailyTradePage() {
         if (p.status && ["succeeded", "failed", "cancelled", "lost"].includes(p.status)) {
           if (p.status === "succeeded") {
             try { setResult(await api.get(`/api/jobs/${activeJob.job_id}/result`)); } catch { /* result may be empty */ }
+            if (runSessionName) void refreshRunSession(runSessionName);
+            void sessions.refresh();
           }
           setActiveJob(null);
         }
@@ -1494,7 +1666,8 @@ export function DailyTradePage() {
 
   function runDailyTrade() {
     void run(async () => {
-      const payload = dailyForm.parse();
+      const payload = runForm.parse();
+      if (runSessionName) payload.session = runSessionName;
       const job = await api.post<Job>("/api/daily-trade", payload);
       setResult(null);
       setActiveJob(job);
@@ -1571,17 +1744,32 @@ export function DailyTradePage() {
                 {t("currentDate")}: {detail.state.date || "—"} · {t("initCash")}: {detail.state.cash ?? "—"} · {t("positions")}: {detail.state.positions ? Object.keys(detail.state.positions).length : 0}
               </p>
             ) : null}
-            <DataTable
-              rows={(detail.history || []) as unknown as Record<string, unknown>[]}
-              empty={t("empty")}
-              columns={[
-                { key: "date", label: t("dateLabel") },
-                { key: "n_buy", label: t("buys") },
-                { key: "n_sell", label: t("sells") },
-                { key: "cash", label: t("initCash") },
-                { key: "n_positions", label: t("positions") }
+            <Tabs
+              active={detailTab}
+              onChange={setDetailTab}
+              tabs={[
+                { key: "overview", label: t("tabOverview") },
+                { key: "history", label: t("sessionHistory") },
+                { key: "cashflows", label: t("cashflows") },
               ]}
             />
+            {detailTab === "overview" ? <SessionOverview detail={detail} /> : null}
+            {detailTab === "history" ? (
+              <DataTable
+                rows={(detail.history || []) as unknown as Record<string, unknown>[]}
+                empty={t("empty")}
+                columns={[
+                  { key: "date", label: t("dateLabel") },
+                  { key: "n_buy", label: t("buys") },
+                  { key: "n_sell", label: t("sells") },
+                  { key: "cash", label: t("initCash") },
+                  { key: "n_positions", label: t("positions") }
+                ]}
+              />
+            ) : null}
+            {detailTab === "cashflows" ? (
+              <DataTable rows={(detail.cashflows || []) as unknown as Record<string, unknown>[]} empty={t("empty")} columns={cashflowColumns(t)} />
+            ) : null}
           </section>
         ) : null}
       </section>
@@ -1606,12 +1794,45 @@ export function DailyTradePage() {
             />
           </div>
           {strategies.error ? <Alert tone="error">{strategies.error}</Alert> : null}
-          <DynamicForm specs={dailySpecs} values={dailyForm.values} onChange={dailyForm.setValue} errors={dailyForm.errors} />
+
+          {/* Run mode = session dropdown: a session resumes its rolling state; empty = one-off. */}
+          <div className="dynamic-form cols-1">
+            <label>
+              {t("runMode")}
+              <select value={runSessionName} onChange={(e) => selectRunSession(e.target.value)}>
+                <option value="">{t("oneOffRun")}</option>
+                {sessionNames.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+          </div>
+
+          {runSessionName ? (
+            <div className="panel inset">
+              <p className="muted compact">
+                {t("sourceStrategy")}: {runSession?.manifest?.source_strategy || "—"} · {t("currentDate")}: {runSession?.state?.date || runSession?.manifest?.current_date || "—"} · {t("currentCash")}: {fmtNum(runSession?.state?.cash ?? runSession?.manifest?.init_cash)} · {t("positions")}: {runSession?.state?.positions ? Object.keys(runSession.state.positions).length : 0}
+              </p>
+              <div className="panel-head compact"><h3>{t("adjustCash")}</h3></div>
+              <div className="toolbar">
+                <input type="number" placeholder={t("amount")} value={cashAmount} onChange={(e) => setCashAmount(e.target.value)} />
+                <input placeholder={t("note")} value={cashNote} onChange={(e) => setCashNote(e.target.value)} />
+                <button className="button small" disabled={busy || !cashAmount} onClick={() => adjustCash(1)}>{t("depositIn")}</button>
+                <button className="button small danger" disabled={busy || !cashAmount} onClick={() => adjustCash(-1)}>{t("withdrawOut")}</button>
+              </div>
+              {(runSession?.cashflows || []).length ? (
+                <>
+                  <h4 className="muted compact">{t("cashflows")}</h4>
+                  <DataTable rows={(runSession?.cashflows || []) as unknown as Record<string, unknown>[]} empty={t("empty")} columns={cashflowColumns(t)} />
+                </>
+              ) : null}
+            </div>
+          ) : null}
+
+          <DynamicForm specs={runSpecs} values={runForm.values} onChange={runForm.setValue} errors={runForm.errors} />
           <details>
             <summary>{t("advancedParams")}</summary>
             <JsonTextArea value={params.raw} onChange={params.setRaw} rows={7} />
           </details>
-          <button className="button primary" disabled={busy} onClick={() => runDailyTrade()}>{busy ? <Spinner /> : null}{t("run")}</button>
+          <button className="button primary" disabled={busy} onClick={() => runDailyTrade()}>{busy ? <Spinner /> : null}{runSessionName ? t("runSession") : t("run")}</button>
           {message ? <p className="muted">{message}</p> : null}
         </section>
         <aside className="panel">
@@ -1671,6 +1892,15 @@ export function SchedulerPage() {
     }, t("save"));
   }
 
+  function deleteSchedule(scheduleId: string) {
+    const target = scheduleId.trim();
+    if (!target || !window.confirm(`${t("delete")} ${target}?`)) return;
+    void run(async () => {
+      await api.delete(`/api/schedules/${encodeURIComponent(target)}`);
+      await schedules.refresh();
+    }, t("delete"));
+  }
+
   return (
     <>
       <PageTitle title={t("scheduler")} subtitle={t("schedulerSubtitle")} />
@@ -1702,7 +1932,7 @@ export function SchedulerPage() {
                 render: (row) => (
                   <div className="row-actions">
                     <button className="button small" disabled={busy} onClick={() => void run(async () => { await api.post(`/api/schedules/${row.schedule_id}/run`); }, t("started"))}>{t("run")}</button>
-                    <button className="button small danger" disabled={busy} onClick={() => void run(async () => { await api.delete(`/api/schedules/${row.schedule_id}`); await schedules.refresh(); })}>{t("delete")}</button>
+                    <button className="button small danger" disabled={busy} onClick={() => deleteSchedule(String(row.schedule_id))}>{t("delete")}</button>
                   </div>
                 )
               }

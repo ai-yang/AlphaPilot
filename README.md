@@ -174,6 +174,14 @@ CHAT_MODEL=<your_chat_model>
 REASONING_MODEL=<your_reasoning_model>
 ```
 
+API key notes:
+
+- `OPENAI_API_KEY` should be filled with the key issued by the model provider you actually use.
+- If you use the official OpenAI API, `OPENAI_BASE_URL` should usually be `https://api.openai.com/v1`.
+- If you use an OpenAI-compatible provider such as Azure OpenAI or another compatible gateway, replace both `OPENAI_BASE_URL` and `OPENAI_API_KEY` with the values from that same platform; do not mix a key from one provider with the base URL of another.
+- `CHAT_MODEL` and `REASONING_MODEL` must be model IDs that are available under the `OPENAI_BASE_URL` you configured.
+- Keep the values as plain strings in `.env`; do not commit real keys to the repository.
+
 ### 4. Prepare Data
 
 ```bash

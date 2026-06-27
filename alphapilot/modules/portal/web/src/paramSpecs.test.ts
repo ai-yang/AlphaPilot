@@ -4,10 +4,15 @@ import {
   dailyTradeSpecs,
   dataActionSpecs,
   defaultValuesFor,
+  oneOffRunSpecs,
+  sessionRunSpecs,
   visibleFields,
   withSessionOptions,
   type FieldSpec,
 } from "./paramSpecs";
+
+const dailyTradeKeys = (values: Record<string, string>) =>
+  visibleFields(dailyTradeSpecs, values).map((f) => f.key);
 
 const specs: FieldSpec[] = [
   { key: "name", label: "Name", type: "text", required: true },
@@ -83,9 +88,42 @@ describe("real spec catalogs", () => {
     expect(dailyTradeSpecs.some((f) => f.key === "session")).toBe(true);
   });
 
+  it("dailyTradeSpecs default the date mode to today (auto latest trading day)", () => {
+    const v = defaultValuesFor(dailyTradeSpecs);
+    expect(v._date_mode).toBe("today");
+    // In "today" mode the date picker is hidden; in "fixed" mode it shows.
+    expect(dailyTradeKeys({ _date_mode: "today" })).not.toContain("date");
+    expect(dailyTradeKeys({ _date_mode: "fixed" })).toContain("date");
+  });
+
+  it("dailyTradeSpecs omit the date kwarg in today mode and keep it when fixed", () => {
+    // "today" => no frozen date in the schedule (backend resolves the latest trading day each run).
+    const auto = buildParams(dailyTradeSpecs, { _date_mode: "today", date: "2026-01-01", strategy_name: "x" });
+    expect(auto).not.toHaveProperty("date");
+    expect(auto).not.toHaveProperty("_date_mode");
+    // "fixed" => the chosen date is sent through.
+    const fixed = buildParams(dailyTradeSpecs, { _date_mode: "fixed", date: "2026-01-01", strategy_name: "x" });
+    expect(fixed.date).toBe("2026-01-01");
+  });
+
   it("withSessionOptions injects session names plus a blank option", () => {
     const injected = withSessionOptions(dailyTradeSpecs, ["live_a", "live_b"]);
     const sessionField = injected.find((f) => f.key === "session");
     expect(sessionField?.options?.map((o) => o.value)).toEqual(["", "live_a", "live_b"]);
+  });
+
+  it("sessionRunSpecs omit strategy + cash (driven by the session snapshot)", () => {
+    const keys = sessionRunSpecs.map((f) => f.key);
+    expect(keys).not.toContain("strategy_name");
+    expect(keys).not.toContain("init_cash");
+    expect(keys).not.toContain("session");
+    expect(keys).toContain("trade_unit");
+  });
+
+  it("oneOffRunSpecs include strategy + cash but no session field", () => {
+    const keys = oneOffRunSpecs.map((f) => f.key);
+    expect(keys).toContain("strategy_name");
+    expect(keys).toContain("init_cash");
+    expect(keys).not.toContain("session");
   });
 });
