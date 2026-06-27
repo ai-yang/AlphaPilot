@@ -85,6 +85,7 @@ class DailyTradeModule(BaseModule):
     def daily_signals(
         self,
         strategy_name: str | None = None,
+        session: str | None = None,
         factor_path: str | None = None,
         model_pickle_path: str | None = None,
         yaml_params: str | None = None,
@@ -95,19 +96,26 @@ class DailyTradeModule(BaseModule):
         qlib_template_dir: str | None = None,
         market: str | None = None,
         factor_data_dir: str | None = None,
+        trade_unit: int | None = None,
     ) -> dict[str, Any]:
         """Generate today's trade plan.
 
-        Strategy source: ``--strategy_name`` (saved asset) and/or manual
+        Strategy source: ``--session`` (a self-contained trade session, resumes its own rolling
+        state and appends to its daily history), or ``--strategy_name`` (saved asset) and/or manual
         ``--factor_path`` + ``--model_pickle_path`` + ``--yaml_params``.
-        ``--date`` defaults to the latest trading day. State auto-rolls in ``--state_path``.
+        ``--date`` defaults to the latest trading day. State auto-rolls in ``--state_path``
+        (or the session's own ``state.json``).
         ``--market`` / ``--factor_data_dir`` override the factor h5 universe (default: the
         strategy asset's recorded market).
+        ``--trade_unit`` sets the board-lot size so buy/sell amounts are whole lots (A-shares=100;
+        ``0`` disables; default keeps the strategy/template value, 100).
         """
         from alphapilot.systems.backtest.live import DailySignalRequest, generate_daily_signal
+        from alphapilot.systems.backtest.live import session as live_session
 
         request = DailySignalRequest(
             strategy_name=strategy_name,
+            session=session,
             factor_path=factor_path,
             model_pickle_path=model_pickle_path,
             yaml_params=_parse_yaml_params(yaml_params),
@@ -118,9 +126,61 @@ class DailyTradeModule(BaseModule):
             qlib_template_dir=qlib_template_dir,
             market=market,
             factor_data_dir=factor_data_dir,
+            trade_unit=trade_unit,
             use_local=self.context.config.backtest.use_local,
         )
-        return summarize(generate_daily_signal(self.context, request))
+        summary = summarize(generate_daily_signal(self.context, request))
+        if session:
+            live_session.append_history(session, summary)
+        return summary
+
+    # --- trade sessions (self-contained, resumable daily-trade accounts) ----------
+    def trade_session_create(
+        self,
+        name: str | None = None,
+        strategy_name: str | None = None,
+        init_cash: float | None = None,
+        overwrite: bool = False,
+    ) -> dict[str, Any]:
+        """Snapshot an existing strategy into a new trade session.
+
+        ``--name`` defaults to ``--strategy_name``; a duplicate name is rejected unless
+        ``--overwrite``. The strategy's model + factors + params are copied so the session is
+        self-contained and immune to later changes of the source strategy.
+        """
+        from alphapilot.systems.backtest.live import session as live_session
+
+        return live_session.create_session(
+            self.context,
+            name=name,
+            strategy_name=strategy_name,
+            init_cash=init_cash,
+            overwrite=overwrite,
+        )
+
+    def trade_session_list(self) -> list[dict[str, Any]]:
+        """List all trade sessions (manifests)."""
+        from alphapilot.systems.backtest.live import session as live_session
+
+        return live_session.list_sessions()
+
+    def trade_session_show(self, name: str) -> dict[str, Any]:
+        """Show a session: manifest + current portfolio state + recent history."""
+        from alphapilot.systems.backtest.live import session as live_session
+
+        return live_session.load_session(name)
+
+    def trade_session_history(self, name: str) -> dict[str, Any]:
+        """Show a session's per-day rebalance log."""
+        from alphapilot.systems.backtest.live import session as live_session
+
+        return {"name": name, "history": live_session.read_log(name)}
+
+    def trade_session_delete(self, name: str) -> dict[str, Any]:
+        """Delete a trade session and all its data (strategy snapshot + state + history)."""
+        from alphapilot.systems.backtest.live import session as live_session
+
+        return {"name": name, "deleted": live_session.delete_session(name)}
 
     def daily_state(
         self,
@@ -152,4 +212,9 @@ class DailyTradeModule(BaseModule):
         return {
             "daily_signals": self.daily_signals,
             "daily_state": self.daily_state,
+            "trade_session_create": self.trade_session_create,
+            "trade_session_list": self.trade_session_list,
+            "trade_session_show": self.trade_session_show,
+            "trade_session_history": self.trade_session_history,
+            "trade_session_delete": self.trade_session_delete,
         }

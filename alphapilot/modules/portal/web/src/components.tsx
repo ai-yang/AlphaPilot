@@ -1,4 +1,4 @@
-import { Loader2, Moon, RefreshCw, Sun, Trash2, XCircle } from "lucide-react";
+import { HelpCircle, Loader2, Moon, RefreshCw, Sun, Trash2, XCircle } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { api, Job } from "./api";
@@ -127,6 +127,49 @@ export function Alert({ children, tone = "info" }: { children: React.ReactNode; 
 
 export function Spinner({ size = 16 }: { size?: number }) {
   return <Loader2 size={size} className="spin" />;
+}
+
+export function PanelHelp({
+  label,
+  title,
+  intro,
+  items,
+  footer
+}: {
+  label: string;
+  title: string;
+  intro?: string;
+  items: string[];
+  footer?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="panel-help">
+      <button
+        type="button"
+        className="icon-button"
+        aria-label={label}
+        title={label}
+        aria-expanded={open}
+        onClick={() => setOpen((cur) => !cur)}
+      >
+        <HelpCircle size={16} />
+      </button>
+      {open ? (
+        <div className="help-popover" role="dialog" aria-label={label}>
+          <div className="help-popover-head">
+            <strong>{title}</strong>
+            <button type="button" className="button ghost small" onClick={() => setOpen(false)}>x</button>
+          </div>
+          {intro ? <p>{intro}</p> : null}
+          <ul>
+            {items.map((item) => <li key={item}>{item}</li>)}
+          </ul>
+          {footer ? <p className="muted compact">{footer}</p> : null}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 /**
@@ -654,7 +697,7 @@ export function JobsPanel({ compact = false }: { compact?: boolean }) {
           }
         ]}
       />
-      {selected && !compact ? (
+      {selected ? (
         <div className="split">
           <pre className="log">{log || "No log"}</pre>
           <pre className="json">{JSON.stringify(result ?? selected, null, 2)}</pre>

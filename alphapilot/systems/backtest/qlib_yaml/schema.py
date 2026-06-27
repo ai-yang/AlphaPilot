@@ -93,6 +93,11 @@ class QlibYamlParams(BaseModel):
     open_cost: float = 0.0002
     close_cost: float = 0.0008
     min_cost: float = 5
+    # Board-lot size for trading. A-shares trade in lots of 100. Consumed by the daily-trade
+    # rebalance (``live/rebalance.py``) to constrain buy/sell to whole lots; ``0`` disables it.
+    # NOTE: the qrun backtest/mining templates (conf*.yaml.j2) do NOT reference this field, so it
+    # is inert for factor mining / factor backtest — only the daily-trade path reads it.
+    trade_unit: int = 100
 
     ann_scaler: int = 252
     ana_long_short: bool = False
@@ -226,4 +231,5 @@ class QlibYamlParams(BaseModel):
             "open_cost": "float",
             "close_cost": "float",
             "limit_threshold": "float",
+            "trade_unit": "int (board-lot size, e.g. 100; 0 disables; daily-trade only)",
         }

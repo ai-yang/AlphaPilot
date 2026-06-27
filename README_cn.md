@@ -34,6 +34,7 @@ AlphaPilot 是一个面向股票的量化研究的因子挖掘与策略验证平
 | 新建策略 | `alphapilot strategy_create` | 从因子库挑选因子沉淀为策略资产（因子 + 模型 + 调仓/成本/日期） |
 | 策略复测 | `alphapilot strategy_backtest` | 复用已沉淀的策略资产与模型继续验证 |
 | 日频信号 | `alphapilot daily_signals` | 按交易日推进持仓、生成单日调仓信号 |
+| 交易会话 | `alphapilot trade_session_create` | 将策略快照为可恢复的独立日频交易账户 |
 | 统一门户 | `alphapilot portal` | 数据 / 因子 / 回测 / 任务 / 通知集中到同一界面 |
 | 数据准备 | `alphapilot prepare_data` | baostock / tushare → Qlib → 因子 h5 全链路 |
 | 通知与远程 | `alphapilot notify_commands` | 任务完成推送（Telegram / 飞书 / 邮件）+ 聊天命令远程发起与查询任务 |
@@ -76,6 +77,7 @@ AlphaPilot 的主线能力是自动化因子研究。你可以用自然语言启
 
 - `strategy_backtest` 支持对已保存策略资产重新回测
 - `daily_signals` 支持按指定交易日推进持仓状态
+- `trade_session_create` / `trade_session_show` / `trade_session_history` 可管理独立的日频交易会话，持有自己的策略快照、持仓状态和历史记录
 - 适合做模型复用、策略复验和单日调仓演练
 - 结果可回流到策略资产和门户页面中统一查看
 
@@ -143,7 +145,7 @@ conda activate alphapilot
 ### 2. 安装项目
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/ai-yang/AlphaPilot.git
 cd AlphaPilot
 pip install -e .
 ```
@@ -211,12 +213,19 @@ alphapilot mine --direction "行为金融学假说" --step_n 5
 alphapilot backtest --factor_path /path/to/factors.csv
 ```
 
+或者先把策略快照成一个可恢复的交易会话，再生成下一交易日的调仓计划：
+
+```bash
+alphapilot trade_session_create --strategy_name "<策略名>" --name demo_session --init_cash 500000
+alphapilot daily_signals --session demo_session
+```
+
 ## 🧭 典型工作流
 
 1. 先用 `prepare_data` 准备行情、Qlib 数据和 `daily_pv.h5`。
 2. 用 `mine` 或 AlphaForge 系列命令生成候选因子。
 3. 用 `backtest` 做组合回测或 IC 快筛，并在门户中查看结果。
-4. 将有效策略沉淀到策略资产，再用 `strategy_backtest` 或 `daily_signals` 持续验证。
+4. 将有效策略沉淀到策略资产，再用 `strategy_backtest`、`daily_signals` 或可恢复的 `trade_session` 持续验证。
 
 ## 📚 更多文档
 
@@ -256,6 +265,8 @@ AlphaPilot/
 
 | 日期 | 类型 | 功能/模块 | 目标 | 关键改动 | 影响入口 | 验证 | 状态/后续 |
 |------|------|-----------|------|----------|----------|------|-----------|
+| 2026-06-27 | 文档 | README / 模块使用说明 | 让首页文档与当前 CLI 能力保持一致，并让模块入口更容易发现 | 同步 README 与 README_cn；补充 trade session 工作流示例；记录已为各模块补充使用说明，方便查找常用入口与模块职责 | `README.md`；`README_cn.md`；顶层模块使用说明 | 仅文档更新 | 已完成 |
+| 2026-06-26 | 新增 | Portal 参数帮助 | 让复杂任务/配置面板更易理解、更一致 | 新增可复用问号帮助面板，扩展挖掘、回测、库管理、市场数据、日频交易、调度器、通知与高级设置说明；补充 Daily Trade 左侧标题 | Portal 各任务/配置面板 | `npm run build`；`npm run typecheck` 因现有 `tsconfig.json` 中 `ignoreDeprecations: "6.0"` 与 TypeScript 5.9 不兼容而阻塞 | 已完成；修复 tsconfig 后再依赖 typecheck |
 | 2026-06-24 | 优化 | Portal 市场数据 / K 线图 | 提升本地 K 线查看体验 | 主图 + 副图布局；副图支持成交额、成交量、换手率、涨跌幅切换；新增范围按钮、统一 hover、深浅主题适配 | Portal「市场数据」页 | `npm run typecheck`；`npm run build` | 已完成 |
 | 2026-06-24 | 新增 | 因子库 / 重复检查 | 帮助清理重复或近似重复因子，降低因子库维护成本 | 新增重复因子检测、建议保留/删除、批量删除相关 API 与 Portal 入口 | Portal「因子/策略库」页；`/api/factors/duplicates`；`/api/factors/bulk-delete` | 前端 `npm run typecheck`；`npm run build` 覆盖 UI 编译 | 已完成；后端接口待补单元测试 |
 

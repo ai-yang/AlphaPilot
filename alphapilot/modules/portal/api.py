@@ -977,6 +977,49 @@ def create_app(
         except Exception as exc:  # noqa: BLE001
             raise _api_error(exc) from exc
 
+    # --- trade sessions (self-contained, resumable daily-trade accounts) ----------
+    @app.get("/api/trade-sessions")
+    def list_trade_sessions() -> list[dict[str, Any]]:
+        try:
+            return _jsonable(_engine(app).get_module("daily_trade").trade_session_list())
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.post("/api/trade-sessions")
+    def create_trade_session(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return _jsonable(
+                _engine(app).get_module("daily_trade").trade_session_create(
+                    name=payload.get("name"),
+                    strategy_name=payload.get("strategy_name"),
+                    init_cash=payload.get("init_cash"),
+                    overwrite=bool(payload.get("overwrite", False)),
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.get("/api/trade-sessions/{name}")
+    def get_trade_session(name: str) -> dict[str, Any]:
+        try:
+            return _jsonable(_engine(app).get_module("daily_trade").trade_session_show(name))
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.get("/api/trade-sessions/{name}/history")
+    def get_trade_session_history(name: str) -> dict[str, Any]:
+        try:
+            return _jsonable(_engine(app).get_module("daily_trade").trade_session_history(name))
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.delete("/api/trade-sessions/{name}")
+    def delete_trade_session(name: str) -> dict[str, Any]:
+        try:
+            return _jsonable(_engine(app).get_module("daily_trade").trade_session_delete(name))
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
     @app.get("/api/notify")
     def notify_config() -> dict[str, Any]:
         from alphapilot.systems.notify import config as notify_config

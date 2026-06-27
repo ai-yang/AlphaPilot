@@ -159,8 +159,42 @@ def generate_daily_signal(context: "Context", request: DailySignalRequest) -> Da
     use_local = (
         request.use_local if request.use_local is not None else context.config.backtest.use_local
     )
-    resolved = _resolve_strategy(context, request)
+    # A trade session draws its strategy (model + factors + params) from a self-contained
+    # snapshot and rolls its own state/history; otherwise resolve from the strategy zoo / manual
+    # overrides as before.
+    session_name = getattr(request, "session", None)
+    live_session = None
+    session_state: dict[str, Any] | None = None
+    if session_name:
+        from alphapilot.systems.backtest.live import session as live_session
+
+        session_state = live_session.load_session(session_name)
+        rs = live_session.resolve_session_strategy(session_name)
+        resolved = _ResolvedStrategy(
+            factor_csv=rs.factor_csv,
+            is_temp_csv=rs.is_temp_csv,
+            model_pickle_path=rs.model_pickle_path,
+            yaml_params=request.yaml_params if request.yaml_params is not None else rs.yaml_params,
+            benchmark=request.benchmark,
+            key=session_name,
+            market=request.market or rs.market,
+        )
+    else:
+        resolved = _resolve_strategy(context, request)
     params = _coerce_params(resolved.yaml_params)
+
+    # Optional per-run board-lot override (A-shares = 100; 0 disables). Defaults to the
+    # strategy/template ``trade_unit`` when not given.
+    if request.trade_unit is not None:
+        try:
+            params = params.model_copy(update={"trade_unit": int(request.trade_unit)})
+        except Exception:  # noqa: BLE001 — bad override should not break the run
+            logger.warning(f"[daily_trade] ignoring invalid trade_unit={request.trade_unit!r}")
+
+    # Effective first-run seed cash: explicit request wins, else the session's recorded init_cash.
+    init_cash = request.init_cash
+    if init_cash is None and session_state is not None:
+        init_cash = (session_state.get("manifest") or {}).get("init_cash")
 
     # The real qlib binary store lives at the kernel-config data dir (e.g. the baostock
     # store), not QlibYamlParams.provider_uri's default. Resolve it once and thread it
@@ -212,14 +246,31 @@ def generate_daily_signal(context: "Context", request: DailySignalRequest) -> Da
                 f"fresher. Refresh the factor data to >= {request.date}, or use "
                 f"--date <= {tradable}."
             )
+    # A session rolls forward; refuse to re-run a date at/before where it already stands so the
+    # same day is never traded twice on top of itself (state would be corrupted).
+    if session_state is not None:
+        cur = (session_state.get("manifest") or {}).get("current_date")
+        if cur:
+            import pandas as pd
+
+            if pd.Timestamp(date) <= pd.Timestamp(cur):
+                raise ValueError(
+                    f"Trade session {session_name!r} has already advanced to {cur}; execution date "
+                    f"{date} is not after it. Use a later --date (the next trading day), or create a "
+                    f"new/overwritten session to restart from scratch."
+                )
+
     # The decision that executes on ``date`` is driven by the prior trading day's signal and
     # seeded with the portfolio held as of that day, so score+seed over [prev_day, date].
     prev_day = _prev_trading_day(date, params, provider_uri)
 
-    state_path = Path(request.state_path) if request.state_path else _default_state_path(resolved.key)
+    if session_name:
+        state_path = live_session.state_path_for(session_name)
+    else:
+        state_path = Path(request.state_path) if request.state_path else _default_state_path(resolved.key)
     prev_state = load_state(state_path)
     if prev_state is None:
-        seed_cash = request.init_cash if request.init_cash is not None else float(params.account)
+        seed_cash = init_cash if init_cash is not None else float(params.account)
         prev_state = init_state(seed_cash, date="", metadata={"seeded": True})
         logger.info(f"[daily_trade] no prior state at {state_path}; seeded cash={seed_cash}")
 

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   buildParams,
+  dailyTradeSpecs,
   dataActionSpecs,
   defaultValuesFor,
   visibleFields,
+  withSessionOptions,
   type FieldSpec,
 } from "./paramSpecs";
 
@@ -75,5 +77,15 @@ describe("real spec catalogs", () => {
   it("dataActionSpecs default to the pipeline action", () => {
     const v = defaultValuesFor(dataActionSpecs);
     expect(v.action).toBe("pipeline");
+  });
+
+  it("dailyTradeSpecs expose a session field", () => {
+    expect(dailyTradeSpecs.some((f) => f.key === "session")).toBe(true);
+  });
+
+  it("withSessionOptions injects session names plus a blank option", () => {
+    const injected = withSessionOptions(dailyTradeSpecs, ["live_a", "live_b"]);
+    const sessionField = injected.find((f) => f.key === "session");
+    expect(sessionField?.options?.map((o) => o.value)).toEqual(["", "live_a", "live_b"]);
   });
 });

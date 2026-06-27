@@ -12,6 +12,7 @@ resulting :class:`PortfolioState`.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from alphapilot.log import logger
@@ -49,14 +50,37 @@ def build_strategy_config(params: Any, scores: Any) -> dict:
     }
 
 
+def _lot_size(params: Any) -> int:
+    """Board-lot size from params (A-shares = 100); ``0`` disables lot constraints."""
+    try:
+        return max(0, int(getattr(params, "trade_unit", 0) or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _round_to_lot(amount: float, unit: int) -> float:
+    """Floor ``amount`` down to a whole multiple of ``unit``; ``unit<=0`` passes through."""
+    if unit and unit > 0:
+        return math.floor(float(amount) / unit) * unit
+    return float(amount)
+
+
 def build_exchange_kwargs(params: Any) -> dict:
-    return {
+    kwargs: dict[str, Any] = {
         "limit_threshold": params.limit_threshold,
         "deal_price": ["$open", "$close"],
         "open_cost": params.open_cost,
         "close_cost": params.close_cost,
         "min_cost": params.min_cost,
     }
+    unit = _lot_size(params)
+    if unit > 0:
+        # Constrain qlib's simulated fills to whole board lots. qlib only honours ``trade_unit``
+        # when the data carries a valid ``$factor`` (non-adjusted-price mode); otherwise it warns
+        # and ignores it. We also round the *reported* plan to lots in ``run_one_day`` so the
+        # buy/sell amounts are clean regardless of qlib's internal price mode.
+        kwargs["trade_unit"] = unit
+    return kwargs
 
 
 def _min_score_date(scores: Any) -> str | None:
@@ -200,6 +224,18 @@ def run_one_day(
         _freq, (report_normal, positions_normal) = next(iter(portfolio_dict.items()))
 
     new_state = _state_from_positions(date, positions_normal)
+
+    unit = _lot_size(params)
+    if unit > 0:
+        # Round the held seed and the resulting positions to whole lots so the trade plan
+        # (buy/sell deltas), the holdings, and the rolled-forward state are all multiples of the
+        # lot size. Cash keeps qlib's value; the dropped sub-lot fraction is negligible for a
+        # plan/paper book. A position that rounds below one lot is dropped.
+        seed_amounts = {k: _round_to_lot(v, unit) for k, v in seed_amounts.items()}
+        new_state.positions = {
+            k: lot for k, v in new_state.positions.items() if (lot := _round_to_lot(v, unit)) > 0
+        }
+
     prices_today = _fetch_close(set(seed_amounts) | set(new_state.positions), date)
     trades = _compute_trades(seed_amounts, new_state.positions, prices_today)
     holdings = _holdings_frame(new_state.positions, prices_today)

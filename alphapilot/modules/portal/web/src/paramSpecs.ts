@@ -315,10 +315,21 @@ export function withStrategyOptions(specs: FieldSpec[], names: string[] = []): F
     : field);
 }
 
+export function withSessionOptions(specs: FieldSpec[], names: string[] = []): FieldSpec[] {
+  return specs.map((field) => field.key === "session"
+    ? { ...field, options: [{ label: "(不使用会话)", value: "" }, ...names.map((name) => ({ label: name, value: name }))] }
+    : field);
+}
+
 export const dailyTradeSpecs: FieldSpec[] = [
+  // Pick a trade session to resume its rolling state + append to its daily history; leave empty
+  // to run a one-off against the strategy asset below.
+  { key: "session", label: "交易会话 Session", type: "select", options: [], helpText: "选择会话则续跑其滚动持仓并把每日调仓写入会话历史;留空则用下方策略单次运行。" },
   { key: "strategy_name", label: "Strategy Asset", type: "select", options: [] },
   { key: "date", label: "Date", type: "date" },
   { key: "init_cash", label: "Initial Cash", type: "number", defaultValue: 1000000 },
+  // Board-lot size: buy/sell amounts are rounded to whole multiples of this (A-shares = 100).
+  { key: "trade_unit", label: "每手股数 Lot size", type: "number", defaultValue: 100, helpText: "买卖按整手撮合并取整为该数的倍数(A股=100);填 0 关闭整手约束。" },
   { key: "state_path", label: "State Path", type: "text" },
   { key: "factor_path", label: "Factor Path", type: "text" },
   { key: "model_pickle_path", label: "Model Pickle Path", type: "text" },

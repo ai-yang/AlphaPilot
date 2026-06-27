@@ -83,6 +83,11 @@ EXPECTED_CLI_COMMANDS: frozenset[str] = frozenset(
         "strategy_backtest_list",
         "strategy_create",
         "timezone",
+        "trade_session_create",
+        "trade_session_delete",
+        "trade_session_history",
+        "trade_session_list",
+        "trade_session_show",
         "trim_stock",
         "ui",
     }
@@ -166,6 +171,7 @@ class AlphaEnv:
     runs_dir: Path
     portal_job_root: Path
     portal_schedule_root: Path
+    trade_sessions: Path
     notify_credentials: Path
     notify_command_root: Path
     env: dict[str, str] = field(default_factory=dict)
@@ -185,6 +191,7 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AlphaEnv:
     runs_dir = tmp_path / "runs"
     portal_job_root = tmp_path / "portal_jobs"
     portal_schedule_root = tmp_path / "portal_schedules"
+    trade_sessions = tmp_path / "trade_sessions"
     notify_credentials = tmp_path / "notify.json"
     notify_command_root = tmp_path / "notify_commands"
 
@@ -200,6 +207,7 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AlphaEnv:
         runs_dir,
         portal_job_root,
         portal_schedule_root,
+        trade_sessions,
         notify_command_root,
     ):
         path.mkdir(parents=True, exist_ok=True)
@@ -217,6 +225,7 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AlphaEnv:
         "ALPHAPILOT_PICKLE_CACHE_ENABLED": "false",
         "ALPHAPILOT_PORTAL_JOB_ROOT": str(portal_job_root),
         "ALPHAPILOT_PORTAL_SCHEDULE_ROOT": str(portal_schedule_root),
+        "ALPHAPILOT_TRADE_SESSIONS_DIR": str(trade_sessions),
         "ALPHAPILOT_PORTAL_ENV_PATH": str(tmp_path / "portal_env.json"),
         "ALPHAPILOT_PORTAL_RUNTIME_PATH": str(tmp_path / "portal_runtime.json"),
         "ALPHAPILOT_PORTAL_SETTINGS_PATH": str(tmp_path / "portal_settings.json"),
@@ -241,6 +250,7 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AlphaEnv:
         runs_dir=runs_dir,
         portal_job_root=portal_job_root,
         portal_schedule_root=portal_schedule_root,
+        trade_sessions=trade_sessions,
         notify_credentials=notify_credentials,
         notify_command_root=notify_command_root,
         env=env,

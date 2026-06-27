@@ -69,6 +69,11 @@ EXPECTED_COMMANDS = {
     "strategy_backtest_list",
     "strategy_create",
     "timezone",
+    "trade_session_create",
+    "trade_session_delete",
+    "trade_session_history",
+    "trade_session_list",
+    "trade_session_show",
     "trim_stock",
     "ui",
 }
@@ -613,6 +618,26 @@ def test_real_cli_command_smoke(cli_ctx: CliContext) -> None:
             "No objects to concatenate",
         ),
         timeout=120,
+    )
+
+    # Trade sessions: list/history/delete are safe no-ops on an unknown name; show raises; create
+    # needs a trained model (cli_strategy may lack one), so it is optional.
+    _run_ok(ctx, "trade_session_list")
+    _run_ok(ctx, "trade_session_history", "--name=__nope__")
+    _run_ok(ctx, "trade_session_delete", "--name=__nope__")
+    _run_expected_failure(
+        ctx,
+        "trade_session_show",
+        "--name=__nope__",
+        patterns=("not found", "Trade session"),
+    )
+    _run_optional(
+        ctx,
+        "trade_session_create",
+        "--name=cli_session",
+        "--strategy_name=cli_strategy",
+        allowed_patterns=("trained model", "not found", "No module named", "model"),
+        timeout=60,
     )
 
     if _has_llm_credentials(ctx.env):

@@ -30,6 +30,10 @@ class DailySignalRequest:
     """
 
     strategy_name: str | None = None
+    # When set, the strategy snapshot + rolling state come from this trade session (see
+    # ``live.session``); ``state_path`` then defaults to the session's own ``state.json`` and
+    # each day's result is appended to the session history.
+    session: str | None = None
     factor_path: str | Path | None = None
     model_pickle_path: str | Path | None = None
     yaml_params: Any = None
@@ -44,6 +48,9 @@ class DailySignalRequest:
     # Factor data binding (defaults resolve from the strategy asset metadata / market default):
     market: str | None = None
     factor_data_dir: str | Path | None = None
+    # Board-lot size override for this run (A-shares = 100; 0 disables). ``None`` keeps the
+    # strategy/template default (``QlibYamlParams.trade_unit``, default 100).
+    trade_unit: int | None = None
 
 
 @dataclass

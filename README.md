@@ -34,6 +34,7 @@ AlphaPilot is a stock-focused quantitative research platform for factor mining a
 | Strategy creation | `alphapilot strategy_create` | Save selected factors as strategy assets with factors, model, rebalance settings, costs, and dates |
 | Strategy retesting | `alphapilot strategy_backtest` | Reuse saved strategy assets and models for continued validation |
 | Daily signals | `alphapilot daily_signals` | Advance positions by trading day and generate single-day rebalance signals |
+| Trade sessions | `alphapilot trade_session_create` | Snapshot a strategy into a self-contained, resumable daily-trade account |
 | Unified portal | `alphapilot portal` | Central UI for data, factors, backtests, tasks, and notifications |
 | Data preparation | `alphapilot prepare_data` | baostock / tushare to Qlib to factor h5 pipeline |
 | Notifications and remote control | `alphapilot notify_commands` | Task completion notifications through Telegram / Feishu / email plus remote chat commands |
@@ -76,6 +77,7 @@ After a strategy asset has been saved, you can reuse existing factors and models
 
 - `strategy_backtest` retests saved strategy assets
 - `daily_signals` advances position state by a specified trading day
+- `trade_session_create` / `trade_session_show` / `trade_session_history` manage self-contained daily-trade sessions with their own strategy snapshot, state, and history
 - Suitable for model reuse, strategy revalidation, and single-day rebalance drills
 - Results can flow back into strategy assets and the portal for unified review
 
@@ -143,7 +145,7 @@ conda activate alphapilot
 ### 2. Install the Project
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/ai-yang/AlphaPilot.git
 cd AlphaPilot
 pip install -e .
 ```
@@ -211,12 +213,19 @@ Or run a backtest on an existing factor file:
 alphapilot backtest --factor_path /path/to/factors.csv
 ```
 
+Or snapshot a strategy into a resumable daily-trade session and generate the next rebalance plan:
+
+```bash
+alphapilot trade_session_create --strategy_name "<strategy name>" --name demo_session --init_cash 500000
+alphapilot daily_signals --session demo_session
+```
+
 ## 🧭 Typical Workflow
 
 1. Use `prepare_data` to prepare market data, Qlib data, and `daily_pv.h5`.
 2. Use `mine` or AlphaForge commands to generate candidate factors.
 3. Use `backtest` for portfolio backtests or quick IC screening, then review results in the portal.
-4. Save effective strategies as strategy assets, then continue validation with `strategy_backtest` or `daily_signals`.
+4. Save effective strategies as strategy assets, then continue validation with `strategy_backtest`, `daily_signals`, or a resumable `trade_session`.
 
 ## 📚 More Documentation
 
@@ -257,6 +266,8 @@ Issues and PRs are welcome.
 
 | Date | Type | Feature / Module | Goal | Key Changes | Affected Entry | Verification | Status / Follow-up |
 |------|------|------------------|------|-------------|----------------|--------------|--------------------|
+| 2026-06-27 | Docs | README / module usage notes | Keep the landing docs aligned with the current CLI surface and make module usage easier to discover | Synced README and README_cn; added trade-session workflow examples; recorded that usage instructions were added for each module so common entry points and module responsibilities are easier to find | `README.md`; `README_cn.md`; top-level module usage docs | Documentation update only | Completed |
+| 2026-06-26 | New | Portal parameter help | Make complex task/config panels easier to use consistently | Added reusable question-mark help panel, expanded help copy across mining, backtest, library, market data, daily trade, scheduler, notifications, and advanced settings; added Daily Trade left-panel title | Portal task/config panels | `npm run build`; `npm run typecheck` blocked by existing `tsconfig.json` `ignoreDeprecations: "6.0"` incompatibility with TypeScript 5.9 | Completed; fix tsconfig before relying on typecheck |
 | 2026-06-24 | Optimization | Portal market data / K-line chart | Improve the local K-line viewing experience | Main chart plus sub-chart layout; sub-chart supports amount, volume, turnover, and price-change switching; added range buttons, unified hover behavior, and light/dark theme adaptation | Portal Market Data page | `npm run typecheck`; `npm run build` | Completed |
 | 2026-06-24 | New | Factor library / duplicate check | Help clean duplicate or near-duplicate factors and reduce factor library maintenance cost | Added duplicate factor detection, keep/delete suggestions, bulk-delete APIs, and Portal entry | Portal Factor / Strategy Library page; `/api/factors/duplicates`; `/api/factors/bulk-delete` | Frontend `npm run typecheck`; `npm run build` covered UI compilation | Completed; backend API unit tests still needed |
 

@@ -1,7 +1,7 @@
 import Plot from "react-plotly.js";
 import { Link } from "react-router-dom";
 import { api, Factor, Job, JobProgress, qs, Schedule } from "./api";
-import { Alert, chartHeight, DataTable, DynamicForm, HybridJsonEditor, JobsPanel, JsonTextArea, PageTitle, ProgressBar, RefreshButton, Spinner, StatusPill } from "./components";
+import { Alert, chartHeight, DataTable, DynamicForm, HybridJsonEditor, JobsPanel, JsonTextArea, PageTitle, PanelHelp, ProgressBar, RefreshButton, Spinner, StatusPill } from "./components";
 import { BacktestDetail, BacktestDetailData, LeaderboardPanel } from "./backtestDetail";
 import { useAsync, useJsonInput, useParamForm } from "./hooks";
 import { useI18n } from "./i18n";
@@ -15,6 +15,7 @@ import {
   llmMiningSpecs,
   scheduleSpecsFor,
   strategyBacktestSpecs,
+  withSessionOptions,
   withStrategyOptions,
 } from "./paramSpecs";
 import { useAction, useToast } from "./toast";
@@ -296,7 +297,22 @@ export function MiningPage() {
       <PageTitle title={t("mining")} subtitle={t("miningSubtitle")} />
       <div className="grid two">
         <section className="panel">
-          <h2>{t("llmMining")}</h2>
+          <div className="panel-head compact">
+            <h2>{t("llmMining")}</h2>
+            <PanelHelp
+              label={t("llmMiningHelp")}
+              title={t("llmMiningHelpTitle")}
+              intro={t("llmMiningHelpIntro")}
+              items={[
+                t("llmMiningHelpStep"),
+                t("llmMiningHelpDirection"),
+                t("llmMiningHelpSave"),
+                t("llmMiningHelpOverrides"),
+                t("llmMiningHelpAdvanced")
+              ]}
+              footer={t("llmMiningHelpFlow")}
+            />
+          </div>
           <DynamicForm specs={llmMiningSpecs} values={llmForm.values} onChange={llmForm.setValue} errors={llmForm.errors} />
           <details>
             <summary>{t("advancedJson")}</summary>
@@ -305,7 +321,22 @@ export function MiningPage() {
           <button className="button primary" disabled={busy} onClick={() => startLlmMining()}>{busy ? <Spinner /> : null}{t("run")}</button>
         </section>
         <section className="panel">
-          <h2>公式化挖掘</h2>
+          <div className="panel-head compact">
+            <h2>{t("formulaMining")}</h2>
+            <PanelHelp
+              label={t("formulaMiningHelp")}
+              title={t("formulaMiningHelpTitle")}
+              intro={t("formulaMiningHelpIntro")}
+              items={[
+                t("formulaMiningHelpMethod"),
+                t("formulaMiningHelpUniverse"),
+                t("formulaMiningHelpSeed"),
+                t("formulaMiningHelpTop"),
+                t("formulaMiningHelpBacktest")
+              ]}
+              footer={t("formulaMiningHelpFlow")}
+            />
+          </div>
           <DynamicForm specs={alphaForgeSpecs} values={afForm.values} onChange={afForm.setValue} errors={afForm.errors} />
           <details>
             <summary>{t("advancedJson")}</summary>
@@ -412,7 +443,22 @@ export function BacktestPage() {
       {list.error ? <Alert tone="error">{list.error}</Alert> : null}
       <div className="grid two">
         <section className="panel">
-          <h2>{t("factorBacktest")}</h2>
+          <div className="panel-head compact">
+            <h2>{t("factorBacktest")}</h2>
+            <PanelHelp
+              label={t("factorBacktestHelp")}
+              title={t("factorBacktestHelpTitle")}
+              intro={t("factorBacktestHelpIntro")}
+              items={[
+                t("factorBacktestHelpPath"),
+                t("factorBacktestHelpMode"),
+                t("factorBacktestHelpMarket"),
+                t("factorBacktestHelpOverrides"),
+                t("factorBacktestHelpAdvanced")
+              ]}
+              footer={t("factorBacktestHelpFlow")}
+            />
+          </div>
           <DynamicForm specs={factorBacktestSpecs} values={factorForm.values} onChange={factorForm.setValue} errors={factorForm.errors} />
           <details>
             <summary>{t("advancedJson")}</summary>
@@ -421,7 +467,22 @@ export function BacktestPage() {
           <button className="button primary" disabled={busy} onClick={() => startFactorBacktest()}>{busy ? <Spinner /> : null}{t("run")}</button>
         </section>
         <section className="panel">
-          <h2>{t("strategyBacktest")}</h2>
+          <div className="panel-head compact">
+            <h2>{t("strategyBacktest")}</h2>
+            <PanelHelp
+              label={t("strategyBacktestHelp")}
+              title={t("strategyBacktestHelpTitle")}
+              intro={t("strategyBacktestHelpIntro")}
+              items={[
+                t("strategyBacktestHelpAsset"),
+                t("strategyBacktestHelpMode"),
+                t("strategyBacktestHelpReuse"),
+                t("strategyBacktestHelpDates"),
+                t("strategyBacktestHelpAdvanced")
+              ]}
+              footer={t("strategyBacktestHelpFlow")}
+            />
+          </div>
           {strategies.error ? <Alert tone="error">{strategies.error}</Alert> : null}
           <DynamicForm specs={strategySpecs} values={strategyForm.values} onChange={strategyForm.setValue} errors={strategyForm.errors} />
           <details>
@@ -626,7 +687,22 @@ export function LibraryPage() {
         <div className="grid side">
           <section className="panel">
             <div className="panel-head">
-              <h2>{t("factors")}</h2>
+              <div className="panel-title-inline">
+                <h2>{t("factors")}</h2>
+                <PanelHelp
+                  label={t("factorLibraryHelp")}
+                  title={t("factorLibraryHelpTitle")}
+                  intro={t("factorLibraryHelpIntro")}
+                  items={[
+                    t("factorLibraryHelpFilter"),
+                    t("factorLibraryHelpBulk"),
+                    t("factorLibraryHelpDuplicates"),
+                    t("factorLibraryHelpBacktest"),
+                    t("factorLibraryHelpStrategy")
+                  ]}
+                  footer={t("factorLibraryHelpFlow")}
+                />
+              </div>
               <input placeholder="Search" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
             <div className="toolbar">
@@ -741,7 +817,22 @@ export function LibraryPage() {
             </details>
           </section>
           <aside className="panel">
-            <h2>{t("addFactor")}</h2>
+            <div className="panel-head compact">
+              <h2>{t("addFactor")}</h2>
+              <PanelHelp
+                label={t("factorManageHelp")}
+                title={t("factorManageHelpTitle")}
+                intro={t("factorManageHelpIntro")}
+                items={[
+                  t("factorManageHelpAdd"),
+                  t("factorManageHelpValidate"),
+                  t("factorManageHelpCategories"),
+                  t("factorManageHelpImport"),
+                  t("factorManageHelpExport")
+                ]}
+                footer={t("factorManageHelpFlow")}
+              />
+            </div>
             <input placeholder="factor_name" value={name} onChange={(e) => setName(e.target.value)} />
             <textarea rows={7} placeholder="factor_expression" value={expr} onChange={(e) => setExpr(e.target.value)} />
             <input placeholder={t("categoriesCommaPh")} value={newFactorCategories} onChange={(e) => setNewFactorCategories(e.target.value)} />
@@ -814,7 +905,21 @@ export function LibraryPage() {
             />
           </section>
           <aside className="panel">
-            <h2>{t("saveStrategyParams")}</h2>
+            <div className="panel-head compact">
+              <h2>{t("saveStrategyParams")}</h2>
+              <PanelHelp
+                label={t("strategyParamsHelp")}
+                title={t("strategyParamsHelpTitle")}
+                intro={t("strategyParamsHelpIntro")}
+                items={[
+                  t("strategyParamsHelpName"),
+                  t("strategyParamsHelpJson"),
+                  t("strategyParamsHelpExport"),
+                  t("strategyParamsHelpImport")
+                ]}
+                footer={t("strategyParamsHelpRisk")}
+              />
+            </div>
             <input placeholder="strategy_name" value={strategyName} onChange={(e) => setStrategyName(e.target.value)} />
             <HybridJsonEditor value={strategyParams.raw} onChange={strategyParams.setRaw} rows={8} />
             <button className="button primary" disabled={busy} onClick={() => saveStrategy()}>{busy ? <Spinner /> : null}{t("save")}</button>
@@ -993,7 +1098,26 @@ export function MarketPage() {
       {dataMessage ? <pre className="inline-json">{dataMessage}</pre> : null}
       <div className="grid side">
         <section className="panel">
-          <h2>{t("dataActions")}</h2>
+          <div className="panel-head compact">
+            <h2>{t("dataActions")}</h2>
+            <PanelHelp
+              label={t("dataActionsHelp")}
+              title={t("dataActionsHelpTitle")}
+              intro={t("dataActionsHelpIntro")}
+              items={[
+                t("dataActionsHelpAction"),
+                t("dataActionsHelpSource"),
+                t("dataActionsHelpDates"),
+                t("dataActionsHelpStockCsv"),
+                t("dataActionsHelpAdjust"),
+                t("dataActionsHelpTarget"),
+                t("dataActionsHelpTushare"),
+                t("dataActionsHelpMarket"),
+                t("dataActionsHelpAdvanced")
+              ]}
+              footer={t("dataActionsHelpFlow")}
+            />
+          </div>
           <DynamicForm specs={dataActionSpecs} values={dataForm.values} onChange={dataForm.setValue} errors={dataForm.errors} />
           <details>
             <summary>{t("advancedJson")}</summary>
@@ -1029,7 +1153,21 @@ export function MarketPage() {
           {universe.length ? <div className="tag-list">{universe.slice(0, 80).map((s) => <span className="tag" key={s}>{s}</span>)}{universe.length > 80 ? <span className="tag">+{universe.length - 80}</span> : null}</div> : null}
         </section>
         <aside className="panel">
-          <h2>{t("symbolManage")}</h2>
+          <div className="panel-head compact">
+            <h2>{t("symbolManage")}</h2>
+            <PanelHelp
+              label={t("symbolManageHelp")}
+              title={t("symbolManageHelpTitle")}
+              intro={t("symbolManageHelpIntro")}
+              items={[
+                t("symbolManageHelpRefresh"),
+                t("symbolManageHelpAdjust"),
+                t("symbolManageHelpTrim"),
+                t("symbolManageHelpH5")
+              ]}
+              footer={t("symbolManageHelpRisk")}
+            />
+          </div>
           <select value={manageSource} onChange={(e) => { setManageSource(e.target.value); void loadManageSymbols(e.target.value); }}>
             <option value="baostock_cn">baostock_cn</option>
             <option value="tushare_cn">tushare_cn</option>
@@ -1263,10 +1401,32 @@ export function MarketPage() {
   );
 }
 
+type TradeSessionManifest = {
+  name: string;
+  source_strategy?: string;
+  current_date?: string | null;
+  status?: string;
+  init_cash?: number | null;
+  market?: string | null;
+  n_factors?: number;
+};
+type SessionLogRow = { date: string; n_buy?: number; n_sell?: number; cash?: number; n_positions?: number };
+type TradeSessionDetail = {
+  manifest: TradeSessionManifest;
+  state?: { date?: string; cash?: number; positions?: Record<string, number> } | null;
+  history?: SessionLogRow[];
+};
+
 export function DailyTradePage() {
   const { t } = useI18n();
   const strategies = useAsync(() => api.get<{ strategies: Array<Record<string, unknown>>; names: string[] }>("/api/strategies"), []);
-  const dailySpecs = useMemo(() => withStrategyOptions(dailyTradeSpecs, strategies.data?.names || []), [strategies.data]);
+  const sessions = useAsync(() => api.get<TradeSessionManifest[]>("/api/trade-sessions"), []);
+  const strategyNames = strategies.data?.names || [];
+  const sessionNames = (sessions.data || []).map((s) => s.name);
+  const dailySpecs = useMemo(
+    () => withSessionOptions(withStrategyOptions(dailyTradeSpecs, strategyNames), sessionNames),
+    [strategies.data, sessions.data],
+  );
   const params = useJsonInput("{}");
   const dailyForm = useParamForm(dailySpecs, params.raw);
   const [result, setResult] = useState<unknown>(null);
@@ -1274,6 +1434,38 @@ export function DailyTradePage() {
   const [progress, setProgress] = useState<JobProgress | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const { busy, run } = useAction();
+
+  // Trade-session create form + detail view.
+  const [sessName, setSessName] = useState("");
+  const [sessStrategy, setSessStrategy] = useState("");
+  const [sessInitCash, setSessInitCash] = useState("1000000");
+  const [sessOverwrite, setSessOverwrite] = useState(false);
+  const [detail, setDetail] = useState<TradeSessionDetail | null>(null);
+
+  function createSession() {
+    void run(async () => {
+      const payload: Record<string, unknown> = { name: sessName || undefined, strategy_name: sessStrategy, overwrite: sessOverwrite };
+      const cash = Number(sessInitCash);
+      if (sessInitCash.trim() && !Number.isNaN(cash)) payload.init_cash = cash;
+      await api.post("/api/trade-sessions", payload);
+      setSessName("");
+      await sessions.refresh();
+    }, t("sessionCreated"));
+  }
+
+  function viewSession(name: string) {
+    void run(async () => {
+      setDetail(await api.get<TradeSessionDetail>(`/api/trade-sessions/${encodeURIComponent(name)}`));
+    });
+  }
+
+  function removeSession(name: string) {
+    void run(async () => {
+      await api.delete(`/api/trade-sessions/${encodeURIComponent(name)}`);
+      if (detail?.manifest?.name === name) setDetail(null);
+      await sessions.refresh();
+    }, t("sessionDeleted"));
+  }
 
   // Poll the running daily-trade job for live status; on completion fetch its result. Mirrors
   // the MarketPage data-job pattern so the page shows a run-status card instead of nothing.
@@ -1314,8 +1506,105 @@ export function DailyTradePage() {
   return (
     <>
       <PageTitle title={t("daily")} subtitle={t("dailySubtitle")} />
+      <section className="panel">
+        <div className="panel-head compact">
+          <h2>{t("tradeSessions")}</h2>
+          <PanelHelp label={t("tradeSessions")} title={t("tradeSessions")} intro={t("tradeSessionsSubtitle")} items={[]} />
+          <RefreshButton onClick={() => void sessions.refresh()} />
+        </div>
+        {sessions.error ? <Alert tone="error">{sessions.error}</Alert> : null}
+        <div className="dynamic-form cols-2">
+          <label>
+            {t("sessionName")}
+            <input value={sessName} onChange={(e) => setSessName(e.target.value)} placeholder={t("sessionNamePlaceholder")} />
+          </label>
+          <label>
+            {t("sourceStrategy")}
+            <select value={sessStrategy} onChange={(e) => setSessStrategy(e.target.value)}>
+              <option value="">—</option>
+              {strategyNames.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+          <label>
+            {t("initCash")}
+            <input type="number" value={sessInitCash} onChange={(e) => setSessInitCash(e.target.value)} />
+          </label>
+          <label className="inline-check dynamic-check">
+            <input type="checkbox" checked={sessOverwrite} onChange={(e) => setSessOverwrite(e.target.checked)} />
+            <span>{t("overwriteSession")}</span>
+          </label>
+        </div>
+        <div className="toolbar below">
+          <button className="button primary" disabled={busy || !sessStrategy} onClick={() => createSession()}>
+            {busy ? <Spinner /> : null}{t("createSession")}
+          </button>
+        </div>
+        <DataTable
+          rows={(sessions.data || []) as unknown as Record<string, unknown>[]}
+          empty={t("noSessions")}
+          loading={sessions.loading}
+          columns={[
+            { key: "name", label: t("sessionName") },
+            { key: "source_strategy", label: t("sourceStrategy") },
+            { key: "current_date", label: t("currentDate"), render: (row) => <>{(row.current_date as string) || "—"}</> },
+            { key: "status", label: t("sessionStatus"), render: (row) => <StatusPill status={row.status as string} /> },
+            {
+              key: "name",
+              label: "",
+              render: (row) => (
+                <div className="row-actions">
+                  <button className="button small" onClick={() => viewSession(row.name as string)}>{t("viewSession")}</button>
+                  <button className="button small danger" disabled={busy} onClick={() => removeSession(row.name as string)}>{t("deleteSession")}</button>
+                </div>
+              )
+            }
+          ]}
+        />
+        {detail ? (
+          <section className="panel inset">
+            <div className="panel-head compact">
+              <h3>{detail.manifest?.name} — {t("sessionHistory")}</h3>
+              <button className="button ghost small" onClick={() => setDetail(null)}>×</button>
+            </div>
+            {detail.state ? (
+              <p className="muted">
+                {t("currentDate")}: {detail.state.date || "—"} · {t("initCash")}: {detail.state.cash ?? "—"} · {t("positions")}: {detail.state.positions ? Object.keys(detail.state.positions).length : 0}
+              </p>
+            ) : null}
+            <DataTable
+              rows={(detail.history || []) as unknown as Record<string, unknown>[]}
+              empty={t("empty")}
+              columns={[
+                { key: "date", label: t("dateLabel") },
+                { key: "n_buy", label: t("buys") },
+                { key: "n_sell", label: t("sells") },
+                { key: "cash", label: t("initCash") },
+                { key: "n_positions", label: t("positions") }
+              ]}
+            />
+          </section>
+        ) : null}
+      </section>
       <div className="grid side">
         <section className="panel">
+          <div className="panel-head compact">
+            <h2>{t("dailyTradeParams")}</h2>
+            <PanelHelp
+              label={t("dailyTradeHelp")}
+              title={t("dailyTradeHelpTitle")}
+              intro={t("dailyTradeHelpIntro")}
+              items={[
+                t("dailyTradeHelpStrategy"),
+                t("dailyTradeHelpDate"),
+                t("dailyTradeHelpState"),
+                t("dailyTradeHelpAssets"),
+                t("dailyTradeHelpRefresh"),
+                t("dailyTradeHelpNotify"),
+                t("dailyTradeHelpAdvanced")
+              ]}
+              footer={t("dailyTradeHelpFlow")}
+            />
+          </div>
           {strategies.error ? <Alert tone="error">{strategies.error}</Alert> : null}
           <DynamicForm specs={dailySpecs} values={dailyForm.values} onChange={dailyForm.setValue} errors={dailyForm.errors} />
           <details>
@@ -1421,7 +1710,22 @@ export function SchedulerPage() {
           />
         </section>
         <aside className="panel">
-          <h2>{t("createSchedule")}</h2>
+          <div className="panel-head compact">
+            <h2>{t("createSchedule")}</h2>
+            <PanelHelp
+              label={t("schedulerCreateHelp")}
+              title={t("schedulerCreateHelpTitle")}
+              intro={t("schedulerCreateHelpIntro")}
+              items={[
+                t("schedulerCreateHelpKind"),
+                t("schedulerCreateHelpTime"),
+                t("schedulerCreateHelpEnabled"),
+                t("schedulerCreateHelpNotify"),
+                t("schedulerCreateHelpAdvanced")
+              ]}
+              footer={t("schedulerCreateHelpFlow")}
+            />
+          </div>
           <label>
             {t("nameLabel")}
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder={`${kind}-${time}`} />
@@ -1572,6 +1876,18 @@ export function NotificationsPage() {
               <h2>{t("notifyChannelsTitle")}</h2>
               <p className="muted">{t("notifyChannelsSubtitle")}</p>
             </div>
+            <PanelHelp
+              label={t("notifyChannelsHelp")}
+              title={t("notifyChannelsHelpTitle")}
+              intro={t("notifyChannelsHelpIntro")}
+              items={[
+                t("notifyChannelsHelpCredentials"),
+                t("notifyChannelsHelpAllJobs"),
+                t("notifyChannelsHelpFileBrowse"),
+                t("notifyChannelsHelpSecrets")
+              ]}
+              footer={t("notifyChannelsHelpFlow")}
+            />
           </div>
           {cfg.error ? <Alert tone="error">{cfg.error}</Alert> : null}
           <p className="muted">{t("credentialsPath")}：{String(cfg.data?.credentials_path || "")}</p>
@@ -1671,7 +1987,21 @@ export function NotificationsPage() {
             <h2>{t("commandReceiverTitle")}</h2>
             <p className="muted">{t("commandReceiverSubtitle")}</p>
           </div>
-          <StatusPill status={commands.data?.daemon?.running ? "running" : "stopped"} />
+          <div className="row-actions">
+            <PanelHelp
+              label={t("commandReceiverHelp")}
+              title={t("commandReceiverHelpTitle")}
+              intro={t("commandReceiverHelpIntro")}
+              items={[
+                t("commandReceiverHelpChannel"),
+                t("commandReceiverHelpPairing"),
+                t("commandReceiverHelpAllowlist"),
+                t("commandReceiverHelpMenu")
+              ]}
+              footer={t("commandReceiverHelpFlow")}
+            />
+            <StatusPill status={commands.data?.daemon?.running ? "running" : "stopped"} />
+          </div>
         </div>
         {commands.error ? <Alert tone="error">{commands.error}</Alert> : null}
         <div className="metric-grid compact">
@@ -1722,6 +2052,17 @@ export function NotificationsPage() {
             <h2>{t("commandTestTitle")}</h2>
             <p className="muted">{t("commandTestSubtitle")}</p>
           </div>
+          <PanelHelp
+            label={t("commandTestHelp")}
+            title={t("commandTestHelpTitle")}
+            intro={t("commandTestHelpIntro")}
+            items={[
+              t("commandTestHelpRun"),
+              t("commandTestHelpPlan"),
+              t("commandTestHelpAuth")
+            ]}
+            footer={t("commandTestHelpFlow")}
+          />
         </div>
         <textarea className="mono" rows={4} value={commandText} onChange={(e) => setCommandText(e.target.value)} />
         <div className="row-actions left">
@@ -1913,6 +2254,18 @@ export function AdvancedPage() {
             <h2>{t("portalSettingsTitle")}</h2>
             <p className="muted no-margin">{t("portalSettingsSubtitle")}</p>
           </div>
+          <PanelHelp
+            label={t("portalSettingsHelp")}
+            title={t("portalSettingsHelpTitle")}
+            intro={t("portalSettingsHelpIntro")}
+            items={[
+              t("portalSettingsHelpHost"),
+              t("portalSettingsHelpPort"),
+              t("portalSettingsHelpTimezone"),
+              t("portalSettingsHelpRestart")
+            ]}
+            footer={t("portalSettingsHelpFlow")}
+          />
         </div>
         {portalSettings.error ? <Alert tone="error">{portalSettings.error}</Alert> : null}
         {portalSettings.data?.restart_required ? (
@@ -1977,6 +2330,18 @@ export function AdvancedPage() {
             <h2>{t("envSettingsTitle")}</h2>
             <p className="muted no-margin">{t("envSettingsSubtitle")}</p>
           </div>
+          <PanelHelp
+            label={t("envSettingsHelp")}
+            title={t("envSettingsHelpTitle")}
+            intro={t("envSettingsHelpIntro")}
+            items={[
+              t("envSettingsHelpPriority"),
+              t("envSettingsHelpSecrets"),
+              t("envSettingsHelpRestart"),
+              t("envSettingsHelpCurrent")
+            ]}
+            footer={t("envSettingsHelpFlow")}
+          />
         </div>
         {envSettings.error ? <Alert tone="error">{envSettings.error}</Alert> : null}
         {envSettings.data?.restart_required ? (
@@ -2055,6 +2420,17 @@ export function AdvancedPage() {
             <h2>{t("logCleanupTitle")}</h2>
             <p className="muted no-margin">{t("logCleanupSubtitle")}</p>
           </div>
+          <PanelHelp
+            label={t("logCleanupHelp")}
+            title={t("logCleanupHelpTitle")}
+            intro={t("logCleanupHelpIntro")}
+            items={[
+              t("logCleanupHelpPreview"),
+              t("logCleanupHelpExecute"),
+              t("logCleanupHelpRoot")
+            ]}
+            footer={t("logCleanupHelpRisk")}
+          />
         </div>
         <div className="dynamic-form cols-2">
           <label>
@@ -2124,7 +2500,21 @@ export function AdvancedPage() {
           ))}
         </section>
         <aside className="panel">
-          <h2>{t("runCommandTitle")}</h2>
+          <div className="panel-head compact">
+            <h2>{t("runCommandTitle")}</h2>
+            <PanelHelp
+              label={t("runCommandHelp")}
+              title={t("runCommandHelpTitle")}
+              intro={t("runCommandHelpIntro")}
+              items={[
+                t("runCommandHelpModule"),
+                t("runCommandHelpKwargs"),
+                t("runCommandHelpRaw"),
+                t("runCommandHelpRisk")
+              ]}
+              footer={t("runCommandHelpFlow")}
+            />
+          </div>
           <div className="form-grid">
             <label>
               {t("moduleLabel")}
