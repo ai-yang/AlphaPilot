@@ -55,6 +55,7 @@ qlib_yaml = "alphapilot.modules.qlib_yaml.module:QlibYamlModule"
 factor_cli = "alphapilot.modules.factor.module:FactorModule"
 alphaforge_aff = "alphapilot.modules.alphaforge_aff.module:AlphaForgeAFFModule"
 alphaforge_search = "alphapilot.modules.alphaforge_search.module:AlphaForgeSearchModule"
+stock_pool = "alphapilot.modules.stock_pool.module:StockPoolModule"
 
 # Optional deps for the AlphaForge-derived mining modules: ``alphaforge``
 # covers AFF (GAN) + GP + RL.

@@ -59,7 +59,7 @@ alphapilot modules
 ```
 alpha_mining:      ["backtest", "delete_mine_log", "list_mine_logs", "mine"]
 platform:          ["backtest_ui", "delete_stock", "list_stocks", "modules", "prepare_data", ...]
-portal:            ["portal", "portal_legacy", "scheduler"]
+portal:            ["portal", "scheduler"]
 daily_trade:     ["daily_signals", "daily_state"]
 factor:            ["category_create", "category_delete", "category_list", "factor_add", "factor_list", ...]
 ...
@@ -69,7 +69,7 @@ factor:            ["category_create", "category_delete", "category_list", "fact
 
 ## 命令速查表
 
-共 **37** 条顶层命令（含 2 条已弃用）：
+顶层命令一览（含 2 条已弃用；股票池 `pool_*` 等模块命令未在此逐条列出，完整列表见 `alphapilot modules`）：
 
 | # | 命令 | 模块 | 用途 |
 |---|------|------|------|
@@ -77,7 +77,7 @@ factor:            ["category_create", "category_delete", "category_list", "fact
 | 2 | `backtest` | alpha_mining | 因子 CSV 回测（默认 combined + LGBM） |
 | 3 | `list_mine_logs` | alpha_mining | 列出挖掘日志会话 |
 | 4 | `delete_mine_log` | alpha_mining | 删除挖掘日志会话 |
-| 5 | `prepare_data` | platform | 数据下载 / 复权 / Qlib 转换 / h5 |
+| 5 | `prepare_data` | platform | 数据下载 / 复权 / Qlib 转换 |
 | 6 | `list_stocks` | platform | 列出本地已下载股票 |
 | 7 | `delete_stock` | platform | 删除单只股票数据 |
 | 8 | `trim_stock` | platform | 裁剪单股 CSV 日期范围 |
@@ -86,29 +86,29 @@ factor:            ["category_create", "category_delete", "category_list", "fact
 | 11 | `backtest_ui` | platform | **已弃用** → 用 `portal` |
 | 12 | `modules` | platform | 列出已加载模块与命令 |
 | 13 | `portal` | portal | FastAPI + React 统一 Web 门户（需先 `npm run build`） |
-| 14 | `portal_legacy` | portal | Streamlit 旧版门户（前端未构建时的回退） |
-| 15 | `scheduler` | portal | 定时任务守护进程 |
-| 16 | `data_viz` | data_viz | K 线 Streamlit 查看器 |
-| 17 | `backtest_viz` | backtest_viz | 回测结果 Streamlit 查看器 |
-| 18 | `qlib_yaml_generate` | qlib_yaml | 生成 qlib qrun YAML |
-| 19 | `qlib_yaml_validate` | qlib_yaml | 校验 qlib qrun YAML |
-| 20 | `factor_validate` | factor | 校验因子表达式 |
-| 21 | `factor_add` | factor | 校验并添加因子到 zoo |
-| 22 | `factor_list` | factor | 列出 factor zoo 中的因子 |
-| 23 | `factor_categorize` | factor | 设置因子的分类标签 |
-| 24 | `factor_category_add` | factor | 为多个因子追加同一分类 |
-| 25 | `factor_category_remove` | factor | 从多个因子移除某一分类 |
-| 26 | `category_list` | factor | 列出所有分类名 |
-| 27 | `category_create` | factor | 创建空分类 |
-| 28 | `category_rename` | factor | 重命名分类 |
-| 29 | `category_delete` | factor | 删除分类（因子保留） |
-| 30 | `daily_signals` | daily_trade | 生成单日调仓/持仓信号 |
-| 31 | `daily_state` | daily_trade | 查看滚动持仓状态 JSON |
-| 32 | `mine_aff` | alphaforge_aff | GAN 式公式化因子挖掘 |
-| 33 | `mine_gp` | alphaforge_search | 遗传编程因子挖掘 |
-| 34 | `mine_rl` | alphaforge_search | PPO RL 因子挖掘 |
-| 35 | `strategy_backtest` | strategy_backtest | 从 strategy_zoo 复测策略 |
-| 36 | `strategy_backtest_list` | strategy_backtest | 列出已保存策略资产 |
+| 14 | `scheduler` | portal | 定时任务守护进程 |
+| 15 | `data_viz` | data_viz | K 线 Streamlit 查看器 |
+| 16 | `backtest_viz` | backtest_viz | 回测结果 Streamlit 查看器 |
+| 17 | `qlib_yaml_generate` | qlib_yaml | 生成 qlib qrun YAML |
+| 18 | `qlib_yaml_validate` | qlib_yaml | 校验 qlib qrun YAML |
+| 19 | `factor_validate` | factor | 校验因子表达式 |
+| 20 | `factor_add` | factor | 校验并添加因子到 zoo |
+| 21 | `factor_list` | factor | 列出 factor zoo 中的因子 |
+| 22 | `factor_categorize` | factor | 设置因子的分类标签 |
+| 23 | `factor_category_add` | factor | 为多个因子追加同一分类 |
+| 24 | `factor_category_remove` | factor | 从多个因子移除某一分类 |
+| 25 | `category_list` | factor | 列出所有分类名 |
+| 26 | `category_create` | factor | 创建空分类 |
+| 27 | `category_rename` | factor | 重命名分类 |
+| 28 | `category_delete` | factor | 删除分类（因子保留） |
+| 29 | `daily_signals` | daily_trade | 生成单日调仓/持仓信号 |
+| 30 | `daily_state` | daily_trade | 查看滚动持仓状态 JSON |
+| 31 | `mine_aff` | alphaforge_aff | GAN 式公式化因子挖掘 |
+| 32 | `mine_gp` | alphaforge_search | 遗传编程因子挖掘 |
+| 33 | `mine_rl` | alphaforge_search | PPO RL 因子挖掘 |
+| 34 | `strategy_backtest` | strategy_backtest | 从 strategy_zoo 复测策略 |
+| 35 | `strategy_backtest_list` | strategy_backtest | 列出已保存策略资产 |
+| — | `pool_create` / `pool_list` / `pool_add` / … | stock_pool | 股票池增删改查（共 10 条，详见 `alphapilot modules`） |
 
 > **模块名说明**：`alphapilot modules` 输出中的模块名来自各类的 `name` 属性（如 `factor`），与 `pyproject.toml` entry-point 键名（如 `factor_cli`）可能不同，但 CLI 顶层命令名一致。
 
@@ -248,13 +248,11 @@ alphapilot prepare_data download --stock_csv=important_data/stock_lists/main_sto
 |--------|------|
 | `pipeline` | 下载 → 复权 → 转 Qlib（**默认**） |
 | `download` | 仅下载行情 CSV（支持 baostock / tushare 等，通过 `--source` 指定） |
-| `convert` | CSV → Qlib 二进制 + 日历 + 基准 + h5 |
-| `build_h5` | 构建 `daily_pv.h5` |
+| `convert` | CSV → Qlib 二进制 + 日历 + 基准 |
 | `refresh_factors` | 刷新复权因子 |
 | `apply_adjust` | 对本地 CSV 应用复权 |
 | `dump` | 仅 CSV → Qlib dump |
 | `calendar` | 扩展 Qlib 交易日历 |
-| `h5` | 从 Qlib 导出因子代码用的 h5 |
 
 #### 常用示例
 
@@ -278,11 +276,8 @@ TUSHARE_TOKEN=你的token alphapilot prepare_data --action=download \
   --source=tushare_cn \
   --stock_csv=important_data/stock_lists/main_stock_2026_4_27.csv
 
-# 仅转 Qlib + 生成 h5
+# 仅转 Qlib
 alphapilot prepare_data convert --adjust_mode=forward
-
-# 重建因子 h5
-alphapilot prepare_data h5 --market=main_stock_2026_4_27
 ```
 
 各 action 的额外参数（如 `--max_workers`、`--source`、`--all_market`）见 [`systems/data/prepare_data.py`](../alphapilot/systems/data/prepare_data.py) 中 `PrepareDataCLI` 方法签名；通过 `prepare_data` 的 `**options` 透传。
@@ -315,7 +310,7 @@ alphapilot delete_stock --symbol=sz.300001
 alphapilot delete_stock --symbol=sz.300001 --dry_run=True
 ```
 
-删除后如需 h5，请运行 `alphapilot prepare_data h5`。
+后续回测/挖掘会按当前股票池自动生成或复用因子 h5 cache。
 
 ### `alphapilot trim_stock`
 
@@ -330,8 +325,6 @@ alphapilot delete_stock --symbol=sz.300001 --dry_run=True
 | `--drop_dates` | None | 要删除的日期列表 |
 | `--qlib_adjust_mode` | `backward` | Qlib 同步使用的复权模式 |
 | `--resync_qlib` | True | 是否重 dump 该 symbol 的 Qlib 二进制 |
-| `--rebuild_h5` | False | 是否重建 daily_pv h5 |
-| `--market` | None | h5 重建时的 market |
 | `--dry_run` | False | 预览模式 |
 
 ```bash
@@ -350,8 +343,6 @@ alphapilot trim_stock --symbol=sz.300001 --start_date=2020-01-01 --end_date=2025
 | `--end_date` | None | 结束日期 |
 | `--qlib_adjust_mode` | `backward` | Qlib 同步复权模式 |
 | `--resync_qlib` | True | 是否重 dump Qlib |
-| `--rebuild_h5` | False | 是否重建 h5 |
-| `--market` | None | h5 重建 market |
 
 ```bash
 alphapilot refresh_stock --symbol=sz.300001
@@ -405,21 +396,6 @@ alphapilot portal --port 19901
 cd alphapilot/modules/portal/web && npm run dev
 # 浏览器打开 http://localhost:5173
 ```
-
-### `alphapilot portal_legacy`
-
-启动 **Streamlit** 旧版统一门户（新版前端未构建或需要完整挖掘日志面板时的回退）。
-
-| 参数 | 默认 | 说明 |
-|------|------|------|
-| `--port` | `19901` | 监听端口 |
-| `--host` | `0.0.0.0` | 监听地址 |
-
-```bash
-alphapilot portal_legacy --port=19901
-```
-
-源文件：[`alphapilot/modules/portal/app.py`](../alphapilot/modules/portal/app.py)
 
 ### `alphapilot scheduler`
 
@@ -861,7 +837,7 @@ pip install -e ".[alphaforge]"
 | [`systems/data/prepare_data.py`](../alphapilot/systems/data/prepare_data.py) | `PrepareDataCLI`，被 `prepare_data` 间接调用 |
 | [`systems/data/qlib_dump/dump_bin.py`](../alphapilot/systems/data/qlib_dump/dump_bin.py) | Qlib CSV → 二进制 dump 工具 |
 | [`systems/data/qlib_dump/future_calendar_collector.py`](../alphapilot/systems/data/qlib_dump/future_calendar_collector.py) | 扩展 Qlib 交易日历 |
-| [`log/ui/app.py`](../alphapilot/log/ui/app.py) | 独立挖掘日志 Streamlit（由 `portal_legacy` 嵌入） |
+| [`log/ui/session.py`](../alphapilot/log/ui/session.py) | 挖掘日志会话过滤 / 场景 trait 谓词（供 `alpha_mining` 复用） |
 | [`modules/portal/api.py`](../alphapilot/modules/portal/api.py) | 新版 portal FastAPI 后端 |
 | [`modules/portal/web/`](../alphapilot/modules/portal/web/) | 新版 portal React/TypeScript 前端 |
 | [`modules/portal/schedules.py`](../alphapilot/modules/portal/schedules.py) | scheduler 底层；`python -m` 可调试 |

@@ -54,7 +54,7 @@ def _resolve_market(
 
 
 class PrepareDataCLI:
-    """Download CSV, apply adjustment, convert to Qlib, and build factor h5."""
+    """Download CSV, apply adjustment, and convert to Qlib."""
 
     def download(
         self,
@@ -354,7 +354,7 @@ class PrepareDataCLI:
         max_workers: int = 16,
         include_benchmark: bool = True,
     ) -> None:
-        """Run dump + calendar + benchmark + h5 (skip download)."""
+        """Run dump + calendar + benchmark (skip download)."""
         end = end_date or datetime.now().strftime("%Y-%m-%d")
         pool = _resolve_market(
             stock_csv if not all_market else None, market, all_market
@@ -391,8 +391,6 @@ class PrepareDataCLI:
                 self.benchmark(qlib_dir=qlib_dir, end_date=end)
             except Exception as exc:  # noqa: BLE001
                 logger.warning(f"基准指数写入失败（行情转换已完成，可稍后单独运行 benchmark）: {exc}")
-        self.h5(qlib_dir=qlib_dir, market=pool if not all_market else "all")
-
     def pipeline(
         self,
         stock_csv: str = str(DEFAULT_STOCK_CSV),

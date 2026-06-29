@@ -58,7 +58,6 @@ EXPECTED_COMMANDS = {
     "modules",
     "notify_commands",
     "portal",
-    "portal_legacy",
     "portal_restart",
     "prepare_data",
     "qlib_yaml_generate",
@@ -90,7 +89,6 @@ class CliContext:
     raw_backward: Path
     factor_dir: Path
     qlib_dir: Path
-    h5_out: Path
     runs_dir: Path
     log_dir: Path
     env: dict[str, str]
@@ -109,7 +107,6 @@ def cli_ctx(tmp_path: Path) -> CliContext:
     raw_backward = baostock_root / "raw_data_back_adjust"
     factor_dir = baostock_root / "adjust_factors"
     qlib_dir = baostock_root / "qlib"
-    h5_out = tmp_path / "daily_pv_direct"
     runs_dir = tmp_path / "runs"
     log_dir = tmp_path / "log"
 
@@ -123,7 +120,6 @@ def cli_ctx(tmp_path: Path) -> CliContext:
         raw_backward,
         factor_dir,
         qlib_dir,
-        h5_out,
         runs_dir,
         log_dir,
     ):
@@ -170,7 +166,6 @@ def cli_ctx(tmp_path: Path) -> CliContext:
         raw_backward=raw_backward,
         factor_dir=factor_dir,
         qlib_dir=qlib_dir,
-        h5_out=h5_out,
         runs_dir=runs_dir,
         log_dir=log_dir,
         env=env,
@@ -500,7 +495,6 @@ def test_real_cli_command_smoke(cli_ctx: CliContext) -> None:
         f"--start_date={START_DATE}",
         f"--end_date={END_DATE}",
         "--resync_qlib=True",
-        "--rebuild_h5=False",
         timeout=180,
     )
     refreshed_df = pd.read_csv(ctx.raw_backward / f"{STEM}.csv")
@@ -515,30 +509,6 @@ def test_real_cli_command_smoke(cli_ctx: CliContext) -> None:
         f"--end_date={END_DATE}",
         timeout=120,
     )
-    _run_optional(
-        ctx,
-        "prepare_data",
-        "--action=build_h5",
-        f"--qlib_dir={ctx.qlib_dir}",
-        f"--output_dir={ctx.h5_out}",
-        f"--market={MARKET}",
-        f"--start_date={START_DATE}",
-        allowed_patterns=hdf_allowed,
-        timeout=120,
-    )
-    if (ctx.h5_out / "daily_pv_all.h5").exists():
-        assert (ctx.h5_out / "daily_pv_debug.h5").is_file()
-    _run_optional(
-        ctx,
-        "prepare_data",
-        "--action=h5",
-        f"--qlib_dir={ctx.qlib_dir}",
-        f"--market={MARKET}",
-        f"--start_date={START_DATE}",
-        allowed_patterns=hdf_allowed,
-        timeout=120,
-    )
-
     yaml_path = ctx.cwd / "generated_qlib.yaml"
     _run_ok(
         ctx,
@@ -771,7 +741,6 @@ def test_real_cli_command_smoke(cli_ctx: CliContext) -> None:
         health_path="/api/status",
         timeout=30,
     )
-    _run_service(ctx, "portal_legacy", f"--port={_free_port()}", "--host=127.0.0.1", timeout=12)
     _run_service(ctx, "data_viz", f"--port={_free_port()}", "--host=127.0.0.1", timeout=12)
     _run_service(ctx, "backtest_viz", f"--port={_free_port()}", "--host=127.0.0.1", timeout=12)
 

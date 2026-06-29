@@ -30,16 +30,6 @@ class DataConvertCommand:
 
 
 @dataclass
-class DataBuildH5Command:
-    """Build derived daily_pv.h5 artifacts for factor calculation."""
-
-    qlib_dir: str | Path | None = None
-    output_dir: str | Path | None = None
-    market: str | None = None
-    options: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
 class DataPipelineCommand:
     """Run full download -> adjust -> convert pipeline."""
 

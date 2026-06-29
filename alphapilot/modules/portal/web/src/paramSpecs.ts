@@ -108,7 +108,6 @@ export const dataActionSpecs: FieldSpec[] = [
       { label: "download", value: "download" },
       { label: "apply_adjust", value: "apply_adjust" },
       { label: "convert", value: "convert" },
-      { label: "build_h5", value: "build_h5" },
     ],
   },
   {
@@ -155,7 +154,6 @@ export const dataActionSpecs: FieldSpec[] = [
   },
   { key: "token", label: "Tushare Token", type: "password", visibleWhen: (v) => v.source === "tushare_cn" && ["pipeline", "download"].includes(String(v.action)) },
   { key: "include_daily_basic", label: "Include daily_basic", type: "checkbox", defaultValue: false, visibleWhen: (v) => v.source === "tushare_cn" && ["pipeline", "download"].includes(String(v.action)) },
-  { key: "market", label: "Market", type: "text", placeholder: "optional", visibleWhen: (v) => v.action === "build_h5" },
 ];
 
 // Strategy / money / cost overrides shared by mining, backtest and daily-trade forms. Fields use
@@ -257,6 +255,20 @@ export const createStrategyFromFactorsSpecs: FieldSpec[] = [
   ...strategyParamFields(),
 ];
 
+// Optional stock-pool picker for backtest forms; sent as part of the nested ``yaml_params`` patch
+// (same channel the strategy/template market override uses). Options are filled by
+// ``withInstrumentSetOptions`` at render time.
+const backtestMarketField: FieldSpec = {
+  key: "yaml_params.market",
+  label: "股票池 / market",
+  type: "select",
+  defaultValue: "",
+  // Always offers the "use default" choice even before instrument sets load (or on forms that
+  // don't apply ``withInstrumentSetOptions``), so the select is never empty.
+  options: [{ label: "（默认 / 留空）", value: "" }],
+  helpText: "可选，留空用默认股票池",
+};
+
 export const factorBacktestSpecs: FieldSpec[] = [
   { key: "factor_path", label: "Factor CSV", type: "text", required: true },
   {
@@ -271,6 +283,7 @@ export const factorBacktestSpecs: FieldSpec[] = [
     ],
   },
   { key: "scenario", label: "Scenario", type: "text", defaultValue: "factor_backtest" },
+  backtestMarketField,
   ...strategyParamFields(),
 ];
 
@@ -290,6 +303,7 @@ export const factorLibraryBacktestSpecs: FieldSpec[] = [
     ],
   },
   { key: "scenario", label: "Scenario", type: "text", defaultValue: "factor_backtest" },
+  backtestMarketField,
   ...strategyParamFields(),
 ];
 
@@ -306,6 +320,7 @@ export const strategyBacktestSpecs: FieldSpec[] = [
     ],
   },
   { key: "scenario", label: "Scenario", type: "text", defaultValue: "factor_backtest" },
+  backtestMarketField,
   ...strategyParamFields(),
 ];
 
@@ -319,6 +334,27 @@ export function withSessionOptions(specs: FieldSpec[], names: string[] = []): Fi
   return specs.map((field) => field.key === "session"
     ? { ...field, options: [{ label: "(不使用会话)", value: "" }, ...names.map((name) => ({ label: name, value: name }))] }
     : field);
+}
+
+// Turn the stock-pool fields (``market`` / ``yaml_params.market`` / ``instruments``) into
+// dropdowns backed by the Qlib instrument sets on disk (``GET /api/data/instrument-sets``).
+// ``market`` fields are optional (a blank "use default" choice is offered); ``instruments`` is
+// required, so no blank option. The field's own default is kept as an option even when the set
+// is not (yet) on disk, so the current value always stays selectable.
+export function withInstrumentSetOptions(specs: FieldSpec[], names: string[] = []): FieldSpec[] {
+  const optionalKeys = new Set(["market", "yaml_params.market"]);
+  const requiredKeys = new Set(["instruments"]);
+  return specs.map((field) => {
+    const optional = optionalKeys.has(field.key);
+    if (!optional && !requiredKeys.has(field.key)) return field;
+    const def = typeof field.defaultValue === "string" ? field.defaultValue : "";
+    const extra = def && !names.includes(def) ? [{ label: def, value: def }] : [];
+    const base = names.map((name) => ({ label: name, value: name }));
+    const options: FieldOption[] = optional
+      ? [{ label: "（默认 / 留空）", value: "" }, ...extra, ...base]
+      : [...extra, ...base];
+    return { ...field, type: "select", options };
+  });
 }
 
 export const dailyTradeSpecs: FieldSpec[] = [

@@ -13,7 +13,6 @@ from typing import Any
 _EXPORTS = {
     "BaseDataSystem": "alphapilot.systems.data.base",
     "DataActionCommand": "alphapilot.systems.data.types",
-    "DataBuildH5Command": "alphapilot.systems.data.types",
     "DataConvertCommand": "alphapilot.systems.data.types",
     "DataDownloadCommand": "alphapilot.systems.data.types",
     "DataPipelineCommand": "alphapilot.systems.data.types",
@@ -37,7 +36,6 @@ def __getattr__(name: str) -> Any:
 __all__ = [
     "BaseDataSystem",
     "DataActionCommand",
-    "DataBuildH5Command",
     "DataConvertCommand",
     "DataDownloadCommand",
     "DataPipelineCommand",

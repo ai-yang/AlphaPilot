@@ -50,9 +50,6 @@ class PicklableFakeScenario(Scenario):
 
 LOG_UI_FILES = (
     ROOT / "alphapilot/log/ui/session.py",
-    ROOT / "alphapilot/log/ui/views.py",
-    ROOT / "alphapilot/log/ui/panel.py",
-    ROOT / "alphapilot/log/ui/app.py",
     ROOT / "alphapilot/log/tag_utils.py",
 )
 
@@ -232,32 +229,6 @@ class ResolveScenarioTests(unittest.TestCase):
             self.assertTrue(resolved.is_mining_scenario)
 
 
-class ViewsIntegrationSmokeTests(unittest.TestCase):
-    """Smoke: views module source uses trait predicates, not concrete scenarios."""
-
-    def test_views_source_uses_predicates_not_concrete_classes(self) -> None:
-        src = (ROOT / "alphapilot/log/ui/views.py").read_text(encoding="utf-8")
-        self.assertIn("scenario_is_mining", src)
-        self.assertIn("scenario_has_alpha158_baseline", src)
-        self.assertIn("scenario_uses_qlib_metric_index", src)
-        self.assertNotIn("QlibFactorScenario", src)
-        self.assertNotIn("alpha_mining", src)
-
-        for fn in ("summary_window", "research_window", "feedback_window", "evolving_window"):
-            self.assertIn(f"def {fn}", src, f"missing {fn}")
-
-
-class PanelSmokeTests(unittest.TestCase):
-    """panel.py uses scenario_is_mining instead of SIMILAR_SCENARIOS."""
-
-    def test_panel_source_uses_scenario_is_mining(self) -> None:
-        src = (ROOT / "alphapilot/log/ui/panel.py").read_text(encoding="utf-8")
-        self.assertIn("scenario_is_mining", src)
-        self.assertIn("def render_log_ui_panel", src)
-        self.assertNotIn("SIMILAR_SCENARIOS", src)
-        self.assertNotIn("alpha_mining", src)
-
-
 def main() -> int:
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
@@ -267,8 +238,6 @@ def main() -> int:
         ScenarioPredicateTests,
         TraitParityTests,
         ResolveScenarioTests,
-        ViewsIntegrationSmokeTests,
-        PanelSmokeTests,
     ):
         suite.addTests(loader.loadTestsFromTestCase(cls))
 

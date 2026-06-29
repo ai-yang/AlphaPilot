@@ -41,9 +41,6 @@ class FakeDataSystem:
     def apply_adjust_symbol(self, symbol: str, **options: Any) -> dict[str, Any]:
         return {"symbol": symbol, "adjusted": True, "options": options}
 
-    def rebuild_h5(self, **options: Any) -> dict[str, Any]:
-        return {"rebuilt": True, "options": options}
-
 
 @dataclass
 class FakeValidation:
@@ -346,9 +343,9 @@ def test_notify_command_parse_auth_and_dispatch(tmp_path, monkeypatch) -> None: 
     assert action.job_kind == "mine"
     assert action.kwargs == {"step_n": 1, "notify": True}
 
-    data = parse_command("/data action=download source=baostock_cn rebuild_h5=true")
+    data = parse_command("/data action=download source=baostock_cn all_market=true")
     assert data.job_kind == "data"
-    assert data.kwargs == {"action": "download", "source": "baostock_cn", "rebuild_h5": True}
+    assert data.kwargs == {"action": "download", "source": "baostock_cn", "all_market": True}
 
     message = InboundMessage(channel="telegram", text="/jobs", user_id="42", chat_id="100")
     ok, reason = authorize(message)
@@ -451,8 +448,6 @@ def test_data_management_routes(tmp_path, monkeypatch) -> None:  # noqa: ANN001
 
     refreshed = c.post("/api/data/symbols/refresh", json={"symbol": "sh600000", "options": {"start_date": "2024-01-01"}})
     assert refreshed.json()["refreshed"] is True
-
-    assert c.post("/api/data/h5/rebuild", json={"market": "cn"}).json()["rebuilt"] is True
 
 
 def test_factor_category_and_backtest_routes(tmp_path, monkeypatch) -> None:  # noqa: ANN001

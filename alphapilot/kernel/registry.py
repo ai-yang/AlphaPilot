@@ -130,6 +130,10 @@ def _register_builtin_defaults() -> None:
         "alphaforge_search",
         "alphapilot.modules.alphaforge_search.module.AlphaForgeSearchModule",
     )
+    register_module(
+        "stock_pool",
+        "alphapilot.modules.stock_pool.module.StockPoolModule",
+    )
 
 
 _register_builtin_defaults()

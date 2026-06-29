@@ -705,6 +705,16 @@ def create_app(
         except Exception as exc:  # noqa: BLE001
             raise _api_error(exc) from exc
 
+    @app.get("/api/data/instrument-sets")
+    def data_instrument_sets() -> dict[str, Any]:
+        """List Qlib instrument-set names (stock pools) available for selection."""
+        try:
+            inst_dir = Path(_engine(app).config.data.qlib_data_dir) / "instruments"
+            sets = sorted(p.stem for p in inst_dir.glob("*.txt")) if inst_dir.exists() else []
+            return {"sets": sets}
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
     @app.get("/api/data/symbols")
     def data_symbols(source: str | None = None, adjust_mode: str | None = None) -> dict[str, Any]:
         try:
@@ -737,13 +747,6 @@ def create_app(
     def apply_adjust_symbol(payload: SymbolAction) -> dict[str, Any]:
         try:
             return _jsonable(_engine(app).get_system("data").apply_adjust_symbol(payload.symbol, **payload.options))
-        except Exception as exc:  # noqa: BLE001
-            raise _api_error(exc) from exc
-
-    @app.post("/api/data/h5/rebuild")
-    def rebuild_h5(options: dict[str, Any] | None = None) -> Any:
-        try:
-            return _jsonable(_engine(app).get_system("data").rebuild_h5(**(options or {})))
         except Exception as exc:  # noqa: BLE001
             raise _api_error(exc) from exc
 

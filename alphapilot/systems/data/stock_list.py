@@ -195,13 +195,16 @@ def write_qlib_instruments(
     start_date: str = "2016-12-31",
     end_date: str | None = None,
     data_dir: str | Path | None = None,
+    keep_missing: bool = False,
 ) -> Path:
     """
     Write ``instruments/{market}.txt`` for Qlib ``D.instruments(market=...)``.
 
     When *data_dir* is set, each stock's start/end come from the first and last
     ``date`` in ``{data_dir}/{sz300001}.csv``. Stocks without a usable CSV are
-    skipped. When *data_dir* is omitted, all stocks share *start_date* / *end_date*.
+    skipped, unless *keep_missing* is true, in which case they are written with
+    the default *start_date* / *end_date* range. When *data_dir* is omitted, all
+    stocks share *start_date* / *end_date*.
     """
     from datetime import datetime
 
@@ -220,8 +223,10 @@ def write_qlib_instruments(
             date_range = infer_date_range_from_csv(data_root / f"{baostock_to_csv_stem(code)}.csv")
             if date_range is None:
                 skipped += 1
-                continue
-            inst_start, inst_end = date_range
+                if not keep_missing:
+                    continue
+            else:
+                inst_start, inst_end = date_range
 
         lines.append(
             f"{baostock_to_qlib_instrument(code)}\t{inst_start}\t{inst_end}\n"
@@ -236,6 +241,7 @@ def write_qlib_instruments(
     out.write_text("".join(lines), encoding="utf-8")
     msg = f"已写入 Qlib 股票池 {market!r}: {out}（{len(lines)} 只）"
     if data_root is not None:
-        msg += f"，按 CSV 起止日期；跳过无数据 {skipped} 只"
+        action = "默认日期写入无数据" if keep_missing else "跳过无数据"
+        msg += f"，按 CSV 起止日期；{action} {skipped} 只"
     logger.info(msg)
     return out

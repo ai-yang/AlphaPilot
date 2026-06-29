@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
-from importlib.resources import path as rpath
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -52,23 +50,6 @@ class PortalModule(BaseModule):
         finally:
             clear_runtime()
 
-    def portal_legacy(self, port: int | None = None, host: str | None = None) -> None:
-        """Launch the legacy Streamlit portal."""
-        from alphapilot.modules.portal.settings import load_portal_settings
-
-        settings = load_portal_settings()
-        host = host or settings["host"]
-        port = int(port if port is not None else settings["port"])
-        with rpath("alphapilot.modules.portal", "app.py") as app_path:
-            cmds = [
-                "streamlit",
-                "run",
-                str(app_path),
-                f"--server.port={port}",
-                f"--server.address={host}",
-            ]
-            subprocess.run(cmds, check=False)
-
     def scheduler(self, interval: int = 30) -> None:
         """Run the daily task scheduler daemon (auto-fires saved data/mine/backtest schedules)."""
         from alphapilot.modules.portal.schedules import run_scheduler_loop
@@ -110,7 +91,6 @@ class PortalModule(BaseModule):
     def commands(self) -> dict[str, Callable[..., Any]]:
         return {
             "portal": self.portal,
-            "portal_legacy": self.portal_legacy,
             "portal_restart": self.portal_restart,
             "notify_commands": self.notify_commands,
             "scheduler": self.scheduler,

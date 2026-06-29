@@ -66,8 +66,8 @@ class PlatformModule(BaseModule):
     ) -> Any:
         """Delete one stock across raw CSVs, factor, Qlib features and instruments.
 
-        ``adjust_mode`` defaults to ``all`` (delete every adjust-mode CSV). The
-        combined ``daily_pv`` h5 must be rebuilt afterwards (see ``prepare_data h5``).
+        ``adjust_mode`` defaults to ``all`` (delete every adjust-mode CSV).
+        Factor h5 caches are regenerated automatically by later factor/backtest tasks.
         """
         return self.context.data().delete_symbol(
             symbol, adjust_mode=adjust_mode, source=source, dry_run=dry_run
@@ -83,17 +83,14 @@ class PlatformModule(BaseModule):
         drop_dates: str | None = None,
         qlib_adjust_mode: str = "backward",
         resync_qlib: bool = True,
-        rebuild_h5: bool = False,
-        market: str | None = None,
         dry_run: bool = False,
     ) -> Any:
         """Trim one stock's CSV to ``[start_date, end_date]`` / drop ``drop_dates``.
 
-        Re-dumps that symbol's Qlib binary (``resync_qlib``); the daily_pv h5 is
-        rebuilt only when ``rebuild_h5=True``.
+        Re-dumps that symbol's Qlib binary when ``resync_qlib`` is true.
         """
         data = self.context.data()
-        result = data.trim_symbol(
+        return data.trim_symbol(
             symbol,
             adjust_mode=adjust_mode,
             source=source,
@@ -104,9 +101,6 @@ class PlatformModule(BaseModule):
             qlib_adjust_mode=qlib_adjust_mode,
             dry_run=dry_run,
         )
-        if rebuild_h5 and not dry_run:
-            result["rebuild_h5"] = self._rebuild_h5(data, market)
-        return result
 
     def refresh_stock(
         self,
@@ -117,12 +111,10 @@ class PlatformModule(BaseModule):
         end_date: str | None = None,
         qlib_adjust_mode: str = "backward",
         resync_qlib: bool = True,
-        rebuild_h5: bool = False,
-        market: str | None = None,
     ) -> Any:
         """Re-download one stock (incremental) and re-sync its Qlib binary."""
         data = self.context.data()
-        result = data.refresh_symbol(
+        return data.refresh_symbol(
             symbol,
             adjust_mode=adjust_mode,
             source=source,
@@ -131,9 +123,6 @@ class PlatformModule(BaseModule):
             resync_qlib=resync_qlib,
             qlib_adjust_mode=qlib_adjust_mode,
         )
-        if rebuild_h5:
-            result["rebuild_h5"] = self._rebuild_h5(data, market)
-        return result
 
     def clean_logs(self, log_dir: str | None = None, execute: bool = False) -> dict[str, object]:
         """Clean empty/stub AlphaPilot log directories.
@@ -145,10 +134,6 @@ class PlatformModule(BaseModule):
 
         root = log_dir or str(self.context.config.log_dir)
         return clean_log_dirs(root, execute=execute).as_dict()
-
-    @staticmethod
-    def _rebuild_h5(data: Any, market: str | None) -> Any:
-        return data.rebuild_h5(market=market) if market else data.rebuild_h5()
 
     @staticmethod
     def _print_portal_deprecation(command: str, tab_hint: str) -> None:

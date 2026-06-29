@@ -1,8 +1,8 @@
 """Data management system interface.
 
 Responsible for the full market-data lifecycle: download, adjustment,
-conversion to the backtest store (Qlib binary), and derived artifacts
-(``daily_pv.h5``) consumed by factor calculation. Storage paths come from
+and conversion to the backtest store (Qlib binary). Factor h5 caches are
+prepared by task-level factor-data contexts when needed. Storage paths come from
 :class:`~alphapilot.kernel.config.DataConfig` instead of hardcoded values.
 """
 
@@ -14,7 +14,6 @@ from typing import Any
 from alphapilot.kernel.base import BaseSystem
 from alphapilot.systems.data.types import (
     DataActionCommand,
-    DataBuildH5Command,
     DataConvertCommand,
     DataDownloadCommand,
     DataPipelineCommand,
@@ -42,10 +41,6 @@ class BaseDataSystem(BaseSystem):
         """Convert raw CSV into the backtest data store (e.g. Qlib binary)."""
 
     @abstractmethod
-    def build_h5(self, **options: Any) -> Any:
-        """Build the derived ``daily_pv`` h5 used by factor calculation."""
-
-    @abstractmethod
     def get_universe(self, **options: Any) -> Any:
         """Return the configured stock universe / pool."""
 
@@ -70,10 +65,6 @@ class BaseDataSystem(BaseSystem):
     @abstractmethod
     def refresh_symbol(self, symbol: str, **options: Any) -> Any:
         """Re-download one stock from the data source, then re-sync the Qlib binary."""
-
-    @abstractmethod
-    def rebuild_h5(self, **options: Any) -> Any:
-        """Rebuild the combined ``daily_pv`` h5 (no incremental mode)."""
 
     @property
     @abstractmethod
@@ -105,17 +96,6 @@ class BaseDataSystem(BaseSystem):
         if command.qlib_dir is not None:
             options["qlib_dir"] = command.qlib_dir
         return self.convert(**options)
-
-    def run_build_h5(self, command: DataBuildH5Command) -> Any:
-        """Preferred typed wrapper for :meth:`build_h5`."""
-        options = dict(command.options)
-        if command.qlib_dir is not None:
-            options["qlib_dir"] = command.qlib_dir
-        if command.output_dir is not None:
-            options["output_dir"] = command.output_dir
-        if command.market is not None:
-            options["market"] = command.market
-        return self.build_h5(**options)
 
     def run_pipeline(self, command: DataPipelineCommand) -> Any:
         """Preferred typed wrapper for :meth:`pipeline`."""

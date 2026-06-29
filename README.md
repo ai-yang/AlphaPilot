@@ -36,7 +36,7 @@ AlphaPilot is a stock-focused quantitative research platform for factor mining a
 | Daily signals | `alphapilot daily_signals` | Advance positions by trading day and generate single-day rebalance signals |
 | Trade sessions | `alphapilot trade_session_create` | Snapshot a strategy into a self-contained, resumable daily-trade account |
 | Unified portal | `alphapilot portal` | Central UI for data, factors, backtests, tasks, and notifications |
-| Data preparation | `alphapilot prepare_data` | baostock / tushare to Qlib to factor h5 pipeline |
+| Data preparation | `alphapilot prepare_data` | baostock / tushare to Qlib data pipeline |
 | Notifications and remote control | `alphapilot notify_commands` | Task completion notifications through Telegram / Feishu / email plus remote chat commands |
 
 ### Factor Mining
@@ -100,10 +100,10 @@ Main entry: `alphapilot portal`
 
 ### Data Preparation and Management
 
-The project includes a complete A-share data preparation pipeline, from raw market data to Qlib data and factor h5 files. This README keeps the shortest path; see the detailed documentation for data sources, adjustment modes, and advanced parameters.
+The project includes a complete A-share data preparation pipeline, from raw market data to Qlib data. Factor h5 cache is generated automatically by research and backtest tasks. This README keeps the shortest path; see the detailed documentation for data sources, adjustment modes, and advanced parameters.
 
 - Supports baostock and tushare data sources
-- Supports market data downloads, price adjustment, Qlib conversion, and h5 generation
+- Supports market data downloads, price adjustment, and Qlib conversion
 - Supports stock pool management and single-stock data maintenance
 - Connects directly with factor mining, backtesting, and daily signal generation
 
@@ -193,8 +193,6 @@ alphapilot prepare_data convert \
   --stock_csv important_data/stock_lists/main_stock_2026_4_27.csv \
   --adjust_mode backward \
   --market main_stock_2026_4_27
-
-alphapilot prepare_data h5
 ```
 
 ### 5. Start the Portal
@@ -230,7 +228,7 @@ alphapilot daily_signals --session demo_session
 
 ## 🧭 Typical Workflow
 
-1. Use `prepare_data` to prepare market data, Qlib data, and `daily_pv.h5`.
+1. Use `prepare_data` to prepare market data and Qlib data; factor h5 cache is generated automatically by backtest/mining tasks.
 2. Use `mine` or AlphaForge commands to generate candidate factors.
 3. Use `backtest` for portfolio backtests or quick IC screening, then review results in the portal.
 4. Save effective strategies as strategy assets, then continue validation with `strategy_backtest`, `daily_signals`, or a resumable `trade_session`.
@@ -274,9 +272,10 @@ Issues and PRs are welcome.
 
 | Date | Type | Feature / Module | Goal | Key Changes | Affected Entry | Verification | Status / Follow-up |
 |------|------|------------------|------|-------------|----------------|--------------|--------------------|
+| 2026-06-29 | New | Stock pool management | Let users batch-organize stocks into named pools reusable across backtest and factor mining | Added a `stock_pool` CLI module with full CRUD (`pool_create` / `pool_list` / `pool_add` / `pool_remove` / `pool_rename` / `pool_delete`, etc.); pools stored as JSON source-of-truth and synced to Qlib instruments; Portal Market Data page gained a stock-pool management section, and mining / backtest / library / scheduler forms now turn the market / instruments field into a stock-pool dropdown | `alphapilot pool_*` CLI; Portal Market Data page; Mining / Backtest / Library / Scheduler forms; `/api/data/instrument-sets`; `/api/modules/run` | `pytest tests/test_stock_pool.py tests/test_kernel_registry.py`; `npm run build`; `npm run test` | Completed |
 | 2026-06-26 | New | Portal parameter help | Make complex task/config panels easier to use consistently | Added reusable question-mark help panel, expanded help copy across mining, backtest, library, market data, daily trade, scheduler, notifications, and advanced settings; added Daily Trade left-panel title | Portal task/config panels | `npm run build`; `npm run typecheck` blocked by existing `tsconfig.json` `ignoreDeprecations: "6.0"` incompatibility with TypeScript 5.9 | Completed; fix tsconfig before relying on typecheck |
 | 2026-06-24 | Optimization | Portal market data / K-line chart | Improve the local K-line viewing experience | Main chart plus sub-chart layout; sub-chart supports amount, volume, turnover, and price-change switching; added range buttons, unified hover behavior, and light/dark theme adaptation | Portal Market Data page | `npm run typecheck`; `npm run build` | Completed |
-| 2026-06-24 | New | Factor library / duplicate check | Help clean duplicate or near-duplicate factors and reduce factor library maintenance cost | Added duplicate factor detection, keep/delete suggestions, bulk-delete APIs, and Portal entry | Portal Factor / Strategy Library page; `/api/factors/duplicates`; `/api/factors/bulk-delete` | Frontend `npm run typecheck`; `npm run build` covered UI compilation | Completed; backend API unit tests still needed |
+| 2026-06-24 | New | Factor library / duplicate check | Help clean duplicate or near-duplicate factors and reduce factor library maintenance cost | Added duplicate factor detection, keep/delete suggestions, bulk-delete APIs, and Portal entry | Portal Factor / Strategy Library page; `/api/factors/duplicates`; `/api/factors/bulk-delete` | Frontend `npm run typecheck`; `npm run build` covered UI compilation | Completed |
 
 ## 🙏 Acknowledgements
 

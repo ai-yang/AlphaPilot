@@ -6,14 +6,14 @@ A single A-share symbol spans several on-disk layers:
 * adjust-factor CSV (``adjust_factors/{stem}.csv``)
 * Qlib binary features (``features/{stem}/*.day.bin``)
 * universe files (``instruments/all.txt`` *and* the named ``instruments/{market}.txt``)
-* derived ``daily_pv_*.h5`` (combined, no incremental mode)
+* factor h5 cache generated later by factor/backtest tasks
 
 CSV is the source of truth. ``delete`` is naturally per-symbol safe (drop the
 ``features/{stem}`` dir + strip the ``instruments`` lines). For ``trim`` /
 ``refresh`` (CSV content changes) the Qlib binary is re-dumped for *just* that
-symbol via the project's own ``dump_bin`` tooling. The combined h5 has no
-incremental mode, so callers receive ``h5_stale=True`` to drive a deferred
-rebuild via :func:`~alphapilot.systems.data.generate_h5.generate_daily_pv_h5`.
+symbol via the project's own ``dump_bin`` tooling. Callers receive
+``h5_stale=True`` so later factor/backtest tasks can regenerate cache from the
+updated Qlib data when needed.
 """
 
 from __future__ import annotations
@@ -262,8 +262,8 @@ def delete_symbol(
 ) -> dict[str, Any]:
     """Delete one stock across raw CSVs, factor CSV, Qlib features and universe.
 
-    Returns a report; ``h5_stale=True`` always (the combined daily_pv h5 still
-    references the removed stock until rebuilt).
+    Returns a report; ``h5_stale=True`` always because existing factor h5 caches
+    may still reference the removed stock until a later task regenerates them.
     """
     code, stem, qlib_id = _resolve_codes(symbol)
     qlib_dir = Path(qlib_dir).expanduser()

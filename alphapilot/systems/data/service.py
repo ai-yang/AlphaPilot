@@ -1,8 +1,8 @@
 """Default Qlib/baostock-backed data management system.
 
 Owns the unified data lifecycle entrypoints. Download goes through the
-registered data-source adapter (default ``baostock_cn``); conversion /
-h5 / pipeline orchestration is implemented under ``systems.data``.
+registered data-source adapter (default ``baostock_cn``); conversion and
+pipeline orchestration is implemented under ``systems.data``.
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ from alphapilot.systems.data.base import BaseDataSystem
 from alphapilot.systems.data.storage import DataStorage
 from alphapilot.systems.data.types import (
     DataActionCommand,
-    DataBuildH5Command,
     DataConvertCommand,
     DataDownloadCommand,
     DataPipelineCommand,
@@ -25,7 +24,7 @@ if TYPE_CHECKING:
 
 
 class QlibDataSystem(BaseDataSystem):
-    """A-share data system: baostock download + Qlib conversion + h5."""
+    """A-share data system: baostock download + Qlib conversion."""
 
     def setup(self, context: "Context") -> None:
         self.context = context
@@ -94,22 +93,6 @@ class QlibDataSystem(BaseDataSystem):
 
         return data_pipeline.convert_data(**options)
 
-    def build_h5(self, **options: Any) -> Any:
-        if "command" in options and isinstance(options["command"], DataBuildH5Command):
-            command = options.pop("command")
-            command_options = dict(command.options)
-            if command.qlib_dir is not None:
-                command_options["qlib_dir"] = command.qlib_dir
-            if command.output_dir is not None:
-                command_options["output_dir"] = command.output_dir
-            if command.market is not None:
-                command_options["market"] = command.market
-            command_options.update(options)
-            options = command_options
-
-        options.setdefault("qlib_dir", str(self._storage.qlib_data_dir))
-        return data_pipeline.build_h5_data(**options)
-
     def pipeline(self, **options: Any) -> Any:
         """Run the full download -> adjust -> convert pipeline."""
         if "command" in options and isinstance(options["command"], DataPipelineCommand):
@@ -155,7 +138,6 @@ class QlibDataSystem(BaseDataSystem):
             action=action,
             download_handler=self.download,
             convert_handler=self.convert,
-            build_h5_handler=self.build_h5,
             pipeline_handler=self.pipeline,
             **options,
         )
@@ -315,17 +297,13 @@ class QlibDataSystem(BaseDataSystem):
         self._warn_h5_stale(report)
         return report
 
-    def rebuild_h5(self, **options: Any) -> Any:
-        return self.build_h5(**options)
-
     @staticmethod
     def _warn_h5_stale(report: dict[str, Any]) -> None:
         if report.get("h5_stale"):
             from alphapilot.log import logger
 
             logger.warning(
-                "daily_pv h5 已过期：请运行 `alphapilot prepare_data h5`"
-                "（或 Portal「重建 daily_pv h5」按钮 / 传 --rebuild_h5 True）以同步因子数据。"
+                "因子 h5 cache 可能已过期：后续回测/挖掘会按当前股票池自动生成或复用 h5 cache。"
             )
 
     @property

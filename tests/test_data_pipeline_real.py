@@ -1,8 +1,8 @@
 """Tier 2 (real_data): full market-data pipeline for ~10 symbols.
 
 Downloads a small basket of real A-share stocks (baostock, no token needed),
-adjusts, converts to Qlib binary, and builds the daily_pv h5 — then exercises
-the data/market portal API against the freshly built Qlib directory.
+adjusts, converts to Qlib binary, and exercises the data/market portal API
+against the freshly built Qlib directory.
 
 Marked ``real_data``: needs network. Kept to 10 symbols over a short window so
 it stays a smoke test, not a bulk download. Run with::
@@ -66,7 +66,6 @@ class Pipeline:
     raw_backward: Path
     factor_dir: Path
     qlib_dir: Path
-    h5_out: Path
     stock_csv: Path
     env: dict[str, str]
     downloaded: list[str]
@@ -100,8 +99,7 @@ def pipeline(tmp_path_factory: pytest.TempPathFactory) -> Pipeline:
     raw_backward = baostock_root / "raw_data_back_adjust"
     factor_dir = baostock_root / "adjust_factors"
     qlib_dir = baostock_root / "qlib"
-    h5_out = root / "h5"
-    for p in (home, stock_lists, raw_none, raw_backward, factor_dir, qlib_dir, h5_out):
+    for p in (home, stock_lists, raw_none, raw_backward, factor_dir, qlib_dir):
         p.mkdir(parents=True, exist_ok=True)
 
     stock_csv = stock_lists / f"{MARKET}.csv"
@@ -157,18 +155,9 @@ def pipeline(tmp_path_factory: pytest.TempPathFactory) -> Pipeline:
         timeout=300,
     )
 
-    # 4) build daily_pv h5
-    _cli_ok(
-        env, root,
-        "prepare_data", "--action=build_h5",
-        f"--qlib_dir={qlib_dir}", f"--output_dir={h5_out}", f"--market={MARKET}",
-        f"--start_date={START_DATE}",
-        timeout=240,
-    )
-
     return Pipeline(
         root=root, raw_none=raw_none, raw_backward=raw_backward, factor_dir=factor_dir,
-        qlib_dir=qlib_dir, h5_out=h5_out, stock_csv=stock_csv, env=env, downloaded=downloaded,
+        qlib_dir=qlib_dir, stock_csv=stock_csv, env=env, downloaded=downloaded,
     )
 
 
@@ -196,10 +185,19 @@ def test_convert_built_qlib_layout(pipeline: Pipeline) -> None:
     assert len(built) >= 8, f"qlib features only built for {built}"
 
 
-def test_build_h5_outputs(pipeline: Pipeline) -> None:
-    # build_h5 emits the "all" matrix plus a debug slice.
-    assert (pipeline.h5_out / "daily_pv_all.h5").is_file()
-    store = pd.read_hdf(pipeline.h5_out / "daily_pv_all.h5")
+def test_factor_h5_cache_generated_on_demand(pipeline: Pipeline, monkeypatch: pytest.MonkeyPatch) -> None:
+    from alphapilot.systems.data.factor_h5 import prepare_factor_data_context
+
+    monkeypatch.chdir(pipeline.root)
+    ctx = prepare_factor_data_context(
+        market=MARKET,
+        qlib_dir=pipeline.qlib_dir,
+        start_date=START_DATE,
+        use_local=True,
+    )
+    assert (ctx.data_dir / "daily_pv.h5").is_file()
+    assert (ctx.debug_dir / "daily_pv.h5").is_file()
+    store = pd.read_hdf(ctx.data_dir / "daily_pv.h5")
     assert not store.empty
 
 

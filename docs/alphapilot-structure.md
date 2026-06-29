@@ -34,7 +34,6 @@
 | `alphapilot strategy_backtest` | 从 `strategy_zoo` 已保存策略资产复测 |
 | `alphapilot strategy_backtest_list` | 列出已保存策略资产 |
 | `alphapilot portal` | 统一 Web 门户（FastAPI + React；`npm run build` 后 `alphapilot portal`） |
-| `alphapilot portal_legacy` | Streamlit 旧版门户（前端未构建或需完整挖掘日志面板时回退） |
 | `alphapilot ui` | **已弃用**，请使用 `alphapilot portal` →「因子挖掘」 |
 | `alphapilot backtest_ui` | **已弃用**，请使用 `alphapilot portal` →「回测」 |
 
@@ -47,13 +46,13 @@
 | 层 | 路径 | 职责 |
 |----|------|------|
 | **内核 kernel** | `alphapilot/kernel/` | `MainEngine` 持有配置与系统/模块；`Context` 是模块访问系统的唯一入口；`AppConfig` 集中路径配置；`registry` 负责内置注册 + 入口点发现 |
-| **数据管理系统** | `alphapilot/systems/data/` | 股票数据下载、复权、Qlib 转换、h5 生成与存储（`prepare_data` 实现；`app/data` 已移除） |
+| **数据管理系统** | `alphapilot/systems/data/` | 股票数据下载、复权、Qlib 转换；因子 h5 cache 由回测/挖掘任务按需生成（`prepare_data` 实现；`app/data` 已移除） |
 | **因子管理系统** | `alphapilot/systems/factor/` | 导入因子、因子库（`FactorDatabase` 包装 `FactorRegulator`）、结构化表达式校验（`validate_expression` → `FactorValidationResult`）；CLI：`modules/factor/`（`factor_validate` / `factor_add`） |
 | **策略管理系统** | `alphapilot/systems/strategy/` | 策略资产落盘（`important_data/strategy_zoo/`）、`backtest_from_asset` 复测编排（经 `strategy/backtest.py` 委托 backtest 系统，不依赖 `alpha_mining` 模块） |
 | **策略复测模块** | `alphapilot/modules/strategy_backtest/` | CLI：`strategy_backtest` / `strategy_backtest_list` |
 | **交易回测系统** | `alphapilot/systems/backtest/` | 因子/模型回测（统一由 system 内部 qlib workspace 执行）、结果存取（`BacktestResultStore`） |
 | **模块 modules** | `alphapilot/modules/` | 可插拔特性；内置 `alpha_mining`、`portal`、`platform`、`data_viz` 等 |
-| **Web 门户** | `alphapilot/modules/portal/` | FastAPI（`api.py`）+ React/TypeScript 前端（`web/`）；Streamlit 旧版见 `app.py` / `portal_legacy` |
+| **Web 门户** | `alphapilot/modules/portal/` | FastAPI（`api.py`）+ React/TypeScript 前端（`web/`） |
 
 四大系统通过 `adapters/` 保持外部边界可替换（当前重点为 LLM/数据源）。回测默认由 backtest system 内聚的 qlib 执行链路统一承载；系统服务内部对 qlib/baostock/pandas 采用惰性导入，因此内核装配与命令发现保持轻量。
 
@@ -117,7 +116,7 @@ flowchart TB
 | `prepare_cn.py` | baostock 下载、复权因子刷新 |
 | `adjust_prices.py` | 除权 CSV 本地合成前/后复权 |
 | `qlib_convert.py` | CSV → Qlib 二进制 |
-| `generate_h5.py` | 导出 `daily_pv.h5` |
+| `generate_h5.py` | factor h5 cache 的底层导出器 |
 | `qlib_dump/` | `dump_bin`、未来交易日历 |
 | `types.py` | typed DTO（`DataDownloadCommand` 等） |
 
@@ -195,7 +194,7 @@ flowchart TB
 | `experiment/factor_experiment.py` | `QlibAlphaPilotScenario`：给 LLM 的场景说明 |
 | `experiment/factor_template/` | 内置 Qlib 模板：`conf.yaml`、`conf_cn_combined_kdd_ver.yaml`、`read_exp_res.py` |
 | `experiment/template_paths.py` | 解析 `QLIB_FACTOR_QLIB_TEMPLATE_DIR`；默认或自定义目录拷入 workspace |
-| `experiment/factor_data_template/` | `generate.py` 导出 `daily_pv.h5` 供因子计算 |
+| `experiment/factor_data_template/` | 旧版因子数据模板；当前主要由 factor h5 cache 供因子计算 |
 | `experiment/workspace.py` | 每次实验的工作目录 |
 | `factor_experiment_loader/` | 从 JSON / PDF 加载已有因子定义 |
 | `regulator/` | 因子合规/质量检查 |
@@ -250,9 +249,8 @@ flowchart TB
 |------|------|
 | `logger.py` / `storage.py` | 结构化记录每轮假说、代码、回测结果 |
 | `tag_utils.py` | 日志 tag 规范化；`resolve_scenario_from_log` 从 pickle 恢复 `core.scenario.Scenario` |
-| `ui/` | 挖掘日志 Streamlit panel（由 `portal_legacy` 嵌入；新版 portal 经 `/api/mining/*` 读 log；`alphapilot ui` 已弃用） |
-| `ui/session.py` | 通过 `Scenario` 的 UI trait（`is_mining_scenario` 等）分支渲染，**不 import** `alpha_mining` 具体场景类 |
-| `ui/qlib_report_figure.py` | Qlib 报告图表 |
+| `ui/` | 挖掘日志会话过滤 + 场景 trait 谓词（Streamlit panel 已随旧门户删除；新版 portal 经 `/api/mining/*` 读 log） |
+| `ui/session.py` | `filter_log_folders` 及 `Scenario` UI trait 谓词（`is_mining_scenario` 等），供 `alpha_mining` 复用，**不 import** `alpha_mining` 具体场景类 |
 
 ### `utils/` — 工具
 
@@ -483,10 +481,10 @@ HypothesisExperiment2Feedback.generate_feedback() → HypothesisFeedback
 
 1. **LLM JSON 容错**（`oai/llm_utils.py`）：适配非标准 JSON 输出  
 2. **回测可视化**（`modules/backtest_viz/` + `systems/backtest/artifacts.py`）：`alphapilot backtest_viz` / portal  
-3. **数据准备**（`systems/data/`）：baostock 下载 A 股数据、Qlib 转换与 h5 导出  
+3. **数据准备**（`systems/data/`）：baostock 下载 A 股数据、Qlib 转换；factor h5 cache 由任务按需生成  
 4. **回测配置**：内置 `factor_template/` + 可选 `important_data/factor_qlib_templates/`；`QLIB_FACTOR_QLIB_TEMPLATE_DIR` / `QLIB_FACTOR_QLIB_CONFIG_NAME`  
 5. **策略资产复测**（`modules/strategy_backtest/` + `systems/strategy/backtest.py` → `context.backtest()`）：`strategy_backtest` / `strategy_backtest_list`  
-6. **挖掘日志 UI 解耦**（`log/ui/`）：通过 `core.scenario.Scenario` UI trait 渲染，不依赖 `alpha_mining` 具体场景类  
+6. **挖掘日志 UI 解耦**（`log/ui/session.py`）：场景 trait 谓词基于 `core.scenario.Scenario`，不依赖 `alpha_mining` 具体场景类（Streamlit 渲染面板已随旧门户移除，新版 portal 经 `/api/mining/*` 展示）  
 7. **因子执行环境**：`FACTOR_CoSTEER_PYTHON_BIN` 默认当前解释器；失败 execute 不写入 pickle 缓存  
 8. **Adapter 层收敛**（`adapters/`）：移除未使用的 backtest engine adapter；仅保留 LLM + 数据源可插拔，回测固定在 `systems/backtest/`
 

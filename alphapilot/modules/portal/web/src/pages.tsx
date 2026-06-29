@@ -17,6 +17,7 @@ import {
   sessionRunSpecs,
   strategyBacktestSpecs,
   withStrategyOptions,
+  withInstrumentSetOptions,
 } from "./paramSpecs";
 import { computeSessionPnl } from "./sessionPnl";
 import { useAction, useToast } from "./toast";
@@ -249,10 +250,14 @@ export function HomePage() {
 
 export function MiningPage() {
   const { t } = useI18n();
+  const instrumentSets = useAsync(() => api.get<{ sets: string[] }>("/api/data/instrument-sets"), []);
+  const poolNames = instrumentSets.data?.sets || [];
+  const llmSpecs = useMemo(() => withInstrumentSetOptions(llmMiningSpecs, poolNames), [instrumentSets.data]);
+  const afSpecs = useMemo(() => withInstrumentSetOptions(alphaForgeSpecs, poolNames), [instrumentSets.data]);
   const llmAdvanced = useJsonInput("{}");
-  const llmForm = useParamForm(llmMiningSpecs, llmAdvanced.raw);
+  const llmForm = useParamForm(llmSpecs, llmAdvanced.raw);
   const afAdvanced = useJsonInput("{}");
-  const afForm = useParamForm(alphaForgeSpecs, afAdvanced.raw);
+  const afForm = useParamForm(afSpecs, afAdvanced.raw);
   const sessions = useAsync(() => api.get<Array<Record<string, unknown>>>("/api/mining/sessions"), []);
   const { busy, run } = useAction();
   const [sessionDetail, setSessionDetail] = useState<Record<string, unknown> | null>(null);
@@ -314,7 +319,7 @@ export function MiningPage() {
               footer={t("llmMiningHelpFlow")}
             />
           </div>
-          <DynamicForm specs={llmMiningSpecs} values={llmForm.values} onChange={llmForm.setValue} errors={llmForm.errors} />
+          <DynamicForm specs={llmSpecs} values={llmForm.values} onChange={llmForm.setValue} errors={llmForm.errors} />
           <details>
             <summary>{t("advancedJson")}</summary>
             <JsonTextArea value={llmAdvanced.raw} onChange={llmAdvanced.setRaw} rows={5} />
@@ -338,7 +343,7 @@ export function MiningPage() {
               footer={t("formulaMiningHelpFlow")}
             />
           </div>
-          <DynamicForm specs={alphaForgeSpecs} values={afForm.values} onChange={afForm.setValue} errors={afForm.errors} />
+          <DynamicForm specs={afSpecs} values={afForm.values} onChange={afForm.setValue} errors={afForm.errors} />
           <details>
             <summary>{t("advancedJson")}</summary>
             <JsonTextArea value={afAdvanced.raw} onChange={afAdvanced.setRaw} rows={5} />
@@ -401,10 +406,16 @@ export function MiningPage() {
 
 export function BacktestPage() {
   const { t } = useI18n();
+  const instrumentSets = useAsync(() => api.get<{ sets: string[] }>("/api/data/instrument-sets"), []);
+  const poolNames = instrumentSets.data?.sets || [];
   const factorAdvanced = useJsonInput("{}");
-  const factorForm = useParamForm(factorBacktestSpecs, factorAdvanced.raw);
+  const factorSpecs = useMemo(() => withInstrumentSetOptions(factorBacktestSpecs, poolNames), [instrumentSets.data]);
+  const factorForm = useParamForm(factorSpecs, factorAdvanced.raw);
   const strategies = useAsync(() => api.get<{ names: string[] }>("/api/strategies"), []);
-  const strategySpecs = useMemo(() => withStrategyOptions(strategyBacktestSpecs, strategies.data?.names || []), [strategies.data]);
+  const strategySpecs = useMemo(
+    () => withInstrumentSetOptions(withStrategyOptions(strategyBacktestSpecs, strategies.data?.names || []), poolNames),
+    [strategies.data, instrumentSets.data],
+  );
   const strategyAdvanced = useJsonInput("{}");
   const strategyForm = useParamForm(strategySpecs, strategyAdvanced.raw);
   const list = useAsync(() => api.get<Array<Record<string, unknown>>>("/api/backtests"), []);
@@ -460,7 +471,7 @@ export function BacktestPage() {
               footer={t("factorBacktestHelpFlow")}
             />
           </div>
-          <DynamicForm specs={factorBacktestSpecs} values={factorForm.values} onChange={factorForm.setValue} errors={factorForm.errors} />
+          <DynamicForm specs={factorSpecs} values={factorForm.values} onChange={factorForm.setValue} errors={factorForm.errors} />
           <details>
             <summary>{t("advancedJson")}</summary>
             <JsonTextArea value={factorAdvanced.raw} onChange={factorAdvanced.setRaw} rows={5} />
@@ -553,6 +564,10 @@ export function LibraryPage() {
   const { t } = useI18n();
   const factors = useAsync(() => api.get<{ factors: Factor[]; categories: string[]; supports_categories: boolean }>("/api/factors"), []);
   const strategies = useAsync(() => api.get<{ strategies: Array<Record<string, unknown>>; names: string[] }>("/api/strategies"), []);
+  const instrumentSets = useAsync(() => api.get<{ sets: string[] }>("/api/data/instrument-sets"), []);
+  const poolNames = instrumentSets.data?.sets || [];
+  const libraryBtSpecs = useMemo(() => withInstrumentSetOptions(factorLibraryBacktestSpecs, poolNames), [instrumentSets.data]);
+  const createStrategySpecs = useMemo(() => withInstrumentSetOptions(createStrategyFromFactorsSpecs, poolNames), [instrumentSets.data]);
   const [tab, setTab] = useState<"factors" | "strategies">("factors");
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
@@ -570,7 +585,7 @@ export function LibraryPage() {
   const [importKind, setImportKind] = useState("csv");
   const [importSource, setImportSource] = useState("");
   const factorBacktestAdvanced = useJsonInput("{}");
-  const factorBacktestForm = useParamForm(factorLibraryBacktestSpecs, factorBacktestAdvanced.raw);
+  const factorBacktestForm = useParamForm(libraryBtSpecs, factorBacktestAdvanced.raw);
   const [strategyName, setStrategyName] = useState("");
   const [strategyExportName, setStrategyExportName] = useState("");
   const [strategyExportPath, setStrategyExportPath] = useState("");
@@ -578,7 +593,7 @@ export function LibraryPage() {
   const { busy, run } = useAction();
   const strategyParams = useJsonInput("{}");
   const [showCreateStrategy, setShowCreateStrategy] = useState(false);
-  const createStrategyForm = useParamForm(createStrategyFromFactorsSpecs);
+  const createStrategyForm = useParamForm(createStrategySpecs);
   const [dupResult, setDupResult] = useState<DuplicatesResult | null>(null);
   const [dupDelete, setDupDelete] = useState<Record<string, boolean>>({});
   const filtered = useMemo(() => {
@@ -789,7 +804,7 @@ export function LibraryPage() {
               <section className="panel inset">
                 <h3>{t("createStrategy")}</h3>
                 <p className="muted">{t("selected")} {selectedFactors.length} {t("factorsUnit")}</p>
-                <DynamicForm specs={createStrategyFromFactorsSpecs} values={createStrategyForm.values} onChange={createStrategyForm.setValue} errors={createStrategyForm.errors} />
+                <DynamicForm specs={createStrategySpecs} values={createStrategyForm.values} onChange={createStrategyForm.setValue} errors={createStrategyForm.errors} />
                 <button className="button primary" disabled={busy || !selectedFactors.length} onClick={() => createStrategyFromFactors()}>{busy ? <Spinner /> : null}{t("save")}</button>
               </section>
             ) : null}
@@ -846,7 +861,7 @@ export function LibraryPage() {
             ) : null}
             <details>
               <summary>{t("backtestParams")}</summary>
-              <DynamicForm specs={factorLibraryBacktestSpecs} values={factorBacktestForm.values} onChange={factorBacktestForm.setValue} errors={factorBacktestForm.errors} />
+              <DynamicForm specs={libraryBtSpecs} values={factorBacktestForm.values} onChange={factorBacktestForm.setValue} errors={factorBacktestForm.errors} />
               <details>
                 <summary>{t("advancedJson")}</summary>
                 <JsonTextArea value={factorBacktestAdvanced.raw} onChange={factorBacktestAdvanced.setRaw} rows={5} />
@@ -974,6 +989,183 @@ export function LibraryPage() {
   );
 }
 
+type PoolSummary = { name: string; description: string; count: number; updated_at: string };
+type PoolDetail = { name: string; description: string; symbols: string[]; created_at?: string; updated_at?: string };
+type PoolReport = { name: string; valid_count?: number; invalid?: string[]; missing_data?: string[]; instruments_path?: string | null };
+
+function callPool<T>(command: string, kwargs: Record<string, unknown>): Promise<T> {
+  return api.post<T>("/api/modules/run", { module: "stock_pool", command, kwargs });
+}
+
+// Stock pool (股票池) CRUD: batch-create pools, edit members, rename, delete. Reuses the generic
+// /api/modules/run dispatch to call the stock_pool module's pool_* commands. Rendered inside the
+// Market Data page.
+function StockPoolManager() {
+  const { t } = useI18n();
+  const { busy, run } = useAction();
+  const toast = useToast();
+  const pools = useAsync(() => callPool<PoolSummary[]>("pool_list", {}), []);
+  const [selected, setSelected] = useState("");
+  const [detail, setDetail] = useState<PoolDetail | null>(null);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [symbols, setSymbols] = useState("");
+  const [csv, setCsv] = useState("");
+  const [addText, setAddText] = useState("");
+  const [renameTo, setRenameTo] = useState("");
+
+  async function loadDetail(poolName: string) {
+    setSelected(poolName);
+    if (!poolName) {
+      setDetail(null);
+      return;
+    }
+    try {
+      setDetail(await callPool<PoolDetail>("pool_show", { name: poolName }));
+    } catch {
+      setDetail(null);
+    }
+  }
+
+  function reportExtra(r: PoolReport): string {
+    const parts: string[] = [];
+    if (r.invalid?.length) parts.push(`${t("spInvalid")}: ${r.invalid.join(", ")}`);
+    if (r.missing_data?.length) parts.push(`${t("spMissing")}: ${r.missing_data.join(", ")}`);
+    return parts.length ? ` · ${parts.join(" | ")}` : "";
+  }
+
+  function createPool() {
+    void run(async () => {
+      const report = await callPool<PoolReport>("pool_create", {
+        name,
+        description,
+        symbols: symbols || null,
+        stock_csv: csv.trim() || null,
+      });
+      setName("");
+      setDescription("");
+      setSymbols("");
+      setCsv("");
+      await pools.refresh();
+      await loadDetail(report.name);
+      toast.success(`${t("spCreated")} ${report.name}${reportExtra(report)}`);
+    });
+  }
+
+  function addSymbols() {
+    if (!selected) return;
+    void run(async () => {
+      const report = await callPool<PoolReport>("pool_add", { name: selected, symbols: addText || null });
+      setAddText("");
+      await pools.refresh();
+      await loadDetail(selected);
+      toast.success(`${t("spUpdated")}${reportExtra(report)}`);
+    });
+  }
+
+  function removeSymbol(sym: string) {
+    if (!selected) return;
+    void run(async () => {
+      await callPool("pool_remove", { name: selected, symbols: sym });
+      await pools.refresh();
+      await loadDetail(selected);
+    });
+  }
+
+  function renamePool() {
+    const next = renameTo.trim();
+    if (!selected || !next) return;
+    void run(async () => {
+      await callPool("pool_rename", { name: selected, new_name: next });
+      setRenameTo("");
+      await pools.refresh();
+      await loadDetail(next);
+    }, t("spUpdated"));
+  }
+
+  function deletePool(poolName: string) {
+    if (!window.confirm(`${t("delete")} ${poolName}?`)) return;
+    void run(async () => {
+      await callPool("pool_delete", { name: poolName });
+      if (selected === poolName) {
+        setSelected("");
+        setDetail(null);
+      }
+      await pools.refresh();
+    }, t("spDeleted"));
+  }
+
+  return (
+    <section className="panel">
+      <div className="panel-head">
+        <h2>{t("spManageTitle")}</h2>
+        <RefreshButton className="button small" onClick={() => pools.refresh()} />
+      </div>
+      <p className="muted">{t("spManageSubtitle")}</p>
+      {pools.error ? <Alert tone="error">{pools.error}</Alert> : null}
+      <div className="grid two">
+        <div>
+          <h3>{t("spCreate")}</h3>
+          <div className="dynamic-form cols-1">
+            <label>{t("spName")}<input value={name} onChange={(e) => setName(e.target.value)} placeholder="my_pool" /></label>
+            <label>{t("spDescription")}<input value={description} onChange={(e) => setDescription(e.target.value)} /></label>
+            <label>{t("spSymbols")}<textarea rows={4} value={symbols} onChange={(e) => setSymbols(e.target.value)} placeholder="600519.SH, 000001.SZ" /><small>{t("spSymbolsHelp")}</small></label>
+            <label>{t("spImportCsv")}<input value={csv} onChange={(e) => setCsv(e.target.value)} placeholder="important_data/stock_lists/xxx.csv" /></label>
+          </div>
+          <button className="button primary" disabled={busy} onClick={createPool}>{busy ? <Spinner /> : null}{t("spCreateBtn")}</button>
+        </div>
+        <div>
+          <h3>{t("spPools")}</h3>
+          <DataTable
+            rows={(pools.data || []) as unknown as Record<string, unknown>[]}
+            empty={t("spNoPools")}
+            loading={pools.loading}
+            columns={[
+              { key: "name", label: t("spName") },
+              { key: "count", label: t("spMembers") },
+              { key: "description", label: t("spDescription") },
+              {
+                key: "name",
+                label: "",
+                render: (row) => (
+                  <div className="row-actions">
+                    <button className="button small" onClick={() => void loadDetail(String(row.name))}>{t("preview")}</button>
+                    <button className="button small danger" disabled={busy} onClick={() => deletePool(String(row.name))}>{t("delete")}</button>
+                  </div>
+                )
+              }
+            ]}
+          />
+        </div>
+      </div>
+      {detail ? (
+        <div className="split" style={{ marginTop: 12 }}>
+          <h3>{detail.name} · {t("spMembers")} ({detail.symbols.length})</h3>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "8px 0" }}>
+            {detail.symbols.map((sym) => (
+              <span key={sym} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", border: "1px solid var(--border, #ccc)", borderRadius: 12, fontSize: 12 }}>
+                {sym}
+                <button className="button small danger" style={{ padding: "0 6px", lineHeight: 1.4 }} disabled={busy} title={t("delete")} onClick={() => removeSymbol(sym)}>×</button>
+              </span>
+            ))}
+            {detail.symbols.length === 0 ? <span className="muted">{t("empty")}</span> : null}
+          </div>
+          <div className="grid two">
+            <div>
+              <label>{t("spAdd")}<textarea rows={2} value={addText} onChange={(e) => setAddText(e.target.value)} placeholder="600519.SH, 000001.SZ" /></label>
+              <button className="button small" disabled={busy} onClick={addSymbols}>{t("spAddBtn")}</button>
+            </div>
+            <div>
+              <label>{t("spRename")}<input value={renameTo} onChange={(e) => setRenameTo(e.target.value)} placeholder="new_name" /></label>
+              <button className="button small" disabled={busy} onClick={renamePool}>{t("spRenameBtn")}</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export function MarketPage() {
   const { t } = useI18n();
   const sources = useAsync(() => api.get<Array<Record<string, unknown>>>("/api/market/sources"), []);
@@ -1000,7 +1192,6 @@ export function MarketPage() {
   const [trimEnd, setTrimEnd] = useState("");
   const [dropDates, setDropDates] = useState("");
   const [applyTarget, setApplyTarget] = useState("forward");
-  const [h5Market, setH5Market] = useState("");
   const { busy, run } = useAction();
 
   React.useEffect(() => {
@@ -1074,16 +1265,6 @@ export function MarketPage() {
     });
   }
 
-  async function startBuildH5Job() {
-    const kwargs: Record<string, unknown> = { action: "build_h5" };
-    if (h5Market) kwargs.market = h5Market;
-    const job = await api.post<Job>("/api/jobs", { kind: "data", kwargs });
-    setActiveDataJob(job);
-    setDataProgress(job.progress || { job_id: job.job_id, status: job.status, percent: 0, stage: "queued", message: "queued" });
-    setDataMessage(`已启动 H5 重建任务：${job.job_id}`);
-    await dataJobs.refresh();
-  }
-
   const klinePayload = kline as KlinePayload | null;
   const rows = useMemo(() => normalizeKlineRows(klinePayload?.rows || []), [klinePayload]);
   const chartMetric = resolveKlineMetric(rows, klineSubMetric);
@@ -1132,6 +1313,7 @@ export function MarketPage() {
   return (
     <>
       <PageTitle title={t("market")} subtitle={t("marketSubtitle")} />
+      <StockPoolManager />
       {dataMessage ? <pre className="inline-json">{dataMessage}</pre> : null}
       <div className="grid side">
         <section className="panel">
@@ -1149,7 +1331,6 @@ export function MarketPage() {
                 t("dataActionsHelpAdjust"),
                 t("dataActionsHelpTarget"),
                 t("dataActionsHelpTushare"),
-                t("dataActionsHelpMarket"),
                 t("dataActionsHelpAdvanced")
               ]}
               footer={t("dataActionsHelpFlow")}
@@ -1199,8 +1380,7 @@ export function MarketPage() {
               items={[
                 t("symbolManageHelpRefresh"),
                 t("symbolManageHelpAdjust"),
-                t("symbolManageHelpTrim"),
-                t("symbolManageHelpH5")
+                t("symbolManageHelpTrim")
               ]}
               footer={t("symbolManageHelpRisk")}
             />
@@ -1235,9 +1415,6 @@ export function MarketPage() {
           <input placeholder="keep until YYYY-MM-DD" value={trimEnd} onChange={(e) => setTrimEnd(e.target.value)} />
           <input placeholder="drop dates, comma separated" value={dropDates} onChange={(e) => setDropDates(e.target.value)} />
           <button className="button" disabled={busy || !manageSymbol} onClick={() => symbolAction("/api/data/symbols/trim", { adjust_mode: manageMode, start: trimStart || null, end: trimEnd || null, drop_dates: dropDates || null, qlib_adjust_mode: manageMode })}>{t("trimSymbol")}</button>
-          <h3>daily_pv h5</h3>
-          <input placeholder="market optional" value={h5Market} onChange={(e) => setH5Market(e.target.value)} />
-          <button className="button" disabled={busy} onClick={() => void run(startBuildH5Job)}>{t("rebuildH5")}</button>
         </aside>
       </div>
       <section className="panel">
@@ -1860,13 +2037,17 @@ export function SchedulerPage() {
   const { t } = useI18n();
   const schedules = useAsync(() => api.get<Schedule[]>("/api/schedules"), []);
   const strategies = useAsync(() => api.get<{ names: string[] }>("/api/strategies"), []);
+  const instrumentSets = useAsync(() => api.get<{ sets: string[] }>("/api/data/instrument-sets"), []);
   const [name, setName] = useState("");
   const [kind, setKind] = useState("data");
   const [time, setTime] = useState("18:00");
   const [enabled, setEnabled] = useState(true);
   const [notify, setNotify] = useState(false);
   const scheduleAdvanced = useJsonInput("{}");
-  const scheduleFields = useMemo(() => scheduleSpecsFor(kind, strategies.data?.names || []), [kind, strategies.data]);
+  const scheduleFields = useMemo(
+    () => withInstrumentSetOptions(scheduleSpecsFor(kind, strategies.data?.names || []), instrumentSets.data?.sets || []),
+    [kind, strategies.data, instrumentSets.data],
+  );
   const scheduleForm = useParamForm(scheduleFields, scheduleAdvanced.raw);
 
   function changeKind(next: string) {

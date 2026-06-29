@@ -31,6 +31,10 @@ def stock_lists_dir() -> Path:
     return important_data_dir() / "stock_lists"
 
 
+def stock_pools_dir() -> Path:
+    return important_data_dir() / "stock_pools"
+
+
 def default_stock_csv_path() -> Path:
     return stock_lists_dir() / "main_stock_2026_4_27.csv"
 

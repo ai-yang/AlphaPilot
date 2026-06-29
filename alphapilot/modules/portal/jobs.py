@@ -33,7 +33,7 @@ ALPHAFORGE_JOBS: dict[str, tuple[str, str]] = {
 VALID_KINDS = {"mine", "factor_backtest", "strategy_backtest", "daily_signals", "data", *ALPHAFORGE_JOBS}
 
 # Data-system actions runnable as a ``data`` job; ``kwargs["action"]`` selects one.
-DATA_ACTIONS = ("pipeline", "download", "apply_adjust", "convert", "build_h5")
+DATA_ACTIONS = ("pipeline", "download", "apply_adjust", "convert")
 TERMINAL_STATUSES = {"succeeded", "failed", "cancelled", "lost"}
 
 

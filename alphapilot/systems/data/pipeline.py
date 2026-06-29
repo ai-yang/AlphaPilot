@@ -25,16 +25,6 @@ def convert_data(**options: Any) -> Any:
     return result
 
 
-def build_h5_data(**options: Any) -> Any:
-    """Build ``daily_pv.h5`` via system-level generator implementation."""
-    from alphapilot.systems.data.generate_h5 import generate_daily_pv_h5
-
-    update_current_job_progress(15, "h5:start", "开始构建 daily_pv.h5")
-    result = generate_daily_pv_h5(**options)
-    update_current_job_progress(95, "h5:done", "daily_pv.h5 构建完成")
-    return result
-
-
 def run_pipeline(**options: Any) -> Any:
     """Run download -> adjust -> convert data pipeline."""
     from alphapilot.systems.data.prepare_data import PrepareDataCLI
@@ -59,7 +49,6 @@ def dispatch_prepare_action(
     action: str,
     download_handler: Callable[..., Any],
     convert_handler: Callable[..., Any],
-    build_h5_handler: Callable[..., Any],
     pipeline_handler: Callable[..., Any],
     **options: Any,
 ) -> Any:
@@ -107,18 +96,7 @@ def dispatch_prepare_action(
             kwargs["qlib_dir"] = qlib_dir
         return convert_handler(**kwargs)
 
-    if action == "build_h5":
-        kwargs: dict[str, Any] = {}
-        kwargs.update(options)
-        if qlib_dir:
-            kwargs["qlib_dir"] = qlib_dir
-        if output_dir:
-            kwargs["output_dir"] = output_dir
-        if market:
-            kwargs["market"] = market
-        return build_h5_handler(**kwargs)
-
-    if action in {"refresh_factors", "apply_adjust", "dump", "calendar", "h5"}:
+    if action in {"refresh_factors", "apply_adjust", "dump", "calendar"}:
         from alphapilot.systems.data.prepare_data import PrepareDataCLI
 
         cli = PrepareDataCLI()

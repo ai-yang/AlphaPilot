@@ -72,8 +72,8 @@ def test_factor_duplicates_and_bulk_delete(client: TestClient) -> None:
 def test_schedule_crud(client: TestClient) -> None:
     created = client.post(
         "/api/schedules",
-        json={"name": "nightly_h5", "kind": "data", "time": "09:00",
-              "kwargs": {"action": "build_h5"}, "enabled": True},
+        json={"name": "nightly_download", "kind": "data", "time": "09:00",
+              "kwargs": {"action": "download"}, "enabled": True},
     )
     assert created.status_code == 200
     sid = created.json()["schedule_id"]
