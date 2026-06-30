@@ -1,7 +1,7 @@
 import Plot from "react-plotly.js";
 import { Link } from "react-router-dom";
 import { api, Factor, Job, JobProgress, qs, Schedule } from "./api";
-import { Alert, chartHeight, DataTable, DynamicForm, HybridJsonEditor, JobsPanel, JsonTextArea, PageTitle, PanelHelp, ProgressBar, RefreshButton, Spinner, StatusPill, Tabs } from "./components";
+import { Alert, AsyncButton, chartHeight, DataTable, DynamicForm, HybridJsonEditor, InfoDot, JobsPanel, JsonTextArea, PageTitle, PanelHelp, ProgressBar, RefreshButton, Spinner, StatusPill, Tabs, Tooltip, useConfirm } from "./components";
 import { BacktestDetail, BacktestDetailData, LeaderboardPanel } from "./backtestDetail";
 import { useAsync, useJsonInput, useParamForm } from "./hooks";
 import { useI18n } from "./i18n";
@@ -218,14 +218,14 @@ export function HomePage() {
       <PageTitle title="AlphaPilot" subtitle={t("homeSubtitle")} />
       {state.error ? <Alert tone="error">{state.error}</Alert> : null}
       <div className="metric-grid">
-        {[
-          [t("symbols"), metrics.symbols],
-          [t("factors"), metrics.factors],
-          [t("strategies"), metrics.strategies],
-          [t("backtests"), metrics.backtests]
-        ].map(([label, value]) => (
+        {([
+          [t("symbols"), metrics.symbols, t("tipSymbols")],
+          [t("factors"), metrics.factors, t("tipFactors")],
+          [t("strategies"), metrics.strategies, t("tipStrategies")],
+          [t("backtests"), metrics.backtests, t("tipBacktests")]
+        ] as Array<[string, string | number | undefined, string]>).map(([label, value, tip]) => (
           <div className="metric" key={label}>
-            <span>{label}</span>
+            <span className="metric-label">{label}<InfoDot tip={tip} /></span>
             <strong>{state.loading && value === undefined ? "…" : String(value ?? "-")}</strong>
           </div>
         ))}
@@ -256,6 +256,7 @@ export function HomePage() {
 
 export function MiningPage() {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const instrumentSets = useAsync(() => api.get<{ sets: string[] }>("/api/data/instrument-sets"), []);
   const poolNames = instrumentSets.data?.sets || [];
   const llmSpecs = useMemo(() => withInstrumentSetOptions(llmMiningSpecs, poolNames), [instrumentSets.data]);
@@ -295,8 +296,8 @@ export function MiningPage() {
     setSessionFile(await api.get(`/api/mining/sessions/${encodeURIComponent(String(sessionDetail.name))}/files/${encodeURIComponent(path)}`));
   }
 
-  function deleteSession(name: string) {
-    if (!window.confirm(`${t("delete")} ${name}?`)) return;
+  async function deleteSession(name: string) {
+    if (!(await confirm({ message: `${t("delete")} ${name}?`, danger: true }))) return;
     void run(async () => {
       await api.delete(`/api/mining/sessions/${encodeURIComponent(name)}`);
       setSessionDetail(null);
@@ -368,15 +369,16 @@ export function MiningPage() {
           empty={t("empty")}
           loading={sessions.loading}
           columns={[
-            { key: "name", label: "Session" },
-            { key: "mtime", label: "Updated" },
-            { key: "path", label: "Path" },
+            { key: "name", label: t("colSession") },
+            { key: "mtime", label: t("colUpdated") },
+            { key: "path", label: t("colPath"), ellipsis: true },
             {
               key: "name",
-              label: "",
+              label: t("colActions"),
+              align: "right",
               render: (row) => (
                 <div className="row-actions">
-                  <button className="button small" onClick={() => void openSession(String(row.name))}>Open</button>
+                  <button className="button small" onClick={() => void openSession(String(row.name))}>{t("open")}</button>
                   <button className="button small danger" disabled={busy} onClick={() => void deleteSession(String(row.name))}>{t("delete")}</button>
                 </div>
               )
@@ -388,12 +390,11 @@ export function MiningPage() {
             <pre className="json">{JSON.stringify({ name: sessionDetail.name, path: sessionDetail.path }, null, 2)}</pre>
             <DataTable
               rows={((sessionDetail.files as Array<Record<string, unknown>>) || []).slice(0, 80)}
-              empty={t("empty")}
               columns={[
-                { key: "path", label: "File" },
-                { key: "size", label: "Size" },
-                { key: "mtime", label: "Updated" },
-                { key: "path", label: "", render: (row) => <button className="button small" onClick={() => void openSessionFile(String(row.path))}>View</button> }
+                { key: "path", label: t("colFile"), ellipsis: true },
+                { key: "size", label: t("colSize"), align: "right" },
+                { key: "mtime", label: t("colUpdated") },
+                { key: "path", label: t("colActions"), align: "right", render: (row) => <button className="button small" onClick={() => void openSessionFile(String(row.path))}>{t("view")}</button> }
               ]}
             />
           </div>
@@ -412,6 +413,7 @@ export function MiningPage() {
 
 export function BacktestPage() {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const instrumentSets = useAsync(() => api.get<{ sets: string[] }>("/api/data/instrument-sets"), []);
   const poolNames = instrumentSets.data?.sets || [];
   const factorAdvanced = useJsonInput("{}");
@@ -446,8 +448,8 @@ export function BacktestPage() {
     setDetail(await api.get<BacktestDetailData>(`/api/backtests/${encodeURIComponent(workspaceId)}`));
   }
 
-  function deleteWorkspace(workspaceId: string) {
-    if (!window.confirm(`${t("delete")} ${workspaceId}?`)) return;
+  async function deleteWorkspace(workspaceId: string) {
+    if (!(await confirm({ message: `${t("delete")} ${workspaceId}?`, danger: true }))) return;
     void run(async () => {
       await api.delete(`/api/backtests/${encodeURIComponent(workspaceId)}`);
       if (detail?.workspace_id === workspaceId) setDetail(null);
@@ -511,20 +513,20 @@ export function BacktestPage() {
         </section>
       </div>
       <section className="panel">
-        <h2>Workspace</h2>
+        <h2>{t("workspace")}</h2>
         <DataTable
           rows={(list.data || []) as Record<string, unknown>[]}
-          empty={t("empty")}
           loading={list.loading}
           columns={[
-            { key: "label", label: "Label" },
-            { key: "mtime", label: "Updated" },
+            { key: "label", label: t("colLabel"), ellipsis: true },
+            { key: "mtime", label: t("colUpdated") },
             {
               key: "workspace_id",
-              label: "",
+              label: t("colActions"),
+              align: "right",
               render: (row) => (
                 <div className="row-actions">
-                  <button className="button small" onClick={() => void open(String(row.workspace_id))}>Open</button>
+                  <button className="button small" onClick={() => void open(String(row.workspace_id))}>{t("open")}</button>
                   <button className="button small danger" disabled={busy} onClick={() => void deleteWorkspace(String(row.workspace_id))}>{t("delete")}</button>
                 </div>
               )
@@ -568,6 +570,7 @@ function factorValidationMessage(result: FactorValidationResponse): string {
 
 export function LibraryPage() {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const factors = useAsync(() => api.get<{ factors: Factor[]; categories: string[]; supports_categories: boolean }>("/api/factors"), []);
   const strategies = useAsync(() => api.get<{ strategies: Array<Record<string, unknown>>; names: string[] }>("/api/strategies"), []);
   const instrumentSets = useAsync(() => api.get<{ sets: string[] }>("/api/data/instrument-sets"), []);
@@ -642,9 +645,9 @@ export function LibraryPage() {
     });
   }
 
-  function deleteFactor(factorName: string) {
+  async function deleteFactor(factorName: string) {
     const target = factorName.trim();
-    if (!target || !window.confirm(`${t("delete")} ${target}?`)) return;
+    if (!target || !(await confirm({ message: `${t("delete")} ${target}?`, danger: true }))) return;
     void run(async () => {
       await api.delete(`/api/factors/${encodeURIComponent(target)}`);
       setSelectedFactors((current) => current.filter((name) => name !== target));
@@ -688,9 +691,9 @@ export function LibraryPage() {
     }, t("save"));
   }
 
-  function deleteStrategy(strategyName: string) {
+  async function deleteStrategy(strategyName: string) {
     const target = strategyName.trim();
-    if (!target || !window.confirm(`${t("delete")} ${target}?`)) return;
+    if (!target || !(await confirm({ message: `${t("delete")} ${target}?`, danger: true }))) return;
     void run(async () => {
       await api.delete(`/api/strategies/${encodeURIComponent(target)}`);
       await strategies.refresh();
@@ -721,10 +724,10 @@ export function LibraryPage() {
     setDupDelete((current) => ({ ...current, [factorName]: !current[factorName] }));
   }
 
-  function deleteDuplicates() {
+  async function deleteDuplicates() {
     const names = Object.keys(dupDelete).filter((nm) => dupDelete[nm]);
     if (!names.length) return;
-    if (!window.confirm(`${t("deleteSelected")} ${names.length} ${t("factorsUnit")}?`)) return;
+    if (!(await confirm({ message: `${t("deleteSelected")} ${names.length} ${t("factorsUnit")}?`, danger: true }))) return;
     void run(async () => {
       await api.post("/api/factors/bulk-delete", { factor_names: names });
       setDupResult(null);
@@ -761,7 +764,7 @@ export function LibraryPage() {
                   footer={t("factorLibraryHelpFlow")}
                 />
               </div>
-              <input placeholder="Search" value={search} onChange={(e) => setSearch(e.target.value)} />
+              <input placeholder={t("search")} value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
             <div className="toolbar">
               <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
@@ -783,12 +786,13 @@ export function LibraryPage() {
                   label: "",
                   render: (row) => <input className="row-check" type="checkbox" checked={selectedFactors.includes(String(row.factor_name))} onChange={() => toggleFactor(String(row.factor_name))} />
                 },
-                { key: "factor_name", label: "Name" },
-                { key: "factor_expression", label: "Expression" },
-                { key: "categories", label: "Categories", render: (row) => ((row.categories as string[]) || []).join(", ") },
+                { key: "factor_name", label: t("colName") },
+                { key: "factor_expression", label: t("colExpression"), ellipsis: true },
+                { key: "categories", label: t("colCategories"), render: (row) => ((row.categories as string[]) || []).join(", ") },
                 {
                   key: "factor_name",
-                  label: "",
+                  label: t("colActions"),
+                  align: "right",
                   render: (row) => (
                     <div className="row-actions">
                       <button className="button small" disabled={busy} onClick={() => { const name = String(row.factor_name); const next = window.prompt(t("renameFactorPrompt"), name); if (next && next.trim() && next.trim() !== name) void run(async () => { await api.patch(`/api/factors/${encodeURIComponent(name)}`, { new_name: next.trim() }); await factors.refresh(); }, t("renameFactor")); }}>{t("rename")}</button>
@@ -897,16 +901,16 @@ export function LibraryPage() {
             <button className="button" disabled={busy} onClick={() => validateFactor()}>{t("validate")}</button>
             <button className="button primary" disabled={busy} onClick={() => addFactor()}>{busy ? <Spinner /> : null}{t("save")}</button>
             {validation ? <pre className="inline-json">{JSON.stringify(validation, null, 2)}</pre> : null}
-            <h3>Categories</h3>
+            <h3>{t("colCategories")}</h3>
             <DataTable
               rows={Object.entries(categoryCounts).map(([category, count]) => ({ category, count }))}
-              empty={t("empty")}
               columns={[
-                { key: "category", label: "Category" },
-                { key: "count", label: "Factors" },
+                { key: "category", label: t("colCategory") },
+                { key: "count", label: t("colFactors"), align: "right" },
                 {
                   key: "category",
-                  label: "",
+                  label: t("colActions"),
+                  align: "right",
                   render: (row) => (
                     <div className="row-actions">
                       <button className="button small" disabled={busy} onClick={() => backtestCategory(String(row.category))}>{t("backtestShort")}</button>
@@ -925,7 +929,7 @@ export function LibraryPage() {
             </select>
             <input placeholder={t("newCategoryNamePh")} value={renameTo} onChange={(e) => setRenameTo(e.target.value)} />
             <button className="button" disabled={busy || !renameFrom || !renameTo.trim()} onClick={() => void run(async () => { await api.patch(`/api/factors/categories/${encodeURIComponent(renameFrom)}`, { new_name: renameTo }); setRenameFrom(""); setRenameTo(""); await factors.refresh(); }, t("renameCategory"))}>{t("renameCategory")}</button>
-            <button className="button danger" disabled={busy || !renameFrom} onClick={() => { if (window.confirm(`${t("deleteCategory")} ${renameFrom}?`)) void run(async () => { await api.delete(`/api/factors/categories/${encodeURIComponent(renameFrom)}`); setRenameFrom(""); await factors.refresh(); }, t("deleteCategory")); }}>{t("deleteCategory")}</button>
+            <button className="button danger" disabled={busy || !renameFrom} onClick={async () => { if (!(await confirm({ message: `${t("deleteCategory")} ${renameFrom}?`, danger: true }))) return; void run(async () => { await api.delete(`/api/factors/categories/${encodeURIComponent(renameFrom)}`); setRenameFrom(""); await factors.refresh(); }, t("deleteCategory")); }}>{t("deleteCategory")}</button>
             <h3>{t("importExport")}</h3>
             <select value={importKind} onChange={(e) => setImportKind(e.target.value)}>
               <option value="csv">CSV</option>
@@ -947,11 +951,12 @@ export function LibraryPage() {
               empty={t("empty")}
               loading={strategies.loading}
               columns={[
-                { key: "strategy_name", label: "Name" },
-                { key: "metrics", label: "Metrics", render: (row) => <code>{JSON.stringify(row.metrics || {})}</code> },
+                { key: "strategy_name", label: t("colName") },
+                { key: "metrics", label: t("colMetrics"), ellipsis: true, render: (row) => <code>{JSON.stringify(row.metrics || {})}</code> },
                 {
                   key: "strategy_name",
-                  label: "",
+                  label: t("colActions"),
+                  align: "right",
                   render: (row) => (
                     <div className="row-actions">
                       <button className="button small" onClick={() => { setStrategyExportName(String(row.strategy_name)); setStrategyExportPath(`important_data/strategy_zoo/${String(row.strategy_name)}.json`); }}>{t("exportShort")}</button>
@@ -1008,6 +1013,7 @@ function callPool<T>(command: string, kwargs: Record<string, unknown>): Promise<
 // Market Data page.
 function StockPoolManager() {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const { busy, run } = useAction();
   const toast = useToast();
   const pools = useAsync(() => callPool<PoolSummary[]>("pool_list", {}), []);
@@ -1089,8 +1095,8 @@ function StockPoolManager() {
     }, t("spUpdated"));
   }
 
-  function deletePool(poolName: string) {
-    if (!window.confirm(`${t("delete")} ${poolName}?`)) return;
+  async function deletePool(poolName: string) {
+    if (!(await confirm({ message: `${t("delete")} ${poolName}?`, danger: true }))) return;
     void run(async () => {
       await callPool("pool_delete", { name: poolName });
       if (selected === poolName) {
@@ -1128,15 +1134,16 @@ function StockPoolManager() {
             loading={pools.loading}
             columns={[
               { key: "name", label: t("spName") },
-              { key: "count", label: t("spMembers") },
-              { key: "description", label: t("spDescription") },
+              { key: "count", label: t("spMembers"), align: "right" },
+              { key: "description", label: t("spDescription"), ellipsis: true },
               {
                 key: "name",
-                label: "",
+                label: t("colActions"),
+                align: "right",
                 render: (row) => (
                   <div className="row-actions">
                     <button className="button small" onClick={() => void loadDetail(String(row.name))}>{t("preview")}</button>
-                    <button className="button small danger" disabled={busy} onClick={() => deletePool(String(row.name))}>{t("delete")}</button>
+                    <button className="button small danger" disabled={busy} onClick={() => void deletePool(String(row.name))}>{t("delete")}</button>
                   </div>
                 )
               }
@@ -1145,13 +1152,13 @@ function StockPoolManager() {
         </div>
       </div>
       {detail ? (
-        <div className="split" style={{ marginTop: 12 }}>
+        <div className="pool-detail">
           <h3>{detail.name} · {t("spMembers")} ({detail.symbols.length})</h3>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "8px 0" }}>
+          <div className="tag-list">
             {detail.symbols.map((sym) => (
-              <span key={sym} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", border: "1px solid var(--border, #ccc)", borderRadius: 12, fontSize: 12 }}>
+              <span key={sym} className="tag removable">
                 {sym}
-                <button className="button small danger" style={{ padding: "0 6px", lineHeight: 1.4 }} disabled={busy} title={t("delete")} onClick={() => removeSymbol(sym)}>×</button>
+                <button disabled={busy} title={t("delete")} aria-label={`${t("delete")} ${sym}`} onClick={() => removeSymbol(sym)}>×</button>
               </span>
             ))}
             {detail.symbols.length === 0 ? <span className="muted">{t("empty")}</span> : null}
@@ -1174,6 +1181,7 @@ function StockPoolManager() {
 
 export function MarketPage() {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const sources = useAsync(() => api.get<Array<Record<string, unknown>>>("/api/market/sources"), []);
   const dataJobs = useAsync(() => api.get<Job[]>("/api/jobs"), []);
   const dataAdvanced = useJsonInput("{}");
@@ -1354,7 +1362,7 @@ export function MarketPage() {
           {dataProgress ? (
             <div className="progress-card">
               <div className="panel-head compact">
-                <h3>当前数据任务</h3>
+                <h3>{t("currentDataTask")}</h3>
                 <StatusPill status={dataProgress.status || activeDataJob?.status} />
               </div>
               <ProgressBar
@@ -1364,12 +1372,12 @@ export function MarketPage() {
               />
               <code>{activeDataJob?.job_id}</code>
               <div className="progress-meta">
-                {typeof dataProgress.completed === "number" && typeof dataProgress.total === "number" ? <span>完成 {dataProgress.completed}/{dataProgress.total}</span> : null}
-                {typeof dataProgress.pending === "number" ? <span>等待 {dataProgress.pending}</span> : null}
-                {dataProgress.current_symbol ? <span>股票 {dataProgress.current_symbol}</span> : null}
-                {dataProgress.current_file ? <span>文件 {dataProgress.current_file}</span> : null}
-                {dataProgress.updated_at ? <span>更新 {new Date(dataProgress.updated_at).toLocaleTimeString()}</span> : null}
-                {dataProgress.latest_data_date ? <span>最新日期 {dataProgress.latest_data_date}</span> : null}
+                {typeof dataProgress.completed === "number" && typeof dataProgress.total === "number" ? <span>{t("progDone")} {dataProgress.completed}/{dataProgress.total}</span> : null}
+                {typeof dataProgress.pending === "number" ? <span>{t("progPending")} {dataProgress.pending}</span> : null}
+                {dataProgress.current_symbol ? <span>{t("progSymbol")} {dataProgress.current_symbol}</span> : null}
+                {dataProgress.current_file ? <span>{t("progFile")} {dataProgress.current_file}</span> : null}
+                {dataProgress.updated_at ? <span>{t("progUpdated")} {new Date(dataProgress.updated_at).toLocaleTimeString()}</span> : null}
+                {dataProgress.latest_data_date ? <span>{t("progLatestDate")} {dataProgress.latest_data_date}</span> : null}
                 {dataProgress.progress_source ? <span>{dataProgress.progress_source}</span> : null}
               </div>
             </div>
@@ -1405,7 +1413,7 @@ export function MarketPage() {
             <option value="forward">forward</option>
             <option value="none">none</option>
           </select>
-          <button className="button danger" disabled={busy || !manageSymbol} onClick={() => { if (window.confirm(`${t("delete")} ${manageSymbol}?`)) symbolAction("/api/data/symbols/delete", { adjust_mode: manageMode }); }}>{t("deleteSymbol")}</button>
+          <button className="button danger" disabled={busy || !manageSymbol} onClick={async () => { if (!(await confirm({ message: `${t("delete")} ${manageSymbol}?`, danger: true }))) return; symbolAction("/api/data/symbols/delete", { adjust_mode: manageMode }); }}>{t("deleteSymbol")}</button>
           <h3>{t("refreshRedownload")}</h3>
           <input placeholder="start_date" value={refreshStart} onChange={(e) => setRefreshStart(e.target.value)} />
           <input placeholder="end_date" value={refreshEnd} onChange={(e) => setRefreshEnd(e.target.value)} />
@@ -1425,20 +1433,19 @@ export function MarketPage() {
       </div>
       <section className="panel">
         <div className="panel-head">
-          <h2>最近数据任务</h2>
+          <h2>{t("recentDataTasks")}</h2>
           <RefreshButton className="button small" onClick={() => dataJobs.refresh()} />
         </div>
         <DataTable
           rows={recentDataJobs as unknown as Record<string, unknown>[]}
-          empty={t("empty")}
           loading={dataJobs.loading}
           columns={[
-            { key: "job_id", label: "Job" },
-            { key: "status", label: "Status", render: (row) => <StatusPill status={String(row.status)} /> },
-            { key: "params", label: "Action", render: (row) => <code>{String((row.params as Record<string, unknown> | undefined)?.action || "")}</code> },
+            { key: "job_id", label: t("colJobId"), ellipsis: true },
+            { key: "status", label: t("status"), render: (row) => <StatusPill status={String(row.status)} /> },
+            { key: "params", label: t("colDataAction"), render: (row) => <code>{String((row.params as Record<string, unknown> | undefined)?.action || "")}</code> },
             {
               key: "progress",
-              label: "Progress",
+              label: t("progress"),
               render: (row) => {
                 const progress = row.progress as JobProgress | undefined;
                 return progress ? <ProgressBar percent={progress.percent} label={progress.message || progress.stage} /> : "";
@@ -1736,6 +1743,7 @@ function SessionOverview({ detail }: { detail: TradeSessionDetail }) {
 
 export function DailyTradePage() {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const strategies = useAsync(() => api.get<{ strategies: Array<Record<string, unknown>>; names: string[] }>("/api/strategies"), []);
   const sessions = useAsync(() => api.get<TradeSessionManifest[]>("/api/trade-sessions"), []);
   const strategyNames = strategies.data?.names || [];
@@ -1807,8 +1815,8 @@ export function DailyTradePage() {
     });
   }
 
-  function removeSession(name: string) {
-    if (!window.confirm(`${t("delete")} ${name}?`)) return;
+  async function removeSession(name: string) {
+    if (!(await confirm({ message: `${t("delete")} ${name}?`, danger: true }))) return;
     void run(async () => {
       await api.delete(`/api/trade-sessions/${encodeURIComponent(name)}`);
       if (detail?.manifest?.name === name) setDetail(null);
@@ -2041,6 +2049,7 @@ export function DailyTradePage() {
 
 export function SchedulerPage() {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const schedules = useAsync(() => api.get<Schedule[]>("/api/schedules"), []);
   const strategies = useAsync(() => api.get<{ names: string[] }>("/api/strategies"), []);
   const instrumentSets = useAsync(() => api.get<{ sets: string[] }>("/api/data/instrument-sets"), []);
@@ -2079,9 +2088,9 @@ export function SchedulerPage() {
     }, t("save"));
   }
 
-  function deleteSchedule(scheduleId: string) {
+  async function deleteSchedule(scheduleId: string) {
     const target = scheduleId.trim();
-    if (!target || !window.confirm(`${t("delete")} ${target}?`)) return;
+    if (!target || !(await confirm({ message: `${t("delete")} ${target}?`, danger: true }))) return;
     void run(async () => {
       await api.delete(`/api/schedules/${encodeURIComponent(target)}`);
       await schedules.refresh();
@@ -2093,31 +2102,34 @@ export function SchedulerPage() {
       <PageTitle title={t("scheduler")} subtitle={t("schedulerSubtitle")} />
       <section className="panel">
         <div className="panel-head">
-          <h2>Daemon</h2>
+          <div className="panel-title-inline">
+            <h2>{t("daemon")}</h2>
+            <InfoDot tip={daemon.data?.running ? t("daemonTipOn") : t("daemonTipOff")} />
+          </div>
           <StatusPill status={daemon.data?.running ? "running" : "stopped"} />
         </div>
         <div className="row-actions left">
-          <button className="button" disabled={busy} onClick={() => void run(async () => { await api.post("/api/schedules/daemon/start"); await daemon.refresh(); }, t("daemonOn"))}>Start</button>
-          <button className="button" disabled={busy} onClick={() => void run(async () => { await api.post("/api/schedules/daemon/stop"); await daemon.refresh(); }, t("daemonOff"))}>Stop</button>
+          <button className="button" disabled={busy} onClick={() => void run(async () => { await api.post("/api/schedules/daemon/start"); await daemon.refresh(); }, t("daemonOn"))}>{t("start")}</button>
+          <button className="button danger" disabled={busy} onClick={async () => { if (!(await confirm({ message: t("daemonStopConfirm"), danger: true }))) return; void run(async () => { await api.post("/api/schedules/daemon/stop"); await daemon.refresh(); }, t("daemonOff")); }}>{t("stop")}</button>
         </div>
       </section>
       <div className="grid side">
         <section className="panel">
-          <h2>Schedules</h2>
+          <h2>{t("schedules")}</h2>
           <DataTable
             rows={(schedules.data || []) as unknown as Record<string, unknown>[]}
-            empty={t("empty")}
             loading={schedules.loading}
             columns={[
-              { key: "name", label: "Name" },
-              { key: "kind", label: "Kind" },
-              { key: "time", label: "Time" },
-              { key: "enabled", label: "Enabled", render: (row) => <>{row.enabled ? "✓" : "—"}</> },
+              { key: "name", label: t("colName") },
+              { key: "kind", label: t("colKind") },
+              { key: "time", label: t("colTime") },
+              { key: "enabled", label: t("colEnabled"), align: "center", render: (row) => <input className="row-check" type="checkbox" checked={Boolean(row.enabled)} readOnly aria-label={t("colEnabled")} /> },
               { key: "last_run_at", label: t("scheduleLastRun"), render: (row) => <span title={String(row.last_job_id || "")}>{formatTimestamp(row.last_run_at)}</span> },
               { key: "next_run_at", label: t("scheduleNextRun"), render: (row) => <>{row.enabled ? formatTimestamp(row.next_run_at) : "—"}</> },
               {
                 key: "schedule_id",
-                label: "",
+                label: t("colActions"),
+                align: "right",
                 render: (row) => (
                   <div className="row-actions">
                     <button className="button small" disabled={busy} onClick={() => void run(async () => { await api.post(`/api/schedules/${row.schedule_id}/run`); await schedules.refresh(); }, t("started"))}>{t("run")}</button>
@@ -2190,6 +2202,7 @@ export function SchedulerPage() {
 
 export function NotificationsPage() {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const cfg = useAsync(() => api.get<Record<string, unknown>>("/api/notify"), []);
   const commands = useAsync(() => api.get<NotifyCommandsStatus>("/api/notify/commands/status"), []);
   const [config, setConfig] = useState<Record<string, unknown>>({});
@@ -2264,7 +2277,8 @@ export function NotificationsPage() {
     }, t("commandReceiverStarted"));
   }
 
-  function stopCommands() {
+  async function stopCommands() {
+    if (!(await confirm({ message: t("cmdStopConfirm"), danger: true }))) return;
     void run(async () => {
       await api.post("/api/notify/commands/stop");
       await commands.refresh();
@@ -2505,8 +2519,8 @@ export function NotificationsPage() {
           columns={[
             { key: "created_at", label: t("dateLabel") },
             { key: "channel", label: t("commandChannel") },
-            { key: "user_id", label: "User" },
-            { key: "text", label: t("commandText"), render: (row) => <span className="mono small-text">{String(row.text || "")}</span> },
+            { key: "user_id", label: t("colUser") },
+            { key: "text", label: t("commandText"), ellipsis: true, render: (row) => <span className="mono small-text">{String(row.text || "")}</span> },
             { key: "ok", label: t("status"), render: (row) => <StatusPill status={row.ok ? "succeeded" : "failed"} /> },
             { key: "reply", label: t("commandReply"), render: (row) => <span className="small-text">{String(row.reply || row.error || "")}</span> }
           ]}
@@ -2518,6 +2532,7 @@ export function NotificationsPage() {
 
 export function AdvancedPage() {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const portalSettings = useAsync(() => api.get<PortalSettings>("/api/portal/settings"), []);
   const envSettings = useAsync(() => api.get<PortalEnvSettings>("/api/portal/env"), []);
   const [portalHost, setPortalHost] = useState("127.0.0.1");
@@ -2731,8 +2746,8 @@ export function AdvancedPage() {
           <button
             className="button"
             disabled={restartingPortal}
-            onClick={() => {
-              if (!window.confirm(t("restartPortalConfirm"))) return;
+            onClick={async () => {
+              if (!(await confirm({ message: t("restartPortalConfirm"), danger: true }))) return;
               void restartPortal(async () => {
                 await api.post("/api/portal/restart");
                 setRestartMessage(t("restartPortalRequestedMessage"));
@@ -2821,8 +2836,8 @@ export function AdvancedPage() {
           <button
             className="button"
             disabled={restartingPortal}
-            onClick={() => {
-              if (!window.confirm(t("restartPortalConfirm"))) return;
+            onClick={async () => {
+              if (!(await confirm({ message: t("restartPortalConfirm"), danger: true }))) return;
               void restartPortal(async () => {
                 await api.post("/api/portal/restart");
                 setRestartMessage(t("restartPortalRequestedMessage"));
@@ -2875,8 +2890,8 @@ export function AdvancedPage() {
           <button
             className="button danger"
             disabled={cleaningLogs}
-            onClick={() => {
-              if (!window.confirm(t("logCleanupExecuteConfirm"))) return;
+            onClick={async () => {
+              if (!(await confirm({ message: t("logCleanupExecuteConfirm"), danger: true }))) return;
               void runLogCleanup(async () => {
                 setLogCleanupResult(await api.post<LogCleanupResult>("/api/logs/cleanup", { log_dir: logDir || undefined, execute: true }));
               }, t("logCleanupDeleted"));

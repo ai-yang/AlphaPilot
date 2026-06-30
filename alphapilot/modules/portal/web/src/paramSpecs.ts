@@ -100,7 +100,7 @@ export const adjustModeOptions: FieldOption[] = [
 export const dataActionSpecs: FieldSpec[] = [
   {
     key: "action",
-    label: "Action",
+    label: "数据动作 Action",
     type: "select",
     defaultValue: "pipeline",
     options: [
@@ -112,7 +112,7 @@ export const dataActionSpecs: FieldSpec[] = [
   },
   {
     key: "source",
-    label: "Data Source",
+    label: "数据源 Data Source",
     type: "select",
     defaultValue: "baostock_cn",
     options: [
@@ -123,18 +123,19 @@ export const dataActionSpecs: FieldSpec[] = [
     // raw / factor / output dirs (see DataSystem.apply_adjust) and never forwards it to the CLI.
     visibleWhen: (v) => ["pipeline", "download", "apply_adjust"].includes(String(v.action)),
   },
-  { key: "start_date", label: "Start Date", type: "date", defaultValue: "2005-01-01", visibleWhen: (v) => ["pipeline", "download"].includes(String(v.action)) },
-  { key: "end_date", label: "End Date", type: "date", visibleWhen: (v) => ["pipeline", "download"].includes(String(v.action)) },
+  { key: "start_date", label: "开始日期 Start Date", type: "date", defaultValue: "2005-01-01", visibleWhen: (v) => ["pipeline", "download"].includes(String(v.action)) },
+  { key: "end_date", label: "结束日期 End Date", type: "date", visibleWhen: (v) => ["pipeline", "download"].includes(String(v.action)) },
   {
     key: "stock_csv",
-    label: "Stock CSV",
+    label: "股票池 CSV Stock CSV",
     type: "text",
     defaultValue: "important_data/stock_lists/main_stock_2026_4_27.csv",
+    helpText: "股票池 CSV 路径，通常位于 important_data/stock_lists/ 下，每行一个代码。",
     visibleWhen: (v) => ["pipeline", "download", "convert"].includes(String(v.action)),
   },
   {
     key: "adjust_mode",
-    label: "Adjust Mode",
+    label: "复权模式 Adjust Mode",
     type: "select",
     defaultValue: "backward",
     options: adjustModeOptions,
@@ -143,7 +144,7 @@ export const dataActionSpecs: FieldSpec[] = [
   },
   {
     key: "target_mode",
-    label: "Target Mode",
+    label: "目标复权 Target Mode",
     type: "select",
     defaultValue: "forward",
     options: [
@@ -153,7 +154,7 @@ export const dataActionSpecs: FieldSpec[] = [
     visibleWhen: (v) => v.action === "apply_adjust" || (v.action === "pipeline" && v.adjust_mode === "none"),
   },
   { key: "token", label: "Tushare Token", type: "password", visibleWhen: (v) => v.source === "tushare_cn" && ["pipeline", "download"].includes(String(v.action)) },
-  { key: "include_daily_basic", label: "Include daily_basic", type: "checkbox", defaultValue: false, visibleWhen: (v) => v.source === "tushare_cn" && ["pipeline", "download"].includes(String(v.action)) },
+  { key: "include_daily_basic", label: "包含 daily_basic", type: "checkbox", defaultValue: false, visibleWhen: (v) => v.source === "tushare_cn" && ["pipeline", "download"].includes(String(v.action)) },
 ];
 
 // Strategy / money / cost overrides shared by mining, backtest and daily-trade forms. Fields use
@@ -202,9 +203,9 @@ export function strategyParamFields(opts: { showAccount?: boolean } = {}): Field
 export const llmMiningSpecs: FieldSpec[] = [
   // One full mining round = 5 steps (假说生成 → 因子构造 → 因子计算 → 回测 → 反馈).
   // Use a multiple of 5 to finish whole rounds; other values stop mid-round.
-  { key: "step_n", label: "Step N", type: "number", defaultValue: 5, required: true, helpText: "一整轮挖掘 = 5 步（假说生成 → 因子构造 → 因子计算 → 回测 → 反馈）。建议填 5 的整数倍，才能跑完整轮；非整数倍会停在半途。" },
-  { key: "scenario", label: "Scenario", type: "text", defaultValue: "alpha_factor_mining" },
-  { key: "direction", label: "Direction", type: "textarea", placeholder: "挖掘方向或假说" },
+  { key: "step_n", label: "迭代步数 Step N", type: "number", defaultValue: 5, required: true, helpText: "一整轮挖掘 = 5 步（假说生成 → 因子构造 → 因子计算 → 回测 → 反馈）。建议填 5 的整数倍，才能跑完整轮；非整数倍会停在半途。" },
+  { key: "scenario", label: "场景 Scenario", type: "text", defaultValue: "alpha_factor_mining" },
+  { key: "direction", label: "方向 Direction", type: "textarea", placeholder: "挖掘方向或假说" },
   // Auto-add each round's mined factors to the factor library (zoo) under a "mined" category.
   { key: "save_factors_to_library", label: "自动加入因子库", type: "checkbox", defaultValue: false, helpText: "每轮挖出的因子表达式会校验去重后存入因子库（mined 分类）。" },
   // Mining drives its data universe by the top-level ``market`` kwarg (run dir + factor h5 spec).
@@ -215,7 +216,7 @@ export const llmMiningSpecs: FieldSpec[] = [
 export const alphaForgeSpecs: FieldSpec[] = [
   {
     key: "method",
-    label: "Method",
+    label: "方法 Method",
     type: "select",
     defaultValue: "mine_aff",
     options: [
@@ -224,16 +225,16 @@ export const alphaForgeSpecs: FieldSpec[] = [
       { label: "RL", value: "mine_rl" },
     ],
   },
-  { key: "instruments", label: "Instruments", type: "text", defaultValue: "test_stock_pool_80" },
-  { key: "train_end_year", label: "Train End Year", type: "number", defaultValue: 2020 },
-  { key: "seed", label: "Seed", type: "number", defaultValue: 0 },
-  { key: "top_n", label: "Top N", type: "number", defaultValue: 50, visibleWhen: (v) => ["mine_aff", "mine_gp"].includes(String(v.method)) },
-  { key: "raw", label: "Raw output", type: "checkbox", defaultValue: false, helpText: "仅当 qlib 数据带 $factor 复权因子字段时勾选；baostock 数据无此字段，勾选会导致取数为空。" },
-  { key: "backtest", label: "Run backtest after mining", type: "checkbox", defaultValue: false },
-  { key: "save", label: "Save to factor zoo", type: "checkbox", defaultValue: true },
-  { key: "tournament_size", label: "Tournament Size", type: "number", defaultValue: 20, visibleWhen: (v) => v.method === "mine_gp" },
-  { key: "num_epochs_g", label: "Generator Epochs", type: "number", defaultValue: 50, visibleWhen: (v) => v.method === "mine_aff" },
-  { key: "max_loops", label: "Max Loops", type: "number", defaultValue: 10, visibleWhen: (v) => v.method === "mine_aff" },
+  { key: "instruments", label: "股票池 Instruments", type: "text", defaultValue: "test_stock_pool_80" },
+  { key: "train_end_year", label: "训练截止年 Train End Year", type: "number", defaultValue: 2020 },
+  { key: "seed", label: "随机种子 Seed", type: "number", defaultValue: 0 },
+  { key: "top_n", label: "候选数 Top N", type: "number", defaultValue: 50, helpText: "保留得分最高的前 N 个候选因子，数值越大搜索/回测耗时越长。", visibleWhen: (v) => ["mine_aff", "mine_gp"].includes(String(v.method)) },
+  { key: "raw", label: "原始输出 Raw output", type: "checkbox", defaultValue: false, helpText: "仅当 qlib 数据带 $factor 复权因子字段时勾选；baostock 数据无此字段，勾选会导致取数为空。" },
+  { key: "backtest", label: "挖掘后回测 Run backtest", type: "checkbox", defaultValue: false },
+  { key: "save", label: "保存到因子库 Save to zoo", type: "checkbox", defaultValue: true },
+  { key: "tournament_size", label: "锦标赛规模 Tournament Size", type: "number", defaultValue: 20, visibleWhen: (v) => v.method === "mine_gp" },
+  { key: "num_epochs_g", label: "生成器轮数 Generator Epochs", type: "number", defaultValue: 50, visibleWhen: (v) => v.method === "mine_aff" },
+  { key: "max_loops", label: "最大循环数 Max Loops", type: "number", defaultValue: 10, visibleWhen: (v) => v.method === "mine_aff" },
 ];
 
 // Model presets offered when creating a strategy from selected factors. The actual model is
@@ -270,10 +271,10 @@ const backtestMarketField: FieldSpec = {
 };
 
 export const factorBacktestSpecs: FieldSpec[] = [
-  { key: "factor_path", label: "Factor CSV", type: "text", required: true },
+  { key: "factor_path", label: "因子 CSV Factor CSV", type: "text", required: true, helpText: "因子 CSV 路径或因子库导出文件，如 important_data/factor_zoo/xxx.csv。" },
   {
     key: "mode",
-    label: "Mode",
+    label: "模式 Mode",
     type: "select",
     defaultValue: "multi_combined",
     options: [
@@ -282,7 +283,7 @@ export const factorBacktestSpecs: FieldSpec[] = [
       { label: "multi_sequential", value: "multi_sequential" },
     ],
   },
-  { key: "scenario", label: "Scenario", type: "text", defaultValue: "factor_backtest" },
+  { key: "scenario", label: "场景 Scenario", type: "text", defaultValue: "factor_backtest" },
   backtestMarketField,
   ...strategyParamFields(),
 ];
@@ -302,16 +303,16 @@ export const factorLibraryBacktestSpecs: FieldSpec[] = [
       { label: "multi_sequential（多因子序贯）", value: "multi_sequential" },
     ],
   },
-  { key: "scenario", label: "Scenario", type: "text", defaultValue: "factor_backtest" },
+  { key: "scenario", label: "场景 Scenario", type: "text", defaultValue: "factor_backtest" },
   backtestMarketField,
   ...strategyParamFields(),
 ];
 
 export const strategyBacktestSpecs: FieldSpec[] = [
-  { key: "strategy_name", label: "Strategy Asset", type: "select", required: true, options: [] },
+  { key: "strategy_name", label: "策略资产 Strategy Asset", type: "select", required: true, options: [] },
   {
     key: "mode",
-    label: "Mode",
+    label: "模式 Mode",
     type: "select",
     defaultValue: "retrain",
     options: [
@@ -319,7 +320,7 @@ export const strategyBacktestSpecs: FieldSpec[] = [
       { label: "reuse_model", value: "reuse_model" },
     ],
   },
-  { key: "scenario", label: "Scenario", type: "text", defaultValue: "factor_backtest" },
+  { key: "scenario", label: "场景 Scenario", type: "text", defaultValue: "factor_backtest" },
   backtestMarketField,
   ...strategyParamFields(),
 ];
@@ -361,7 +362,7 @@ export const dailyTradeSpecs: FieldSpec[] = [
   // Pick a trade session to resume its rolling state + append to its daily history; leave empty
   // to run a one-off against the strategy asset below.
   { key: "session", label: "交易会话 Session", type: "select", options: [], helpText: "选择会话则续跑其滚动持仓并把每日调仓写入会话历史;留空则用下方策略单次运行。" },
-  { key: "strategy_name", label: "Strategy Asset", type: "select", options: [] },
+  { key: "strategy_name", label: "策略资产 Strategy Asset", type: "select", options: [] },
   // 当天(自动): 不写死日期, 让每次触发解析当日最新交易日; 指定日期: 显示日期选择器写死.
   // 前缀 "_" => UI-only, 不下发后端; "today" 时 date 隐藏且为空 => 调度 kwargs 无 date => 后端解析最新交易日.
   { key: "_date_mode", label: "日期模式 Date mode", type: "select", defaultValue: "today",
@@ -370,15 +371,15 @@ export const dailyTradeSpecs: FieldSpec[] = [
       { label: "指定日期", value: "fixed" },
     ],
     helpText: "当天=每次按运行当日的最新交易日自动更新(周末/节假日回退到最近交易日);指定日期=固定跑某一天。" },
-  { key: "date", label: "Date", type: "date", visibleWhen: (v) => v._date_mode === "fixed" },
-  { key: "init_cash", label: "Initial Cash", type: "number", defaultValue: 1000000 },
+  { key: "date", label: "日期 Date", type: "date", visibleWhen: (v) => v._date_mode === "fixed" },
+  { key: "init_cash", label: "初始资金 Initial Cash", type: "number", defaultValue: 1000000 },
   // Board-lot size: buy/sell amounts are rounded to whole multiples of this (A-shares = 100).
   { key: "trade_unit", label: "每手股数 Lot size", type: "number", defaultValue: 100, helpText: "买卖按整手撮合并取整为该数的倍数(A股=100);填 0 关闭整手约束。" },
-  { key: "state_path", label: "State Path", type: "text" },
-  { key: "factor_path", label: "Factor Path", type: "text" },
-  { key: "model_pickle_path", label: "Model Pickle Path", type: "text" },
-  { key: "refresh_data", label: "Refresh data before run", type: "checkbox", defaultValue: false },
-  { key: "notify", label: "Push notification", type: "checkbox", defaultValue: false },
+  { key: "state_path", label: "状态文件 State Path", type: "text" },
+  { key: "factor_path", label: "因子文件 Factor Path", type: "text" },
+  { key: "model_pickle_path", label: "模型文件 Model Pickle Path", type: "text" },
+  { key: "refresh_data", label: "运行前刷新数据 Refresh data", type: "checkbox", defaultValue: false },
+  { key: "notify", label: "推送通知 Push notification", type: "checkbox", defaultValue: false },
   // Money is set above via ``init_cash``; only expose rebalance / cost / date overrides here.
   ...strategyParamFields({ showAccount: false }),
 ];
@@ -389,23 +390,23 @@ const lotField: FieldSpec = { key: "trade_unit", label: "每手股数 Lot size",
 // Resume an existing trade session: strategy + cash are fixed by the snapshot, so the run form
 // only needs the per-run knobs (the DailyTradePage shows the session's strategy/cash read-only).
 export const sessionRunSpecs: FieldSpec[] = [
-  { key: "date", label: "Date", type: "date" },
+  { key: "date", label: "日期 Date", type: "date" },
   lotField,
-  { key: "refresh_data", label: "Refresh data before run", type: "checkbox", defaultValue: false },
-  { key: "notify", label: "Push notification", type: "checkbox", defaultValue: false },
+  { key: "refresh_data", label: "运行前刷新数据 Refresh data", type: "checkbox", defaultValue: false },
+  { key: "notify", label: "推送通知 Push notification", type: "checkbox", defaultValue: false },
 ];
 
 // Ad-hoc one-off run (no session): pick the strategy + seed cash here.
 export const oneOffRunSpecs: FieldSpec[] = [
-  { key: "strategy_name", label: "Strategy Asset", type: "select", options: [] },
-  { key: "init_cash", label: "Initial Cash", type: "number", defaultValue: 1000000 },
-  { key: "date", label: "Date", type: "date" },
+  { key: "strategy_name", label: "策略资产 Strategy Asset", type: "select", options: [] },
+  { key: "init_cash", label: "初始资金 Initial Cash", type: "number", defaultValue: 1000000 },
+  { key: "date", label: "日期 Date", type: "date" },
   lotField,
-  { key: "refresh_data", label: "Refresh data before run", type: "checkbox", defaultValue: false },
-  { key: "notify", label: "Push notification", type: "checkbox", defaultValue: false },
-  { key: "state_path", label: "State Path", type: "text" },
-  { key: "factor_path", label: "Factor Path", type: "text" },
-  { key: "model_pickle_path", label: "Model Pickle Path", type: "text" },
+  { key: "refresh_data", label: "运行前刷新数据 Refresh data", type: "checkbox", defaultValue: false },
+  { key: "notify", label: "推送通知 Push notification", type: "checkbox", defaultValue: false },
+  { key: "state_path", label: "状态文件 State Path", type: "text" },
+  { key: "factor_path", label: "因子文件 Factor Path", type: "text" },
+  { key: "model_pickle_path", label: "模型文件 Model Pickle Path", type: "text" },
   ...strategyParamFields({ showAccount: false }),
 ];
 

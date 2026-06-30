@@ -1,5 +1,5 @@
-import { HelpCircle, Loader2, Moon, RefreshCw, Sun, Trash2, XCircle } from "lucide-react";
-import React, { useEffect, useState } from "react";
+import { AlertTriangle, HelpCircle, Info, Loader2, Moon, RefreshCw, Sun, Trash2, XCircle } from "lucide-react";
+import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { api, Job } from "./api";
 import { useI18n } from "./i18n";
@@ -65,7 +65,7 @@ export function Layout() {
             <span className="muted">AlphaPilot Portal</span>
           </div>
           <div className="topbar-actions">
-            <span className="daemon-chip" title={t("scheduler")}>
+            <span className="daemon-chip" title={daemon ? t("daemonTipOn") : t("daemonTipOff")}>
               <span className={`dot ${daemon ? "on" : "off"}`} />
               {daemon ? t("daemonOn") : t("daemonOff")}
             </span>
@@ -129,6 +129,62 @@ export function Spinner({ size = 16 }: { size?: number }) {
   return <Loader2 size={size} className="spin" />;
 }
 
+/** Hover/focus tooltip bubble. Pure CSS positioning (see `.tooltip` in styles.css). */
+export function Tooltip({ tip, children, className }: { tip: string; children: React.ReactNode; className?: string }) {
+  return (
+    <span className={`tooltip${className ? ` ${className}` : ""}`} tabIndex={0}>
+      {children}
+      <span className="tooltip-bubble" role="tooltip">{tip}</span>
+    </span>
+  );
+}
+
+/** Small info icon that reveals an explanatory tooltip — use beside labels/metrics. */
+export function InfoDot({ tip }: { tip: string }) {
+  return (
+    <Tooltip tip={tip} className="info-dot">
+      <Info size={14} aria-hidden="true" />
+    </Tooltip>
+  );
+}
+
+/**
+ * Button whose `onClick` may be async: shows a spinner and disables itself while the click is in
+ * flight, so primary actions get a consistent loading state and are guarded against double-clicks.
+ */
+export function AsyncButton({
+  onClick,
+  children,
+  className = "button",
+  disabled = false,
+  title,
+  type = "button"
+}: {
+  onClick: () => void | Promise<unknown>;
+  children: React.ReactNode;
+  className?: string;
+  disabled?: boolean;
+  title?: string;
+  type?: "button" | "submit";
+}) {
+  const [busy, setBusy] = useState(false);
+  async function handle() {
+    if (busy || disabled) return;
+    setBusy(true);
+    try {
+      await onClick();
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <button type={type} className={className} disabled={busy || disabled} title={title} onClick={() => void handle()}>
+      {busy ? <Loader2 className="spin" size={15} /> : null}
+      {children}
+    </button>
+  );
+}
+
 export function PanelHelp({
   label,
   title,
@@ -142,6 +198,7 @@ export function PanelHelp({
   items: string[];
   footer?: string;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   return (
     <div className="panel-help">
@@ -159,7 +216,7 @@ export function PanelHelp({
         <div className="help-popover" role="dialog" aria-label={label}>
           <div className="help-popover-head">
             <strong>{title}</strong>
-            <button type="button" className="button ghost small" onClick={() => setOpen(false)}>x</button>
+            <button type="button" className="button ghost small icon-only" aria-label={t("cancel")} onClick={() => setOpen(false)}>×</button>
           </div>
           {intro ? <p>{intro}</p> : null}
           <ul>
@@ -499,22 +556,36 @@ export function DynamicForm({
   );
 }
 
+const STATUS_LABEL_KEY: Record<string, string> = {
+  running: "stRunning",
+  succeeded: "stSucceeded",
+  failed: "stFailed",
+  cancelled: "stCancelled",
+  lost: "stLost",
+  pending: "stPending",
+  stopped: "stStopped",
+  unknown: "stUnknown",
+};
+
 export function StatusPill({ status }: { status?: string }) {
+  const { t } = useI18n();
   const s = status || "unknown";
+  const label = STATUS_LABEL_KEY[s] ? t(STATUS_LABEL_KEY[s]) : s;
   return (
-    <span className={`pill ${s}`}>
+    <span className={`pill ${s}`} title={t("statusTip")}>
       <span className="pill-dot" />
-      {s}
+      {label}
     </span>
   );
 }
 
 export function ProgressBar({ percent, label, active = false }: { percent: number; label?: string; active?: boolean }) {
+  const { t } = useI18n();
   const value = Math.max(0, Math.min(100, Math.round(percent || 0)));
   return (
     <div className={`progress-block ${active ? "active" : ""}`}>
       <div className="progress-head">
-        <span>{label || "Progress"}</span>
+        <span>{label || t("progress")}</span>
         <strong>{value}%</strong>
       </div>
       <div className="progress-track">
@@ -524,18 +595,29 @@ export function ProgressBar({ percent, label, active = false }: { percent: numbe
   );
 }
 
+export type Column<T> = {
+  key: keyof T | string;
+  label: string;
+  render?: (row: T) => React.ReactNode;
+  /** Horizontal alignment of header + cell (numbers read better right-aligned). */
+  align?: "left" | "right" | "center";
+  /** Render long values on a single line with an ellipsis; hover shows the full text. */
+  ellipsis?: boolean;
+};
+
 export function DataTable<T extends Record<string, unknown>>({
   rows,
   columns,
-  empty = "No data",
+  empty,
   loading = false
 }: {
   rows: T[];
-  columns: { key: keyof T | string; label: string; render?: (row: T) => React.ReactNode }[];
+  columns: Column<T>[];
   empty?: string;
   loading?: boolean;
 }) {
   const { t } = useI18n();
+  const emptyText = empty ?? t("empty");
   if (loading && !rows.length) {
     return (
       <div className="empty loading-row">
@@ -543,23 +625,35 @@ export function DataTable<T extends Record<string, unknown>>({
       </div>
     );
   }
-  if (!rows.length) return <div className="empty">{empty}</div>;
+  if (!rows.length) return <div className="empty">{emptyText}</div>;
+  const cellClass = (col: Column<T>) =>
+    [col.align ? `col-${col.align}` : "", col.ellipsis ? "cell-ellipsis" : ""].filter(Boolean).join(" ") || undefined;
   return (
     <div className="table-wrap">
       <table>
         <thead>
           <tr>
             {columns.map((col, idx) => (
-              <th key={`${String(col.key)}-${idx}`}>{col.label}</th>
+              <th key={`${String(col.key)}-${idx}`} className={col.align ? `col-${col.align}` : undefined}>{col.label}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {rows.map((row, idx) => (
             <tr key={idx}>
-              {columns.map((col, colIdx) => (
-                <td key={`${String(col.key)}-${colIdx}`}>{col.render ? col.render(row) : String(row[col.key as keyof T] ?? "")}</td>
-              ))}
+              {columns.map((col, colIdx) => {
+                const raw = String(row[col.key as keyof T] ?? "");
+                const content = col.render ? col.render(row) : raw;
+                return (
+                  <td
+                    key={`${String(col.key)}-${colIdx}`}
+                    className={cellClass(col)}
+                    title={col.ellipsis && !col.render ? raw : undefined}
+                  >
+                    {content}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>
@@ -571,6 +665,7 @@ export function DataTable<T extends Record<string, unknown>>({
 export function JobsPanel({ compact = false }: { compact?: boolean }) {
   const { t } = useI18n();
   const toast = useToast();
+  const confirm = useConfirm();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selected, setSelected] = useState<Job | null>(null);
   const [log, setLog] = useState("");
@@ -626,7 +721,7 @@ export function JobsPanel({ compact = false }: { compact?: boolean }) {
   }
 
   async function remove(job: Job) {
-    if (!window.confirm(`${t("delete")} ${job.job_id}?`)) return;
+    if (!(await confirm({ message: `${t("delete")} ${job.job_id}?`, danger: true }))) return;
     try {
       await api.delete(`/api/jobs/${job.job_id}`);
       setSelected(null);
@@ -637,7 +732,7 @@ export function JobsPanel({ compact = false }: { compact?: boolean }) {
   }
 
   async function clearFinished() {
-    if (!window.confirm(t("clearFinishedConfirm"))) return;
+    if (!(await confirm({ message: t("clearFinishedConfirm"), danger: true }))) return;
     try {
       const res = await api.post<{ deleted: number }>("/api/jobs/clear");
       setSelected(null);
@@ -670,25 +765,26 @@ export function JobsPanel({ compact = false }: { compact?: boolean }) {
         empty={t("empty")}
         loading={loading}
         columns={[
-          { key: "kind", label: "Kind" },
-          { key: "status", label: "Status", render: (row) => <StatusPill status={String(row.status)} /> },
+          { key: "kind", label: t("colKind") },
+          { key: "status", label: t("status"), render: (row) => <StatusPill status={String(row.status)} /> },
           {
             key: "progress",
-            label: "Progress",
+            label: t("progress"),
             render: (row) => {
               const progress = row.progress as { percent?: number; stage?: string; message?: string } | undefined;
               return progress ? <ProgressBar percent={progress.percent || 0} label={progress.message || progress.stage} /> : "";
             }
           },
-          { key: "result_summary", label: "Summary" },
+          { key: "result_summary", label: t("colSummary"), ellipsis: true },
           {
             key: "job_id",
-            label: "",
+            label: t("colActions"),
+            align: "right",
             render: (row) => {
               const job = row as unknown as Job;
               return (
                 <div className="row-actions">
-                  <button className="button small" onClick={() => void loadJob(job)}>Open</button>
+                  <button className="button small" onClick={() => void loadJob(job)}>{t("open")}</button>
                   {job.status === "running" ? <button className="icon-button" onClick={() => void cancel(job)} title={t("cancel")}><XCircle size={15} /></button> : null}
                   {job.status !== "running" ? <button className="icon-button danger" onClick={() => void remove(job)} title={t("delete")}><Trash2 size={15} /></button> : null}
                 </div>
@@ -699,10 +795,86 @@ export function JobsPanel({ compact = false }: { compact?: boolean }) {
       />
       {selected ? (
         <div className="split">
-          <pre className="log">{log || "No log"}</pre>
+          <pre className="log">{log || t("noLog")}</pre>
           <pre className="json">{JSON.stringify(result ?? selected, null, 2)}</pre>
         </div>
       ) : null}
     </section>
   );
+}
+
+type ConfirmOptions = {
+  message: string;
+  title?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+};
+
+type ConfirmState = ConfirmOptions & { resolve: (ok: boolean) => void };
+
+const ConfirmContext = createContext<((opts: ConfirmOptions) => Promise<boolean>) | null>(null);
+
+/**
+ * Themed replacement for `window.confirm`. Wrap the app in `ConfirmProvider`, then call
+ * `const confirm = useConfirm()` and `if (!(await confirm({ message, danger: true }))) return;`
+ * in any handler. The dialog matches the portal theme (incl. dark mode).
+ */
+export function ConfirmProvider({ children }: { children: React.ReactNode }) {
+  const { t } = useI18n();
+  const [state, setState] = useState<ConfirmState | null>(null);
+
+  const confirm = useCallback(
+    (opts: ConfirmOptions) => new Promise<boolean>((resolve) => setState({ ...opts, resolve })),
+    [],
+  );
+
+  function close(ok: boolean) {
+    setState((cur) => {
+      cur?.resolve(ok);
+      return null;
+    });
+  }
+
+  useEffect(() => {
+    if (!state) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close(false);
+      if (e.key === "Enter") close(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [state]);
+
+  return (
+    <ConfirmContext.Provider value={confirm}>
+      {children}
+      {state ? (
+        <div className="modal-overlay" onClick={() => close(false)}>
+          <div className="modal-card" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              {state.danger ? <AlertTriangle size={18} className="modal-danger-icon" /> : <Info size={18} className="modal-info-icon" />}
+              <strong>{state.title || t("confirmTitle")}</strong>
+            </div>
+            <p className="modal-body">{state.message}</p>
+            <div className="modal-actions">
+              <button className="button" onClick={() => close(false)}>{state.cancelLabel || t("cancel")}</button>
+              <button className={`button ${state.danger ? "danger" : "primary"}`} autoFocus onClick={() => close(true)}>
+                {state.confirmLabel || t("confirm")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </ConfirmContext.Provider>
+  );
+}
+
+export function useConfirm() {
+  const ctx = useContext(ConfirmContext);
+  // Progressive enhancement: when a ConfirmProvider is mounted (the real app) use the themed
+  // dialog; otherwise (e.g. unit tests rendering a page in isolation) fall back to the native
+  // confirm so callers can stay agnostic.
+  if (ctx) return ctx;
+  return (opts: ConfirmOptions) => Promise.resolve(window.confirm(opts.message));
 }

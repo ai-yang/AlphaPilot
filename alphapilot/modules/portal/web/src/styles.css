@@ -169,7 +169,7 @@ nav a.active::before {
 
 .grid { display: grid; gap: 16px; margin-bottom: 16px; }
 .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.grid.side { grid-template-columns: minmax(0, 1fr) 360px; align-items: start; }
+.grid.side { grid-template-columns: minmax(0, 1fr) clamp(300px, 28vw, 380px); align-items: start; }
 
 .panel {
   background: var(--surface);
@@ -209,6 +209,7 @@ nav a.active::before {
 }
 .metric:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); border-color: var(--border-strong); }
 .metric span { display: block; color: var(--text-muted); font-size: 13px; }
+.metric .metric-label { display: flex; align-items: center; gap: 6px; }
 .metric strong { display: block; margin-top: 6px; font-size: 23px; letter-spacing: 0; }
 
 .action-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -509,7 +510,10 @@ label { display: grid; gap: 6px; color: var(--text-soft); font-size: 13px; margi
 .table-wrap { width: 100%; overflow: auto; max-height: 640px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
 table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--surface); }
 th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
-th { position: sticky; top: 0; z-index: 1; background: var(--surface-3); color: var(--text-soft); font-weight: 650; }
+th { position: sticky; top: 0; z-index: 2; background: var(--surface-3); color: var(--text-soft); font-weight: 650; }
+th.col-right, td.col-right { text-align: right; }
+th.col-center, td.col-center { text-align: center; }
+td.cell-ellipsis { max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 tbody tr { transition: background 0.12s ease; }
 tbody tr:hover { background: var(--surface-2); }
 tr:last-child td { border-bottom: 0; }
@@ -547,6 +551,7 @@ td code { white-space: pre-wrap; word-break: break-word; }
 .empty { color: var(--text-muted); padding: 18px; border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); background: var(--surface-2); }
 
 .split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+.pool-detail { display: grid; gap: 12px; margin-top: 14px; }
 .log, .json {
   margin: 0;
   overflow: auto;
@@ -823,6 +828,94 @@ summary { cursor: pointer; font-weight: 650; }
 .toast.success { border-color: var(--success-border); background: var(--success-bg); color: var(--success-fg); }
 .toast.error { border-color: var(--danger-border); background: var(--danger-bg); color: var(--danger-fg); }
 .toast.info { border-color: var(--info-border); background: var(--info-bg); color: var(--info-fg); }
+
+/* Headers inside a panel-head/title-inline sit tight so title + help + actions line up. */
+.panel-head h2, .panel-head h3,
+.panel-title-inline h2, .panel-title-inline h3 { margin: 0; }
+
+/* Hover/focus tooltip bubble */
+.tooltip { position: relative; display: inline-flex; align-items: center; }
+.tooltip > .tooltip-bubble {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  z-index: 40;
+  width: max-content;
+  max-width: 260px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--text);
+  color: var(--surface);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: normal;
+  text-align: left;
+  box-shadow: var(--shadow-md);
+  opacity: 0;
+  transform: translateX(-50%) translateY(4px);
+  pointer-events: none;
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+.tooltip:hover > .tooltip-bubble,
+.tooltip:focus-visible > .tooltip-bubble,
+.tooltip:focus-within > .tooltip-bubble {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.tooltip.info-dot { cursor: help; color: var(--text-muted); outline: none; }
+.tooltip.info-dot:hover, .tooltip.info-dot:focus-visible { color: var(--accent-600); }
+.tooltip.info-dot > svg { vertical-align: middle; }
+
+/* Removable pill tag (stock-pool members, etc.) — replaces ad-hoc inline styles. */
+.tag.removable { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 10px; }
+.tag.removable button {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  line-height: 1;
+  cursor: pointer;
+}
+.tag.removable button:hover:not(:disabled) { background: var(--danger-bg); color: var(--danger-fg); }
+.tag.removable button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Field-level hint under a manually built <label> (mirrors .dynamic-form small). */
+.field-hint { display: block; margin-top: -4px; color: var(--text-muted); font-size: 12px; line-height: 1.35; }
+
+/* Confirm dialog / modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(16, 24, 40, 0.45);
+  backdrop-filter: blur(2px);
+  animation: toast-in 0.14s ease-out;
+}
+.modal-card {
+  width: min(440px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: 18px;
+}
+.modal-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.modal-head strong { font-size: 15px; }
+.modal-danger-icon { color: var(--danger-fg); flex-shrink: 0; }
+.modal-info-icon { color: var(--accent-600); flex-shrink: 0; }
+.modal-body { margin: 0 0 16px; color: var(--text-soft); font-size: 14px; line-height: 1.5; word-break: break-word; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 /* Tablet */
 @media (max-width: 980px) {

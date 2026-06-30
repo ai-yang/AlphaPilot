@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
-import { Layout } from "./components";
+import { ConfirmProvider, Layout } from "./components";
 import { I18nProvider } from "./i18n";
 import { ToastProvider } from "./toast";
 import {
@@ -42,7 +42,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <I18nProvider>
       <ToastProvider>
-        <RouterProvider router={router} />
+        <ConfirmProvider>
+          <RouterProvider router={router} />
+        </ConfirmProvider>
       </ToastProvider>
     </I18nProvider>
   </React.StrictMode>
