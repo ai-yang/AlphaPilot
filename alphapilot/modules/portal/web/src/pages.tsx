@@ -185,6 +185,12 @@ function formatDateLabel(value: unknown): string {
   return value ? String(value).slice(0, 10) : "-";
 }
 
+function formatTimestamp(value: unknown): string {
+  if (!value) return "—";
+  const d = new Date(String(value));
+  return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString();
+}
+
 function formatPrice(value?: number): string {
   return value === undefined ? "-" : value.toFixed(2);
 }
@@ -2106,13 +2112,15 @@ export function SchedulerPage() {
               { key: "name", label: "Name" },
               { key: "kind", label: "Kind" },
               { key: "time", label: "Time" },
-              { key: "enabled", label: "Enabled" },
+              { key: "enabled", label: "Enabled", render: (row) => <>{row.enabled ? "✓" : "—"}</> },
+              { key: "last_run_at", label: t("scheduleLastRun"), render: (row) => <span title={String(row.last_job_id || "")}>{formatTimestamp(row.last_run_at)}</span> },
+              { key: "next_run_at", label: t("scheduleNextRun"), render: (row) => <>{row.enabled ? formatTimestamp(row.next_run_at) : "—"}</> },
               {
                 key: "schedule_id",
                 label: "",
                 render: (row) => (
                   <div className="row-actions">
-                    <button className="button small" disabled={busy} onClick={() => void run(async () => { await api.post(`/api/schedules/${row.schedule_id}/run`); }, t("started"))}>{t("run")}</button>
+                    <button className="button small" disabled={busy} onClick={() => void run(async () => { await api.post(`/api/schedules/${row.schedule_id}/run`); await schedules.refresh(); }, t("started"))}>{t("run")}</button>
                     <button className="button small danger" disabled={busy} onClick={() => deleteSchedule(String(row.schedule_id))}>{t("delete")}</button>
                   </div>
                 )

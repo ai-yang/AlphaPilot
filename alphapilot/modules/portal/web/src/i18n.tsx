@@ -301,6 +301,8 @@ const zh: Dict = {
   pnlNoData: "该会话尚无可绘制的交易数据(运行若干交易日后生成)。",
   // scheduler
   schedulerSubtitle: "每日定时触发数据、挖掘和回测任务。",
+  scheduleLastRun: "上次运行",
+  scheduleNextRun: "下次运行",
   createSchedule: "创建",
   nameLabel: "名称",
   typeLabel: "类型",
@@ -853,6 +855,8 @@ const en: Dict = {
   pnlNoData: "No chartable trade data yet for this session (runs accrue over trading days).",
   // scheduler
   schedulerSubtitle: "Trigger data, mining and backtest jobs daily.",
+  scheduleLastRun: "Last run",
+  scheduleNextRun: "Next run",
   createSchedule: "Create",
   nameLabel: "Name",
   typeLabel: "Type",

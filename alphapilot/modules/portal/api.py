@@ -439,7 +439,15 @@ def create_app(
 
     @app.get("/api/schedules")
     def list_schedules() -> list[dict[str, Any]]:
-        return _jsonable(schedules.list_schedules())
+        records = schedules.list_schedules()
+        for record in records:
+            # Enrich each record with the next firing time so the UI can show it;
+            # the stored record only carries the last_run_* fields.
+            try:
+                record["next_run_at"] = schedules.next_run_at(record).isoformat(timespec="seconds")
+            except Exception:  # noqa: BLE001 - a malformed time should not break the list
+                record["next_run_at"] = None
+        return _jsonable(records)
 
     @app.post("/api/schedules")
     def create_schedule(payload: ScheduleCreate) -> dict[str, Any]:

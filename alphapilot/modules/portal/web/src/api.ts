@@ -81,5 +81,7 @@ export type Schedule = {
   enabled: boolean;
   kwargs: Record<string, unknown>;
   last_run_at?: string | null;
+  last_run_date?: string | null;
   last_job_id?: string | null;
+  next_run_at?: string | null;
 };

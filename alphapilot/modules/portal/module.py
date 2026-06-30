@@ -45,10 +45,30 @@ class PortalModule(BaseModule):
         app = create_app(static_dir=static_dir, portal_host=host, portal_port=port)
         install_restart_signal_handler()
         write_runtime(host=host, port=port, argv=current_restart_argv())
+        self._autostart_scheduler()
         try:
             uvicorn.run(app, host=host, port=port)
         finally:
             clear_runtime()
+
+    @staticmethod
+    def _autostart_scheduler() -> None:
+        """Start the scheduler daemon on portal launch so saved schedules fire.
+
+        Without this the daemon only ran when a user manually pressed *Start*, so
+        schedules silently never triggered after a restart. Best-effort and only
+        when at least one schedule is enabled; ``start_daemon`` itself no-ops if a
+        healthy daemon is already running.
+        """
+        try:
+            from alphapilot.modules.portal.schedules import list_schedules, start_daemon
+
+            if any(s.get("enabled", True) for s in list_schedules()):
+                status = start_daemon()
+                state = "running" if status.get("running") else "not running"
+                print(f"[portal] scheduler daemon auto-start: {state} (pid={status.get('pid')})")
+        except Exception as exc:  # noqa: BLE001 - never let the daemon block the portal
+            print(f"[portal] scheduler daemon auto-start skipped: {type(exc).__name__}: {exc}")
 
     def scheduler(self, interval: int = 30) -> None:
         """Run the daily task scheduler daemon (auto-fires saved data/mine/backtest schedules)."""

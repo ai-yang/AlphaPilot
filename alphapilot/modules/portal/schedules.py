@@ -447,6 +447,16 @@ def stop_daemon(*, schedule_root: Path | str | None = None) -> dict[str, Any]:
 
 
 def _main(argv: list[str] | None = None) -> None:
+    # Honor the configured timezone for daily firing. When the daemon is spawned by
+    # ``start_daemon`` it inherits ``TZ`` from the portal, but a direct
+    # ``python -m alphapilot.modules.portal.schedules`` launch would otherwise fall
+    # back to the system zone (matching the ``alphapilot scheduler`` CLI path).
+    try:
+        from alphapilot.modules.portal.settings import apply_timezone
+
+        apply_timezone()
+    except Exception:  # noqa: BLE001 - never let tz setup block the daemon
+        pass
     argv = list(sys.argv[1:] if argv is None else argv)
     interval = 30
     if "--interval" in argv:
