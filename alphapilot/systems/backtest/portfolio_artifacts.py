@@ -16,22 +16,35 @@ from alphapilot.systems.backtest.artifacts import (
     find_artifact,
     parse_trades_and_holdings,
 )
+from alphapilot.systems.data.frequency import FREQUENCIES, portfolio_artifact_names
+
+
+def _find_portfolio_artifact(workspace: Path, kind: str) -> Path | None:
+    """Find a PortAnaRecord artifact (``report``/``positions``/``indicators``),
+    tolerating the rebalance-freq filename tag: tries daily (``1day``) first for
+    back-compat, then intraday variants (``5min`` ...)."""
+    for freq in FREQUENCIES:
+        name = portfolio_artifact_names(freq)[kind]
+        path = find_artifact(workspace, name)
+        if path is not None:
+            return path
+    return None
 
 
 def _resolve_daily_report(workspace: Path) -> tuple[pd.DataFrame, Path | None]:
-    """Load daily portfolio report from ret.pkl or qlib mlruns artifact."""
+    """Load portfolio report from ret.pkl or qlib mlruns artifact (any freq tag)."""
     ret_path = workspace / "ret.pkl"
     if ret_path.exists():
         report = pd.read_pickle(ret_path)
         return report, ret_path
 
-    report_path = find_artifact(workspace, "report_normal_1day.pkl")
+    report_path = _find_portfolio_artifact(workspace, "report")
     if report_path is not None:
         report = pd.read_pickle(report_path)
         return report, report_path
 
     raise FileNotFoundError(
-        f"ret.pkl / report_normal_1day.pkl not found under workspace: {workspace}"
+        f"ret.pkl / report_normal_*.pkl not found under workspace: {workspace}"
     )
 
 
@@ -76,9 +89,9 @@ def export_portfolio_to_dir(workspace: Path | str, dest_dir: Path | str) -> dict
         shutil.copy2(metrics_src, metrics_dst)
         exported["qlib_metrics"] = metrics_dst.name
 
-    positions_path = find_artifact(workspace, "positions_normal_1day.pkl")
+    positions_path = _find_portfolio_artifact(workspace, "positions")
     if positions_path is not None:
-        positions_dst = dest_dir / "positions_normal_1day.pkl"
+        positions_dst = dest_dir / positions_path.name
         shutil.copy2(positions_path, positions_dst)
         exported["positions_raw"] = positions_dst.name
 
@@ -112,9 +125,9 @@ def export_portfolio_to_dir(workspace: Path | str, dest_dir: Path | str) -> dict
                     except Exception as exc:  # noqa: BLE001
                         logger.warning(f"Skip position pivot {col}: {exc}")
 
-    indicators_path = find_artifact(workspace, "indicators_normal_1day.pkl")
+    indicators_path = _find_portfolio_artifact(workspace, "indicators")
     if indicators_path is not None:
-        indicators_dst = dest_dir / "indicators_normal_1day.pkl"
+        indicators_dst = dest_dir / indicators_path.name
         shutil.copy2(indicators_path, indicators_dst)
         exported["indicators_raw"] = indicators_dst.name
 

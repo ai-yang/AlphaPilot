@@ -17,6 +17,9 @@ data_handler_config: &data_handler_config
                 label:
                     - ["{{ p.label_expression }}"]
                     - ["LABEL0"]
+{% if p.freq != "day" %}
+            freq: {{ p.freq }}
+{% endif %}
 
     learn_processors:
         - class: Fillna
@@ -46,7 +49,7 @@ port_analysis_config: &port_analysis_config
         class: SimulatorExecutor
         module_path: qlib.backtest.executor
         kwargs:
-            time_per_step: day
+            time_per_step: {{ p.time_per_step }}
             generate_portfolio_metrics: True
             verbose: False
             indicator_config:

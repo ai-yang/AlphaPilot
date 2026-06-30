@@ -125,3 +125,32 @@ def existing_tushare_qlib_dir() -> Path:
 def download_state_path_for_raw_dir(raw_dir: str | Path) -> Path:
     """``download_state.csv`` lives beside mode directories under each provider root."""
     return _expanded(Path(raw_dir)).parent / "download_state.csv"
+
+
+# --------------------------------------------------------------------------- #
+# Frequency-aware layout (minute bars live in per-frequency sibling directories;
+# the daily layout above is unchanged so existing daily pipelines never move).
+# --------------------------------------------------------------------------- #
+def baostock_qlib_dir(freq: str = "day") -> Path:
+    """Qlib binary dir for *freq*. Daily resolves to the existing dir; intraday
+    frequencies get an isolated sibling (e.g. ``.../baostock/qlib_5min``)."""
+    from alphapilot.systems.data.frequency import get_frequency
+
+    spec = get_frequency(freq)
+    if not spec.is_intraday:
+        return existing_baostock_qlib_dir()
+    return _expanded(BAOSTOCK_ROOT / f"qlib{spec.qlib_dir_suffix}")
+
+
+def baostock_minute_raw_dir(freq: str) -> Path:
+    """Raw minute CSV dir for an intraday *freq* (e.g. ``.../baostock/raw_min_5min``).
+
+    Minute bars are downloaded already adjusted (baostock ``adjustflag``), so they
+    do not use the daily adjust-factor synthesis directories.
+    """
+    from alphapilot.systems.data.frequency import get_frequency
+
+    spec = get_frequency(freq)
+    if not spec.is_intraday:
+        raise ValueError(f"baostock_minute_raw_dir requires an intraday freq, got {freq!r}")
+    return _expanded(BAOSTOCK_ROOT / f"raw_min_{spec.key}")

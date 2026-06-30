@@ -44,20 +44,31 @@ else:
 
     print(f"Output has been saved to {output_path}")
 
-    portfolio_objects = [
-        ("portfolio_analysis/report_normal_1day.pkl", "ret.pkl"),
-        ("portfolio_analysis/positions_normal_1day.pkl", "positions_normal_1day.pkl"),
-        ("portfolio_analysis/indicators_normal_1day.pkl", "indicators_normal_1day.pkl"),
+    # PortAnaRecord names artifacts by the rebalance-freq tag (daily="1day",
+    # intraday="5min"/"15min"/...). Probe candidates and export whichever the run
+    # actually produced, preserving the tag in the positions/indicators filenames.
+    rebalance_tags = ["1day", "5min", "15min", "30min", "60min"]
+    portfolio_specs = [
+        ("report_normal_{tag}.pkl", "ret.pkl"),
+        ("positions_normal_{tag}.pkl", "positions_normal_{tag}.pkl"),
+        ("indicators_normal_{tag}.pkl", "indicators_normal_{tag}.pkl"),
     ]
-    for recorder_key, filename in portfolio_objects:
-        try:
-            obj = latest_recorder.load_object(recorder_key)
+    for key_tpl, name_tpl in portfolio_specs:
+        for tag in rebalance_tags:
+            recorder_key = "portfolio_analysis/" + key_tpl.format(tag=tag)
+            try:
+                obj = latest_recorder.load_object(recorder_key)
+            except Exception:
+                continue
+            filename = name_tpl.format(tag=tag)
             out_path = Path(__file__).resolve().parent / filename
-            if filename == "ret.pkl":
-                obj.to_pickle(out_path)
-            else:
-                with out_path.open("wb") as f:
-                    pickle.dump(obj, f)
-            print(f"Saved {filename}")
-        except Exception as exc:
-            print(f"Warning: could not export {recorder_key}: {exc}")
+            try:
+                if filename == "ret.pkl":
+                    obj.to_pickle(out_path)
+                else:
+                    with out_path.open("wb") as f:
+                        pickle.dump(obj, f)
+                print(f"Saved {filename}")
+            except Exception as exc:
+                print(f"Warning: could not export {recorder_key}: {exc}")
+            break  # this artifact's tag resolved; stop probing

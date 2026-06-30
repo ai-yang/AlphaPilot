@@ -141,17 +141,28 @@ class FactorEvaluationPipeline:
 
     def _build_experiment(self, context, request, factor_csv, *, extra_tasks=None):
         from alphapilot.systems.data.factor_h5 import apply_context_env, prepare_or_reuse_context
+        from alphapilot.systems.data.frequency import get_frequency
 
         use_local = _resolve_use_local(context, request.use_local)
+        # Intraday backtests read the per-frequency qlib dir (the configured one is daily).
+        freq = getattr(request, "freq", "day")
+        spec = get_frequency(freq)
+        if spec.is_intraday:
+            from alphapilot.systems.data.data_paths import baostock_qlib_dir
+
+            qlib_dir = str(baostock_qlib_dir(freq))
+        else:
+            qlib_dir = str(context.config.data.qlib_data_dir)
         # Prepare the task's factor h5 context (market/spec cache) and publish it via env BEFORE
         # the scenario is built, so the LLM source-data description and factor execution all read
         # this task's data instead of the global shared folder.
         factor_data_ctx = prepare_or_reuse_context(
             market=getattr(request, "market", None),
-            qlib_dir=str(context.config.data.qlib_data_dir),
+            qlib_dir=qlib_dir,
             yaml_params=request.yaml_params,
             factor_data_dir=getattr(request, "factor_data_dir", None),
             use_local=use_local,
+            freq=freq,
         )
         apply_context_env(factor_data_ctx)
         # When invoked under an `alphapilot backtest` run, link the shared h5 cache into the run

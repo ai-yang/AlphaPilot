@@ -35,8 +35,16 @@ def generate_daily_pv_h5(
     fields: list[str] | None = None,
     start_date: str = DEFAULT_START,
     debug_stock_count: int = 100,
+    freq: str = "day",
 ) -> None:
-    """Write daily_pv_all.h5 and daily_pv_debug.h5 under *output_dir*."""
+    """Write price-volume h5 (all + debug) under *output_dir* for the given *freq*.
+
+    ``freq`` selects the qlib bar frequency ("day" or intraday "5min"/...); the
+    output filenames keep the ``daily_pv`` name regardless (content matches freq).
+    """
+    from alphapilot.systems.data.frequency import get_frequency
+
+    qlib_freq = get_frequency(freq).qlib_freq
     qlib_dir = str(Path(qlib_dir).expanduser())
     output_dir = Path(output_dir).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -44,12 +52,12 @@ def generate_daily_pv_h5(
 
     qlib.init(provider_uri=qlib_dir)
     instruments = D.instruments(market=market)
-    logger.info(f"从 Qlib 导出价量数据: market={market}, fields={fields}")
+    logger.info(f"从 Qlib 导出价量数据: market={market}, fields={fields}, freq={qlib_freq}")
 
     # Index is (datetime, instrument) after swaplevel; ``$return`` must be the per-instrument
-    # day-over-day change, so group by the ``instrument`` level (grouping by the datetime level
-    # would compute a meaningless cross-sectional pct_change within a single day).
-    data = D.features(instruments, fields, freq="day").swaplevel().sort_index().loc[start_date:].sort_index()
+    # bar-over-bar change, so group by the ``instrument`` level (grouping by the datetime level
+    # would compute a meaningless cross-sectional pct_change within a single timestamp).
+    data = D.features(instruments, fields, freq=qlib_freq).swaplevel().sort_index().loc[start_date:].sort_index()
     data["$return"] = data.groupby(level="instrument")["$close"].pct_change().fillna(0)
     logger.info(f"daily_pv_all 形状: {data.shape}")
     data.to_hdf(output_dir / "daily_pv_all.h5", key="data")

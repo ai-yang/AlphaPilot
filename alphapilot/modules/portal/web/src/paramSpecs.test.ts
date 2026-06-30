@@ -4,6 +4,10 @@ import {
   dailyTradeSpecs,
   dataActionSpecs,
   defaultValuesFor,
+  factorBacktestSpecs,
+  factorLibraryBacktestSpecs,
+  freqOptions,
+  llmMiningSpecs,
   oneOffRunSpecs,
   sessionRunSpecs,
   visibleFields,
@@ -125,5 +129,38 @@ describe("real spec catalogs", () => {
     expect(keys).toContain("strategy_name");
     expect(keys).toContain("init_cash");
     expect(keys).not.toContain("session");
+  });
+});
+
+describe("freq (minute K-line) entry points", () => {
+  it("freqOptions cover day + baostock intraday frequencies", () => {
+    expect(freqOptions.map((o) => o.value)).toEqual(["day", "5min", "15min", "30min", "60min"]);
+  });
+
+  it("data / backtest / mining specs all expose a freq field defaulting to day", () => {
+    for (const specs of [dataActionSpecs, factorBacktestSpecs, factorLibraryBacktestSpecs, llmMiningSpecs]) {
+      const freq = specs.find((f) => f.key === "freq");
+      expect(freq, "freq field present").toBeTruthy();
+      expect(freq?.defaultValue).toBe("day");
+    }
+  });
+
+  it("data action freq is baostock-only and hidden for tushare", () => {
+    const keys = (v: Record<string, string>) => visibleFields(dataActionSpecs, v).map((f) => f.key);
+    expect(keys({ action: "pipeline", source: "baostock_cn" })).toContain("freq");
+    expect(keys({ action: "download", source: "baostock_cn" })).toContain("freq");
+    expect(keys({ action: "convert", source: "baostock_cn" })).toContain("freq");
+    expect(keys({ action: "pipeline", source: "tushare_cn" })).not.toContain("freq");
+    // apply_adjust has no freq concept.
+    expect(keys({ action: "apply_adjust", source: "baostock_cn" })).not.toContain("freq");
+  });
+
+  it("a 5min selection is sent through to the backend kwargs", () => {
+    const params = buildParams(dataActionSpecs, { action: "pipeline", source: "baostock_cn", freq: "5min" });
+    expect(params.freq).toBe("5min");
+    // backtest form sends freq as a top-level kwarg (not nested under yaml_params).
+    const bt = buildParams(factorBacktestSpecs, { factor_path: "x.csv", mode: "single_ic", freq: "5min" });
+    expect(bt.freq).toBe("5min");
+    expect(bt).not.toHaveProperty("yaml_params.freq");
   });
 });

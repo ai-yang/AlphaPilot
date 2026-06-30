@@ -268,10 +268,13 @@ Planned directions:
 
 Issues and PRs are welcome.
 
+For questions or development discussions, you can also contact us by email: ruiwong@zju.edu.cn
+
 ## Development Log
 
 | Date | Type | Feature / Module | Goal | Key Changes | Affected Entry | Verification | Status / Follow-up |
 |------|------|------------------|------|-------------|----------------|--------------|--------------------|
+| 2026-06-30 | New | Minute-level data workflow | Extend AlphaPilot beyond daily data so intraday research can run through the same workflow | Added support for minute-level market data download, visualization, factor mining, and backtesting | Market data download; Portal data visualization; factor mining; factor backtest | Pending full regression | Completed |
 | 2026-06-29 | New | Stock pool management | Let users batch-organize stocks into named pools reusable across backtest and factor mining | Added a `stock_pool` CLI module with full CRUD (`pool_create` / `pool_list` / `pool_add` / `pool_remove` / `pool_rename` / `pool_delete`, etc.); pools stored as JSON source-of-truth and synced to Qlib instruments; Portal Market Data page gained a stock-pool management section, and mining / backtest / library / scheduler forms now turn the market / instruments field into a stock-pool dropdown | `alphapilot pool_*` CLI; Portal Market Data page; Mining / Backtest / Library / Scheduler forms; `/api/data/instrument-sets`; `/api/modules/run` | `pytest tests/test_stock_pool.py tests/test_kernel_registry.py`; `npm run build`; `npm run test` | Completed |
 | 2026-06-26 | New | Portal parameter help | Make complex task/config panels easier to use consistently | Added reusable question-mark help panel, expanded help copy across mining, backtest, library, market data, daily trade, scheduler, notifications, and advanced settings; added Daily Trade left-panel title | Portal task/config panels | `npm run build`; `npm run typecheck` blocked by existing `tsconfig.json` `ignoreDeprecations: "6.0"` incompatibility with TypeScript 5.9 | Completed; fix tsconfig before relying on typecheck |
 | 2026-06-24 | Optimization | Portal market data / K-line chart | Improve the local K-line viewing experience | Main chart plus sub-chart layout; sub-chart supports amount, volume, turnover, and price-change switching; added range buttons, unified hover behavior, and light/dark theme adaptation | Portal Market Data page | `npm run typecheck`; `npm run build` | Completed |

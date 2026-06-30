@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
+from dateutil.relativedelta import relativedelta
+
 from alphapilot.log import logger
 try:
     from alphapilot.modules.portal.jobs import update_current_job_progress
@@ -26,6 +28,8 @@ from alphapilot.systems.data.prepare_cn import (
     resolve_factor_dir,
     resolve_raw_dir,
 )
+from alphapilot.systems.data.data_paths import baostock_minute_raw_dir, baostock_qlib_dir
+from alphapilot.systems.data.frequency import get_frequency
 from alphapilot.systems.data.qlib_convert import (
     DEFAULT_BENCHMARK_INDEX,
     DEFAULT_INCLUDE_FIELDS,
@@ -34,6 +38,9 @@ from alphapilot.systems.data.qlib_convert import (
     ensure_benchmark_index,
     extend_future_calendar,
 )
+
+#: Qlib fields dumped for intraday bars (baostock minute has no preclose/turn/factor).
+MINUTE_INCLUDE_FIELDS = "open,high,low,close,volume,amount"
 from alphapilot.systems.data.stock_list import (
     default_market_name,
     load_stocks_from_file,
@@ -267,8 +274,10 @@ class PrepareDataCLI:
         date_field_name: str = "date",
         symbol_field_name: str = "code",
         max_workers: int = 16,
+        freq: str = "day",
     ) -> None:
-        """Convert CSV directory to Qlib binary format."""
+        """Convert CSV directory to Qlib binary format (``freq`` selects bar frequency)."""
+        spec = get_frequency(freq)
         path = (
             resolve_raw_dir(data_path, adjust_mode)
             if data_path is None
@@ -281,6 +290,7 @@ class PrepareDataCLI:
             date_field_name=date_field_name,
             symbol_field_name=symbol_field_name,
             max_workers=max_workers,
+            freq=spec.qlib_freq,
         )
 
     def calendar(
@@ -344,8 +354,8 @@ class PrepareDataCLI:
         all_market: bool = False,
         data_path: str | None = None,
         adjust_mode: str = "forward",
-        qlib_dir: str = str(DEFAULT_QLIB_DIR),
-        include_fields: str = DEFAULT_INCLUDE_FIELDS,
+        qlib_dir: str | None = None,
+        include_fields: str | None = None,
         region: str = "cn",
         market: str | None = None,
         start_date: str = "2016-12-31",
@@ -353,36 +363,63 @@ class PrepareDataCLI:
         sync_instruments: bool = True,
         max_workers: int = 16,
         include_benchmark: bool = True,
+        freq: str = "day",
     ) -> None:
-        """Run dump + calendar + benchmark (skip download)."""
+        """Run dump + calendar + benchmark (skip download).
+
+        For intraday ``freq`` the qlib dir / raw dir default to the per-frequency
+        layout, the dumped fields drop daily-only columns, and the daily-only
+        future-calendar / benchmark steps are skipped.
+        """
+        spec = get_frequency(freq)
         end = end_date or datetime.now().strftime("%Y-%m-%d")
         pool = _resolve_market(
             stock_csv if not all_market else None, market, all_market
         )
 
-        path = (
-            Path(data_path).expanduser()
-            if data_path
-            else resolve_raw_dir(None, adjust_mode)
-        )
+        if qlib_dir is None:
+            qlib_dir = str(baostock_qlib_dir(freq) if spec.is_intraday else DEFAULT_QLIB_DIR)
+        if include_fields is None:
+            include_fields = MINUTE_INCLUDE_FIELDS if spec.is_intraday else DEFAULT_INCLUDE_FIELDS
+
+        if data_path:
+            path = Path(data_path).expanduser()
+        elif spec.is_intraday:
+            path = baostock_minute_raw_dir(freq)
+        else:
+            path = resolve_raw_dir(None, adjust_mode)
 
         if sync_instruments and not all_market:
             codes = load_stocks_from_file(stock_csv, code_column=code_column)
-            write_qlib_instruments(
-                codes,
-                qlib_dir,
-                pool,
-                start_date=start_date,
-                end_date=end,
-                data_dir=path,
-            )
+            if spec.is_intraday:
+                # Intraday bars carry an HH:MM time-of-day; a date-only instrument end
+                # (inferred per-CSV) would clip the final day's bars. Use a shared range
+                # padded one day past ``end`` so every intraday bar is covered.
+                padded_end = (
+                    datetime.strptime(end, "%Y-%m-%d") + relativedelta(days=1)
+                ).strftime("%Y-%m-%d")
+                write_qlib_instruments(
+                    codes, qlib_dir, pool,
+                    start_date=start_date, end_date=padded_end, data_dir=None,
+                )
+            else:
+                write_qlib_instruments(
+                    codes, qlib_dir, pool,
+                    start_date=start_date, end_date=end, data_dir=path,
+                )
         self.dump(
             data_path=str(path),
             adjust_mode=adjust_mode,
             qlib_dir=qlib_dir,
             include_fields=include_fields,
             max_workers=max_workers,
+            freq=spec.qlib_freq,
         )
+        if spec.is_intraday:
+            # Future trading calendar + benchmark index are daily-only concepts and
+            # are not needed for intraday factor calculation / IC evaluation.
+            logger.info(f"分钟频率 freq={spec.key}: 跳过 future calendar 与 benchmark 写入。")
+            return
         self.calendar(qlib_dir=qlib_dir, region=region)
         if include_benchmark:
             # Supplementary: the main conversion already succeeded, so a benchmark
@@ -391,6 +428,71 @@ class PrepareDataCLI:
                 self.benchmark(qlib_dir=qlib_dir, end_date=end)
             except Exception as exc:  # noqa: BLE001
                 logger.warning(f"基准指数写入失败（行情转换已完成，可稍后单独运行 benchmark）: {exc}")
+
+    def _pipeline_minute(
+        self,
+        *,
+        stock_csv: str,
+        code_column: str | None,
+        start_date: str,
+        end_date: str | None,
+        data_dir: str | None,
+        qlib_dir: str | None,
+        market: str | None,
+        sync_instruments: bool,
+        max_workers: int,
+        dump_workers: int,
+        adjust_mode: str,
+        download_state_path: str | None,
+        source: str,
+        freq: str,
+    ) -> None:
+        """Minute pipeline: download adjusted intraday bars then convert to Qlib.
+
+        No apply_adjust (baostock minute bars are already adjusted via adjustflag).
+        Only baostock is supported for intraday in this phase.
+        """
+        from alphapilot.systems.data.prepare_cn_minute import download_cn_minute_data
+
+        if source not in ("baostock_cn", "baostock", None, ""):
+            raise ValueError(f"分钟频率仅支持 baostock 数据源，收到 source={source!r}")
+
+        spec = get_frequency(freq)
+        end = end_date or datetime.now().strftime("%Y-%m-%d")
+        pool = _resolve_market(stock_csv, market, False)
+        raw_dir = Path(data_dir).expanduser() if data_dir else baostock_minute_raw_dir(freq)
+        resolved_qlib = qlib_dir or str(baostock_qlib_dir(freq))
+
+        update_current_job_progress(
+            5, "pipeline:minute:download", f"下载分钟数据 freq={spec.key} market={pool}",
+        )
+        download_cn_minute_data(
+            start_date=start_date,
+            end_date=end,
+            freq=freq,
+            data_dir=raw_dir,
+            stock_csv=stock_csv,
+            code_column=code_column,
+            adjust_mode=adjust_mode,
+            max_workers=max_workers,
+            download_state_path=download_state_path,
+        )
+        update_current_job_progress(70, "pipeline:minute:convert", "转换分钟 Qlib 数据")
+        self.convert(
+            stock_csv=stock_csv,
+            code_column=code_column,
+            data_path=str(raw_dir),
+            qlib_dir=resolved_qlib,
+            market=pool,
+            start_date=start_date,
+            end_date=end,
+            sync_instruments=sync_instruments,
+            max_workers=dump_workers,
+            include_benchmark=False,
+            freq=freq,
+        )
+        logger.info(f"分钟数据流水线完成 freq={spec.key}: {raw_dir} -> {resolved_qlib}")
+
     def pipeline(
         self,
         stock_csv: str = str(DEFAULT_STOCK_CSV),
@@ -414,6 +516,7 @@ class PrepareDataCLI:
         source: str = "baostock_cn",
         token: str | None = None,
         parallel_price_factor: bool = False,
+        freq: str = "day",
     ) -> None:
         """
         全流程: download -> (可选 apply_adjust) -> convert，支持 baostock / tushare。
@@ -421,7 +524,28 @@ class PrepareDataCLI:
         默认先下除权数据，再按 ``target_mode`` 合成前复权(默认)或后复权 CSV，最后转 Qlib。
         Tushare 仅支持除权下载，``source=tushare_cn`` 时强制 ``adjust_mode=none``，
         最终复权由 ``target_mode`` 决定，且各目录默认落在 ``cn_data/tushare/`` 下。
+
+        ``freq`` 为分钟频率（5/15/30/60min）时走分钟流水线：直接下载已复权分钟 K 线并
+        转 Qlib（跳过 apply_adjust / future calendar / benchmark），仅支持 baostock。
         """
+        if get_frequency(freq).is_intraday:
+            return self._pipeline_minute(
+                stock_csv=stock_csv,
+                code_column=code_column,
+                start_date=start_date,
+                end_date=end_date,
+                data_dir=data_dir,
+                qlib_dir=qlib_dir,
+                market=market,
+                sync_instruments=sync_instruments,
+                max_workers=max_workers,
+                dump_workers=dump_workers,
+                adjust_mode=target_mode,
+                download_state_path=download_state_path,
+                source=source,
+                freq=freq,
+            )
+
         is_tushare = source == "tushare_cn"  # adapter registry name
         pool = _resolve_market(
             stock_csv if not all_market else None, market, all_market

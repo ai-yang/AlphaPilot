@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from alphapilot.systems.data.frequency import get_frequency
+
 BASELINE_FEATURES = [
     "($close-$open)/$open",
     "$volume/Mean($volume, 20)",
@@ -40,6 +42,8 @@ class QlibYamlParams(BaseModel):
     """Structured parameters rendered into qlib qrun YAML templates."""
 
     template_type: Literal["baseline", "combined"] = "baseline"
+    # Bar frequency: "day" (default, unchanged behavior) or intraday 5/15/30/60min.
+    freq: str = "day"
     provider_uri: str = "~/.qlib/qlib_data/cn_data"
     region: str = "cn"
     market: str = "main_stock_2026_4_27"
@@ -125,6 +129,31 @@ class QlibYamlParams(BaseModel):
         _parse_date(value)
         return value
 
+    @field_validator("freq")
+    @classmethod
+    def validate_freq(cls, value: str) -> str:
+        # Normalize aliases ("5" -> "5min") and reject unsupported frequencies early.
+        return get_frequency(value).key
+
+    @model_validator(mode="after")
+    def apply_freq_defaults(self) -> "QlibYamlParams":
+        """Derive the intraday annualization scaler unless explicitly overridden.
+
+        ``ann_scaler`` keeps its daily default (252) for ``freq="day"`` so rendered
+        daily YAML is byte-identical to before. For an intraday freq, when the value
+        is still the daily default we replace it with ``252 * bars_per_day``; an
+        explicit non-252 value (e.g. from an LLM patch) is always respected.
+        """
+        spec = get_frequency(self.freq)
+        if spec.is_intraday and self.ann_scaler == 252:
+            self.ann_scaler = spec.ann_scaler
+        return self
+
+    @property
+    def time_per_step(self) -> str:
+        """Qlib executor ``time_per_step`` for this frequency (day -> "day")."""
+        return get_frequency(self.freq).time_per_step
+
     @model_validator(mode="after")
     def validate_segment_order(self) -> "QlibYamlParams":
         if _parse_date(self.train_end) >= _parse_date(self.valid_start):
@@ -197,6 +226,7 @@ class QlibYamlParams(BaseModel):
         """JSON-schema-like hint for LLM patch generation."""
         return {
             "template_type": "baseline | combined",
+            "freq": "string, bar frequency: day | 5min | 15min | 30min | 60min",
             "provider_uri": "string, qlib data root",
             "region": "string, e.g. cn",
             "market": "string, instruments pool name",

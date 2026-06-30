@@ -33,6 +33,9 @@ class FactorBacktestRequest:
     override model / strategy / dataset. ``None`` keeps today's static template behavior."""
     market: str | None = None
     """Instrument-pool name for the factor h5 spec; ``None`` resolves from yaml_params/default."""
+    freq: str = "day"
+    """Bar frequency: ``day`` (default) or intraday ``5min``/``15min``/``30min``/``60min``.
+    Intraday reads the per-frequency qlib dir and builds an intraday factor h5 cache."""
     factor_data_dir: str | Path | None = None
     """Reuse an already-built factor h5 cache dir (``<spec_hash>/``) instead of building."""
     factor_data_fingerprint: str | None = None

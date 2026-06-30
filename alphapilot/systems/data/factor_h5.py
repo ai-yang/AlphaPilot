@@ -88,21 +88,23 @@ class FactorDataSpec:
     start_date: str = DEFAULT_START
     fields: tuple[str, ...] = DEFAULT_FIELDS
     debug_stock_count: int = DEFAULT_DEBUG_STOCK_COUNT
+    freq: str = "day"
 
     def fingerprint(self) -> str:
-        payload = json.dumps(
-            {
-                "qlib_dir": str(Path(self.qlib_dir).expanduser().resolve()),
-                "market": self.market,
-                "start_date": self.start_date,
-                "fields": list(self.fields),
-                "debug_stock_count": self.debug_stock_count,
-                "instruments_hash": _instruments_hash(self.qlib_dir, self.market),
-                "generator_version": GENERATOR_VERSION,
-            },
-            sort_keys=True,
-        )
-        return md5_hash(payload)
+        payload = {
+            "qlib_dir": str(Path(self.qlib_dir).expanduser().resolve()),
+            "market": self.market,
+            "start_date": self.start_date,
+            "fields": list(self.fields),
+            "debug_stock_count": self.debug_stock_count,
+            "instruments_hash": _instruments_hash(self.qlib_dir, self.market),
+            "generator_version": GENERATOR_VERSION,
+        }
+        # Only fold ``freq`` into the hash for intraday data so existing daily cache
+        # fingerprints stay byte-identical (no needless rebuilds on upgrade).
+        if self.freq != "day":
+            payload["freq"] = self.freq
+        return md5_hash(json.dumps(payload, sort_keys=True))
 
 
 @dataclass(frozen=True)
@@ -171,7 +173,7 @@ def _generate_in_docker(out_dir: Path, spec: FactorDataSpec) -> None:
     entry = (
         "python -c \"from alphapilot.systems.data.generate_h5 import generate_daily_pv_h5; "
         f"generate_daily_pv_h5(qlib_dir=r'{qdir}', output_dir=r'{out}', market={spec.market!r}, "
-        f"start_date={spec.start_date!r}, debug_stock_count={spec.debug_stock_count})\""
+        f"start_date={spec.start_date!r}, debug_stock_count={spec.debug_stock_count}, freq={spec.freq!r})\""
     )
     qtde.run(local_path=str(repo_root), entry=entry)
 
@@ -186,6 +188,7 @@ def _write_manifest(cache_dir: Path, spec: FactorDataSpec) -> None:
         "start_date": spec.start_date,
         "fields": list(spec.fields),
         "debug_stock_count": spec.debug_stock_count,
+        "freq": spec.freq,
         "instruments_hash": _instruments_hash(spec.qlib_dir, spec.market),
         "generator_version": GENERATOR_VERSION,
         "daily_pv_size": st.st_size,
@@ -214,6 +217,7 @@ def _build_into(tmp_dir: Path, spec: FactorDataSpec, *, use_local: bool) -> None
             fields=list(spec.fields),
             start_date=spec.start_date,
             debug_stock_count=spec.debug_stock_count,
+            freq=spec.freq,
         )
     else:
         _generate_in_docker(gen_dir, spec)
@@ -304,6 +308,7 @@ def load_context_from_cache_dir(cache_dir: str | Path) -> FactorDataContext:
         start_date=data.get("start_date", DEFAULT_START),
         fields=tuple(data.get("fields", DEFAULT_FIELDS)),
         debug_stock_count=data.get("debug_stock_count", DEFAULT_DEBUG_STOCK_COUNT),
+        freq=data.get("freq", "day"),
     )
     return FactorDataContext(
         spec=spec,
@@ -323,6 +328,7 @@ def prepare_factor_data_context(
     debug_stock_count: int = DEFAULT_DEBUG_STOCK_COUNT,
     yaml_params: Any = None,
     use_local: bool = True,
+    freq: str = "day",
 ) -> FactorDataContext:
     """Resolve a spec for *market*, ensure its cache, and return the data context."""
     resolved_market = resolve_market(explicit=market, yaml_params=yaml_params)
@@ -333,6 +339,7 @@ def prepare_factor_data_context(
         start_date=start_date,
         fields=tuple(fields) if fields else DEFAULT_FIELDS,
         debug_stock_count=debug_stock_count,
+        freq=freq,
     )
     cache_dir = build_or_get_cache(spec, use_local=use_local)
     ctx = context_from_cache_dir(spec, cache_dir)
@@ -382,6 +389,7 @@ def prepare_or_reuse_context(
     factor_data_dir: str | Path | None = None,
     start_date: str = DEFAULT_START,
     use_local: bool = True,
+    freq: str = "day",
 ) -> FactorDataContext:
     """Reuse *factor_data_dir* when given, else build/hit the cache for the resolved market."""
     if factor_data_dir:
@@ -392,4 +400,5 @@ def prepare_or_reuse_context(
         yaml_params=yaml_params,
         start_date=start_date,
         use_local=use_local,
+        freq=freq,
     )

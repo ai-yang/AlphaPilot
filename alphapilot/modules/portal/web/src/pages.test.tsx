@@ -1,10 +1,56 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { I18nProvider } from "./i18n";
-import { LibraryPage } from "./pages";
+import { klineAxisType, klineCategoryTicks, klineIsIntraday, klineTimeLabel, LibraryPage } from "./pages";
 import { ToastProvider } from "./toast";
 
 vi.mock("react-plotly.js", () => ({ default: () => null }));
+
+const klineRow = (date: string) => ({
+  date, open: 1, high: 1, low: 1, close: 1, volume: 1, amount: 1, turn: 1, pctChg: 0,
+});
+
+describe("kline axis selection", () => {
+  it("treats date-only / midnight bars as daily (date axis)", () => {
+    const daily = [klineRow("2026-06-23"), klineRow("2026-06-24T00:00:00")];
+    expect(klineIsIntraday(daily)).toBe(false);
+    expect(klineAxisType(daily)).toBe("date");
+  });
+
+  it("treats intraday timestamps as minute (category axis, no gaps)", () => {
+    const intraday = [klineRow("2026-06-23T09:35:00"), klineRow("2026-06-23 09:40:00")];
+    expect(klineIsIntraday(intraday)).toBe(true);
+    expect(klineAxisType(intraday)).toBe("category");
+  });
+});
+
+describe("intraday axis tick labels", () => {
+  it("formats time-of-day as 24h HH:MM without date", () => {
+    expect(klineTimeLabel("2026-06-23T09:35:00")).toBe("09:35");
+    expect(klineTimeLabel("2026-06-23 13:00:00")).toBe("13:00");
+  });
+
+  it("returns sparse evenly-spaced ticks including the first and last bar, time-only", () => {
+    const rows = Array.from({ length: 48 }, (_, i) => {
+      const hh = String(9 + Math.floor(i / 12)).padStart(2, "0");
+      const mm = String((i % 12) * 5).padStart(2, "0");
+      return klineRow(`2026-06-23T${hh}:${mm}:00`);
+    });
+    const { tickvals, ticktext } = klineCategoryTicks(rows, undefined, 7);
+    expect(tickvals.length).toBeGreaterThan(1);
+    expect(tickvals.length).toBeLessThanOrEqual(7);
+    expect(tickvals[0]).toBe(0);
+    expect(tickvals[tickvals.length - 1]).toBe(47);
+    expect(ticktext.every((s) => /^\d{2}:\d{2}$/.test(s))).toBe(true);
+  });
+
+  it("restricts ticks to the visible (zoomed) index window", () => {
+    const rows = Array.from({ length: 48 }, (_, i) => klineRow(`2026-06-23T10:${String(i).padStart(2, "0")}:00`));
+    const { tickvals } = klineCategoryTicks(rows, [23.5, 47.5], 5);
+    expect(tickvals[0]).toBe(24);
+    expect(tickvals[tickvals.length - 1]).toBe(47);
+  });
+});
 
 type MockFactor = {
   factor_name: string;

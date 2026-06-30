@@ -97,6 +97,29 @@ export const adjustModeOptions: FieldOption[] = [
   { label: "backward", value: "backward" },
 ];
 
+// Bar frequency. Daily is the default; intraday (5/15/30/60min) is baostock-only.
+export const freqOptions: FieldOption[] = [
+  { label: "日 day", value: "day" },
+  { label: "5分钟 5min", value: "5min" },
+  { label: "15分钟 15min", value: "15min" },
+  { label: "30分钟 30min", value: "30min" },
+  { label: "60分钟 60min", value: "60min" },
+];
+
+// Reusable ``freq`` select. ``day`` is sent verbatim (backend treats it as today's behavior);
+// hidden fields are never sent (see ``buildParams``), so gate with ``visibleWhen`` where needed.
+export function freqField(extra: Partial<FieldSpec> = {}): FieldSpec {
+  return {
+    key: "freq",
+    label: "K线频率 Frequency",
+    type: "select",
+    defaultValue: "day",
+    options: freqOptions,
+    helpText: "分钟级仅 baostock 支持（5/15/30/60min）。",
+    ...extra,
+  };
+}
+
 export const dataActionSpecs: FieldSpec[] = [
   {
     key: "action",
@@ -142,6 +165,12 @@ export const dataActionSpecs: FieldSpec[] = [
     parse: (value, values) => values.source === "tushare_cn" && values.action === "pipeline" ? "none" : value,
     visibleWhen: (v) => ["pipeline", "download", "convert"].includes(String(v.action)),
   },
+  // Intraday download/convert is baostock-only; hidden (and thus not sent) for tushare.
+  freqField({
+    helpText: "分钟级（5/15/30/60min）仅 baostock 支持，落到独立的 raw_min_*/qlib_* 目录。",
+    visibleWhen: (v) =>
+      ["pipeline", "download", "convert"].includes(String(v.action)) && v.source !== "tushare_cn",
+  }),
   {
     key: "target_mode",
     label: "目标复权 Target Mode",
@@ -205,6 +234,7 @@ export const llmMiningSpecs: FieldSpec[] = [
   // Use a multiple of 5 to finish whole rounds; other values stop mid-round.
   { key: "step_n", label: "迭代步数 Step N", type: "number", defaultValue: 5, required: true, helpText: "一整轮挖掘 = 5 步（假说生成 → 因子构造 → 因子计算 → 回测 → 反馈）。建议填 5 的整数倍，才能跑完整轮；非整数倍会停在半途。" },
   { key: "scenario", label: "场景 Scenario", type: "text", defaultValue: "alpha_factor_mining" },
+  freqField({ helpText: "分钟挖掘读取对应的 qlib_* 分钟数据；分钟仅 baostock。" }),
   { key: "direction", label: "方向 Direction", type: "textarea", placeholder: "挖掘方向或假说" },
   // Auto-add each round's mined factors to the factor library (zoo) under a "mined" category.
   { key: "save_factors_to_library", label: "自动加入因子库", type: "checkbox", defaultValue: false, helpText: "每轮挖出的因子表达式会校验去重后存入因子库（mined 分类）。" },
@@ -283,6 +313,7 @@ export const factorBacktestSpecs: FieldSpec[] = [
       { label: "multi_sequential", value: "multi_sequential" },
     ],
   },
+  freqField({ helpText: "分钟回测推荐 single_ic（multi_combined 分钟为实验性）；分钟仅 baostock。" }),
   { key: "scenario", label: "场景 Scenario", type: "text", defaultValue: "factor_backtest" },
   backtestMarketField,
   ...strategyParamFields(),
@@ -303,6 +334,7 @@ export const factorLibraryBacktestSpecs: FieldSpec[] = [
       { label: "multi_sequential（多因子序贯）", value: "multi_sequential" },
     ],
   },
+  freqField({ helpText: "分钟回测推荐 single_ic（multi_combined 分钟为实验性）；分钟仅 baostock。" }),
   { key: "scenario", label: "场景 Scenario", type: "text", defaultValue: "factor_backtest" },
   backtestMarketField,
   ...strategyParamFields(),

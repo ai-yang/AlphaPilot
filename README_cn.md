@@ -267,10 +267,13 @@ AlphaPilot/
 
 欢迎通过 Issue / PR 反馈问题与建议。
 
+如果有疑问或者开发问题也可以发送邮件咨询：ruiwong@zju.edu.cn
+
 ## 开发日志
 
 | 日期 | 类型 | 功能/模块 | 目标 | 关键改动 | 影响入口 | 验证 | 状态/后续 |
 |------|------|-----------|------|----------|----------|------|-----------|
+| 2026-06-30 | 新增 | 分钟级数据工作流 | 将 AlphaPilot 从日频扩展到分钟级别，支持盘中研究流程 | 已支持分钟级别的数据下载、展示、因子挖掘和回测功能 | 市场数据下载；Portal 数据展示；因子挖掘；因子回测 | 待完整回归 | 已完成 |
 | 2026-06-29 | 新增 | 股票池管理 | 让用户可批量将股票组织成命名股票池，并在回测与因子挖掘中复用 | 新增 `stock_pool` CLI 模块及完整增删改查（`pool_create` / `pool_list` / `pool_add` / `pool_remove` / `pool_rename` / `pool_delete` 等）；股票池以 JSON 为真实来源并同步到 Qlib instruments；Portal「市场数据」页新增股票池管理区块，挖掘 / 回测 / 库管理 / 调度器表单的「市场 / 股票池」字段改为股票池下拉选择 | `alphapilot pool_*` CLI；Portal「市场数据」页；挖掘 / 回测 / 库管理 / 调度器表单；`/api/data/instrument-sets`；`/api/modules/run` | `pytest tests/test_stock_pool.py tests/test_kernel_registry.py`；`npm run build`；`npm run test` | 已完成 |
 | 2026-06-26 | 新增 | Portal 参数帮助 | 让复杂任务/配置面板更易理解、更一致 | 新增可复用问号帮助面板，扩展挖掘、回测、库管理、市场数据、日频交易、调度器、通知与高级设置说明；补充 Daily Trade 左侧标题 | Portal 各任务/配置面板 | `npm run build`；`npm run typecheck` 因现有 `tsconfig.json` 中 `ignoreDeprecations: "6.0"` 与 TypeScript 5.9 不兼容而阻塞 | 已完成；修复 tsconfig 后再依赖 typecheck |
 | 2026-06-24 | 优化 | Portal 市场数据 / K 线图 | 提升本地 K 线查看体验 | 主图 + 副图布局；副图支持成交额、成交量、换手率、涨跌幅切换；新增范围按钮、统一 hover、深浅主题适配 | Portal「市场数据」页 | `npm run typecheck`；`npm run build` | 已完成 |

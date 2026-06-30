@@ -23,6 +23,7 @@ from alphapilot.systems.backtest.qlib_pretrained import (
     patch_qlib_conf_for_pretrained,
 )
 from alphapilot.systems.data.factor_h5 import ENV_FINGERPRINT, ENV_MARKET
+from alphapilot.systems.data.frequency import FREQUENCIES, portfolio_artifact_names
 
 
 def _factor_data_cache_parts(exp: Any) -> list[str]:
@@ -43,13 +44,22 @@ def _factor_data_cache_parts(exp: Any) -> list[str]:
     return []
 
 
-_PORTFOLIO_ARTIFACT_NAMES = (
-    "ret.pkl",
-    "qlib_res.csv",
-    "positions_normal_1day.pkl",
-    "indicators_normal_1day.pkl",
-    "combined_factors_df.pkl",
-)
+def _portfolio_artifact_names() -> tuple[str, ...]:
+    """Workspace artifacts to sync between cached runs.
+
+    The qlib PortAnaRecord positions/indicators filenames carry the rebalance freq
+    tag (``1day`` for daily, ``5min`` ... for intraday), so include every supported
+    frequency variant — only files that actually exist are copied.
+    """
+    names = ["ret.pkl", "qlib_res.csv", "combined_factors_df.pkl"]
+    for freq in FREQUENCIES:
+        artifacts = portfolio_artifact_names(freq)
+        names.extend([artifacts["positions"], artifacts["indicators"]])
+    # Dedupe while preserving order (day-first).
+    return tuple(dict.fromkeys(names))
+
+
+_PORTFOLIO_ARTIFACT_NAMES = _portfolio_artifact_names()
 
 
 def _coerce_yaml_params(yaml_params: Any) -> Any:

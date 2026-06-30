@@ -37,19 +37,31 @@ def _resolve_sota_result(exp: Experiment, trace: Trace):
     return None
 
 
-_IMPORTANT_METRICS = [
-    "1day.excess_return_without_cost.max_drawdown",
-    "1day.excess_return_without_cost.information_ratio",
-    "1day.excess_return_without_cost.annualized_return",
-    "IC",
+# qlib prefixes portfolio metrics with the rebalance-freq tag (``1day.``/``5min.``/
+# ...). Match by suffix so feedback works at any frequency; ``IC`` is freq-agnostic.
+_IMPORTANT_METRIC_SUFFIXES = [
+    "excess_return_without_cost.max_drawdown",
+    "excess_return_without_cost.information_ratio",
+    "excess_return_without_cost.annualized_return",
 ]
+_IMPORTANT_NONFREQ_METRICS = ["IC"]
+
+
+def _select_important_metrics(index) -> list:
+    """Pick freq-tagged portfolio metrics (any rebalance tag) + IC, in stable order."""
+    index_list = [str(k) for k in index]
+    selected: list = []
+    for suffix in _IMPORTANT_METRIC_SUFFIXES:
+        selected.extend(k for k in index_list if k.endswith("." + suffix))
+    selected.extend(m for m in _IMPORTANT_NONFREQ_METRICS if m in index_list)
+    return selected
 
 
 def _format_current_only(current_result) -> str:
     current_df = pd.DataFrame(current_result)
     current_df.index.name = "metric"
     current_df.rename(columns={"0": "Current Result"}, inplace=True)
-    filtered = current_df.loc[[m for m in _IMPORTANT_METRICS if m in current_df.index]]
+    filtered = current_df.loc[_select_important_metrics(current_df.index)]
     header = (
         "First mining round: no prior SOTA baseline to compare against. "
         "Evaluate the current result on its own merits.\n"
@@ -77,7 +89,7 @@ def process_results(current_result, sota_result):
     combined_df = pd.concat([current_df, sota_df], axis=1)
 
     # Filter the combined DataFrame to retain only the important metrics
-    filtered_combined_df = combined_df.loc[[m for m in _IMPORTANT_METRICS if m in combined_df.index]]
+    filtered_combined_df = combined_df.loc[_select_important_metrics(combined_df.index)]
 
     filtered_combined_df[
         "Bigger columns name (Didn't consider the direction of the metric, you should judge it by yourself that bigger is better or smaller is better)"

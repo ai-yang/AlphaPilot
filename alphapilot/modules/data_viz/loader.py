@@ -12,9 +12,11 @@ import pandas as pd
 from alphapilot.systems.data.data_paths import (
     BAOSTOCK_RAW_DIR_BY_MODE,
     TUSHARE_RAW_DIR_BY_MODE,
+    baostock_minute_raw_dir,
     existing_baostock_raw_dir,
     existing_tushare_raw_dir,
 )
+from alphapilot.systems.data.frequency import FREQUENCIES
 
 AdjustMode = Literal["none", "forward", "backward"]
 
@@ -33,10 +35,11 @@ class DataSourceInfo:
     adjust_mode: AdjustMode
     path: Path
     label: str
+    freq: str = "day"
 
 
 def list_data_sources() -> list[DataSourceInfo]:
-    """Return existing raw CSV roots for baostock and tushare."""
+    """Return existing raw CSV roots for baostock (daily + intraday) and tushare."""
     sources: list[DataSourceInfo] = []
     for mode in BAOSTOCK_RAW_DIR_BY_MODE:
         resolved = existing_baostock_raw_dir(mode)
@@ -47,6 +50,22 @@ def list_data_sources() -> list[DataSourceInfo]:
                     adjust_mode=mode,
                     path=resolved,
                     label=f"baostock · {ADJUST_LABELS[mode]}",
+                )
+            )
+    # Intraday baostock bars live in per-frequency dirs (raw_min_5min, ...); they are
+    # downloaded already adjusted, so they are not split by adjust mode.
+    for key, spec in FREQUENCIES.items():
+        if not spec.is_intraday:
+            continue
+        resolved = baostock_minute_raw_dir(key)
+        if resolved.is_dir() and any(resolved.glob("*.csv")):
+            sources.append(
+                DataSourceInfo(
+                    provider="baostock",
+                    adjust_mode="none",
+                    path=resolved,
+                    label=f"baostock · {key} K线",
+                    freq=key,
                 )
             )
     for mode in TUSHARE_RAW_DIR_BY_MODE:

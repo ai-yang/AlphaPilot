@@ -181,6 +181,57 @@ function klineRangeValue(rows: KlineRow[], range: KlineRange): [string, string] 
   return [startDate.toISOString().slice(0, 10), rows[rows.length - 1].date];
 }
 
+// Intraday bars carry a non-midnight time component (e.g. "2026-06-23T09:35:00"); daily bars
+// are date-only / midnight. Used to pick a continuous (category) x-axis for minute K-lines so
+// the lunch break and overnight gaps don't render as empty spans.
+export function klineIsIntraday(rows: KlineRow[]): boolean {
+  return rows.some((row) => {
+    const m = String(row.date).match(/[ T](\d{2}):(\d{2})/);
+    return m ? m[1] !== "00" || m[2] !== "00" : false;
+  });
+}
+
+export function klineAxisType(rows: KlineRow[]): "date" | "category" {
+  return klineIsIntraday(rows) ? "category" : "date";
+}
+
+// On a category x-axis the range is expressed as bar indices, not dates. Translate the
+// selected window (1M/3M/...) into ``[startIndex, lastIndex]`` so the range buttons still work.
+function klineCategoryRange(rows: KlineRow[], range: KlineRange): [number, number] | undefined {
+  const win = klineRangeValue(rows, range);
+  if (!win) return undefined;
+  const startTs = new Date(win[0]).getTime();
+  const startIdx = rows.findIndex((row) => new Date(row.date).getTime() >= startTs);
+  if (startIdx <= 0) return undefined;
+  return [startIdx - 0.5, rows.length - 0.5];
+}
+
+// 24h time-of-day label ("2026-06-23T09:35:00" -> "09:35"); falls back to the date.
+export function klineTimeLabel(date: unknown): string {
+  const m = String(date).match(/[ T](\d{2}:\d{2})/);
+  return m ? m[1] : String(date).slice(0, 10);
+}
+
+// Sparse HH:MM ticks for the intraday category axis: a handful of evenly-spaced bars
+// (always including the first and last of the visible window), labelled time-only so
+// the axis reads like the daily chart instead of cramming every timestamp.
+export function klineCategoryTicks(
+  rows: KlineRow[],
+  range: [number, number] | undefined,
+  maxTicks = 7,
+): { tickvals: number[]; ticktext: string[] } {
+  const lo = range ? Math.max(0, Math.ceil(range[0])) : 0;
+  const hi = range ? Math.min(rows.length - 1, Math.floor(range[1])) : rows.length - 1;
+  const span = hi - lo;
+  if (span < 0) return { tickvals: [], ticktext: [] };
+  const count = Math.min(maxTicks, span + 1);
+  const idxs = count <= 1
+    ? [lo]
+    : Array.from({ length: count }, (_, i) => Math.round(lo + (span * i) / (count - 1)));
+  const tickvals = Array.from(new Set(idxs));
+  return { tickvals, ticktext: tickvals.map((i) => klineTimeLabel(rows[i].date)) };
+}
+
 function formatDateLabel(value: unknown): string {
   return value ? String(value).slice(0, 10) : "-";
 }
@@ -1299,7 +1350,19 @@ export function MarketPage() {
     turn: t("klineMetricTurn"),
     pctChg: t("klineMetricPct")
   };
-  const chartRange = klineRangeValue(rows, klineRange);
+  // Minute K-lines use a category x-axis (continuous bars, no lunch/overnight gaps); daily keeps
+  // the proportional date axis. The range window maps to bar indices in the intraday case.
+  const klineXAxisType = klineAxisType(rows);
+  const chartRange = klineXAxisType === "category"
+    ? klineCategoryRange(rows, klineRange)
+    : klineRangeValue(rows, klineRange);
+  // Intraday: replace the crammed per-bar timestamps with a few time-only ticks.
+  const intradayTickProps = klineXAxisType === "category"
+    ? (() => {
+        const { tickvals, ticktext } = klineCategoryTicks(rows, chartRange as [number, number] | undefined);
+        return { tickmode: "array" as const, tickvals, ticktext };
+      })()
+    : {};
   const chartColors = {
     surface: cssVar("--surface", "#ffffff"),
     surface2: cssVar("--surface-2", "#f7f8fc"),
@@ -1559,7 +1622,7 @@ export function MarketPage() {
               xaxis: {
                 domain: [0, 1],
                 anchor: "y",
-                type: "date",
+                type: klineXAxisType,
                 range: chartRange,
                 rangeslider: { visible: false },
                 showgrid: true,
@@ -1571,13 +1634,14 @@ export function MarketPage() {
                 spikemode: "across",
                 spikesnap: "cursor",
                 spikecolor: chartColors.muted,
-                spikethickness: 1
+                spikethickness: 1,
+                ...intradayTickProps
               },
               xaxis2: {
                 domain: [0, 1],
                 anchor: "y2",
                 matches: "x",
-                type: "date",
+                type: klineXAxisType,
                 showgrid: true,
                 gridcolor: chartColors.border,
                 showline: true,
@@ -1587,7 +1651,8 @@ export function MarketPage() {
                 spikemode: "across",
                 spikesnap: "cursor",
                 spikecolor: chartColors.muted,
-                spikethickness: 1
+                spikethickness: 1,
+                ...intradayTickProps
               },
               yaxis: {
                 domain: [0.28, 1],

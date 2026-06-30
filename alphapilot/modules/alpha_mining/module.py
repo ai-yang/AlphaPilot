@@ -47,6 +47,7 @@ class AlphaMiningModule(BaseModule):
         market: str | None = None,
         yaml_params: str | None = None,
         save_factors_to_library: bool = False,
+        freq: str = "day",
     ) -> None:
         """Run the autonomous factor-mining loop.
 
@@ -60,24 +61,38 @@ class AlphaMiningModule(BaseModule):
         from alphapilot.log import logger
         from alphapilot.modules.alpha_mining.registry import get_scenario
         from alphapilot.systems.data.factor_h5 import apply_context_env, prepare_factor_data_context
+        from alphapilot.systems.data.frequency import get_frequency
         from alphapilot.systems.run_workspace import run_workspace
 
+        freq = get_frequency(freq).key  # normalize/validate
         use_local = self.context.config.backtest.use_local
-        spec = get_scenario(scenario, command="mine")
-        loop_cls = import_class(spec.loop_class_path)
-        prop_setting = import_class(spec.prop_setting_path)
+        scen_spec = get_scenario(scenario, command="mine")
+        loop_cls = import_class(scen_spec.loop_class_path)
+        prop_setting = import_class(scen_spec.prop_setting_path)
 
         resolved_qlib_config = qlib_config_name or getattr(prop_setting, "qlib_config_name", None)
         resolved_template_dir = qlib_template_dir or getattr(prop_setting, "qlib_template_dir", None)
         parsed_yaml_params = self._parse_yaml_params(yaml_params)
+        # Intraday mining: render qrun configs at the matching freq.
+        if freq != "day":
+            parsed_yaml_params = {**(parsed_yaml_params or {}), "freq": freq}
         bt_cfg = self.context.config.backtest
+
+        # Intraday mining reads the per-frequency qlib dir (the configured one is daily).
+        if get_frequency(freq).is_intraday:
+            from alphapilot.systems.data.data_paths import baostock_qlib_dir
+
+            mining_qlib_dir = str(baostock_qlib_dir(freq))
+        else:
+            mining_qlib_dir = str(self.context.config.data.qlib_data_dir)
 
         # Prepare this run's factor h5 context (market/spec cache) and publish it via env so the
         # mining scenario's source-data description and every factor execution use this data.
         factor_data_ctx = prepare_factor_data_context(
             market=market,
-            qlib_dir=str(self.context.config.data.qlib_data_dir),
+            qlib_dir=mining_qlib_dir,
             use_local=use_local,
+            freq=freq,
         )
         apply_context_env(factor_data_ctx)
 
@@ -173,15 +188,18 @@ class AlphaMiningModule(BaseModule):
         mode: str = "multi_combined",
         yaml_params: str | None = None,
         market: str | None = None,
+        freq: str = "day",
     ) -> None:
         """Run a single-shot factor backtest from a factor CSV.
 
         ``mode``: ``multi_combined`` (default) | ``single_ic`` | ``multi_sequential``.
         ``yaml_params``: optional JSON string / file path overriding model / strategy / dataset.
         ``market``: instrument pool for the factor h5 spec (default resolves from yaml/default).
+        ``freq``: bar frequency — ``day`` (default) or intraday ``5min``/``15min``/``30min``/``60min``.
         """
         from alphapilot.systems.backtest.types import FactorBacktestRequest
         from alphapilot.systems.data.factor_h5 import resolve_market
+        from alphapilot.systems.data.frequency import get_frequency
         from alphapilot.systems.run_workspace import run_workspace
 
         if path is not None:
@@ -192,7 +210,12 @@ class AlphaMiningModule(BaseModule):
         if factor_path is None:
             raise ValueError("factor_path is required for alphapilot backtest.")
 
+        freq = get_frequency(freq).key  # normalize/validate
         parsed_yaml = self._parse_yaml_params(yaml_params)
+        # Intraday qrun configs must render the matching freq; inject it into yaml_params
+        # (single_ic ignores yaml, but multi_combined renders it).
+        if freq != "day":
+            parsed_yaml = {**(parsed_yaml or {}), "freq": freq}
         # The h5 context is built inside the pipeline (_build_experiment, which attaches it to the
         # active run); resolve the market here only to name the run dir.
         run_market = resolve_market(explicit=market, yaml_params=parsed_yaml)
@@ -213,6 +236,7 @@ class AlphaMiningModule(BaseModule):
                     mode=mode,
                     yaml_params=parsed_yaml,
                     market=market,
+                    freq=freq,
                 )
             )
 

@@ -27,8 +27,9 @@ def _install_stubs() -> None:
     """Stub the qlib generator (sys.modules) and pandas.read_hdf validation."""
     fake = types.ModuleType("alphapilot.systems.data.generate_h5")
 
-    def _fake_generate(*, qlib_dir, output_dir, market, fields, start_date, debug_stock_count):
+    def _fake_generate(*, qlib_dir, output_dir, market, fields, start_date, debug_stock_count, freq="day"):
         _GEN_CALLS["n"] += 1
+        _GEN_CALLS["freq"] = freq
         out = Path(output_dir)
         (out / "daily_pv_all.h5").write_text(f"ALL:{market}")
         (out / "daily_pv_debug.h5").write_text(f"DEBUG:{market}:{debug_stock_count}")

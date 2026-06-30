@@ -30,8 +30,13 @@ class BaostockDataSourceAdapter(BaseDataSourceAdapter):
             download_cn_data,
             resolve_raw_dir,
         )
+        from alphapilot.systems.data.frequency import get_frequency
 
         options: dict[str, Any] = dict(request.options)
+        spec = get_frequency(options.pop("freq", "day"))
+        if spec.is_intraday:
+            return self._download_minute(request, options, spec)
+
         adjust_mode = options.pop("adjust_mode", "backward")
         stock_csv = options.pop("stock_csv", None)
         code_column = options.pop("code_column", None)
@@ -68,6 +73,46 @@ class BaostockDataSourceAdapter(BaseDataSourceAdapter):
             output_dir=Path(raw_dir),
             symbols=codes,
             extra={"adjust_mode": adjust_mode},
+        )
+
+    def _download_minute(
+        self,
+        request: DataDownloadRequest,
+        options: dict[str, Any],
+        spec: Any,
+    ) -> DataDownloadResult:
+        """Intraday branch: download minute bars via the minute pipeline."""
+        from alphapilot.systems.data.data_paths import baostock_minute_raw_dir
+        from alphapilot.systems.data.prepare_cn_minute import download_cn_minute_data
+
+        adjust_mode = options.pop("adjust_mode", "backward")
+        stock_csv = options.pop("stock_csv", None)
+        code_column = options.pop("code_column", None)
+        max_workers = options.pop("max_workers", 1)
+        download_state_path = options.pop("download_state_path", None)
+
+        raw_dir = (
+            Path(request.output_dir).expanduser()
+            if request.output_dir is not None
+            else baostock_minute_raw_dir(spec.key)
+        )
+
+        codes = download_cn_minute_data(
+            start_date=request.start_date,
+            end_date=request.end_date,
+            freq=spec.key,
+            data_dir=raw_dir,
+            stock_csv=stock_csv,
+            code_column=code_column,
+            symbols=request.symbols,
+            adjust_mode=adjust_mode,
+            max_workers=max_workers,
+            download_state_path=download_state_path,
+        )
+        return DataDownloadResult(
+            output_dir=Path(raw_dir),
+            symbols=codes,
+            extra={"adjust_mode": adjust_mode, "freq": spec.key},
         )
 
     def default_output_dir(self) -> Path:
