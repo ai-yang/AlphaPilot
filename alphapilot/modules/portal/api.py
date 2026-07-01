@@ -254,6 +254,111 @@ def _write_factor_csv(rows: list[dict[str, Any]], prefix: str = "alphapilot_fact
     return path
 
 
+def _parse_timing_symbols(value: Any) -> list[str] | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, (list, tuple, set)):
+        parsed = [str(item).strip() for item in value if str(item).strip()]
+        return parsed or None
+    parsed = [
+        item.strip()
+        for chunk in str(value).replace("，", ",").replace("\n", ",").split(",")
+        for item in chunk.split()
+        if item.strip()
+    ]
+    return parsed or None
+
+
+def _parse_timing_strategy_params(value: Any) -> dict[str, Any]:
+    if value is None or value == "":
+        return {}
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str):
+        parsed = json.loads(value)
+        if not isinstance(parsed, dict):
+            raise ValueError("strategy_params must be a JSON object")
+        return parsed
+    raise ValueError("strategy_params must be a mapping or JSON object string")
+
+
+def _timing_request_from_payload(payload: dict[str, Any]) -> Any:
+    from alphapilot.systems.timing import TimingBacktestRequest
+
+    allowed = {
+        "strategy_name",
+        "symbols",
+        "stock_csv",
+        "code_column",
+        "start_date",
+        "end_date",
+        "freq",
+        "data_dir",
+        "adjust_mode",
+        "cash",
+        "target_percent",
+        "open_cost",
+        "close_cost",
+        "min_cost",
+        "slippage",
+        "trade_unit",
+        "strategy_params",
+        "output_dir",
+    }
+    data = {key: value for key, value in dict(payload).items() if key in allowed}
+    data["symbols"] = _parse_timing_symbols(data.get("symbols"))
+    data["strategy_params"] = _parse_timing_strategy_params(data.get("strategy_params"))
+    if not data.get("strategy_name"):
+        raise ValueError("strategy_name is required")
+    for key in ("stock_csv", "code_column", "start_date", "end_date", "data_dir", "output_dir"):
+        if data.get(key) == "":
+            data[key] = None
+    return TimingBacktestRequest(**data)
+
+
+def _dataframe_preview(df: pd.DataFrame, *, max_rows: int = 500) -> dict[str, Any]:
+    clipped = df.head(max_rows).copy()
+    return {
+        "columns": list(df.columns),
+        "rows": _jsonable(clipped),
+        "row_count": int(len(df)),
+        "truncated": int(len(df)) > max_rows,
+    }
+
+
+def _read_csv_preview(path: Path, *, max_rows: int = 1000) -> dict[str, Any]:
+    if not path.is_file():
+        return {"columns": [], "rows": [], "row_count": 0, "truncated": False, "missing": True}
+    try:
+        df = pd.read_csv(path)
+    except pd.errors.EmptyDataError:
+        return {"columns": [], "rows": [], "row_count": 0, "truncated": False, "missing": False}
+    return _dataframe_preview(df, max_rows=max_rows)
+
+
+def _timing_job_artifact_dir(job_id: str) -> tuple[dict[str, Any], dict[str, Any], Path]:
+    job = jobs.get_job(job_id)
+    if job.get("kind") != "timing_backtest":
+        raise ValueError(f"Job {job_id!r} is not a timing_backtest job")
+    result_payload = jobs.read_result(job_id) or {}
+    summary = result_payload.get("result") if isinstance(result_payload, dict) else {}
+    if not isinstance(summary, dict):
+        summary = {}
+    artifact_raw = summary.get("artifact_dir") or (job.get("params") or {}).get("output_dir")
+    if not artifact_raw:
+        raise FileNotFoundError(f"Timing artifacts are not available for job {job_id}")
+    artifact_dir = Path(str(artifact_raw)).expanduser()
+    if not artifact_dir.is_dir():
+        raise FileNotFoundError(f"Timing artifact directory not found: {artifact_dir}")
+    summary_path = artifact_dir / "summary.json"
+    if summary_path.is_file():
+        try:
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            pass
+    return job, summary, artifact_dir
+
+
 def create_app(
     *,
     static_dir: str | Path | None = None,
@@ -694,6 +799,53 @@ def create_app(
     def delete_strategy(strategy_name: str) -> dict[str, Any]:
         try:
             return {"strategy_name": strategy_name, "deleted": _engine(app).get_system("strategy").delete_strategy(strategy_name)}
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.get("/api/timing/strategies")
+    def timing_strategies() -> dict[str, Any]:
+        try:
+            strategies = _engine(app).get_system("timing").list_strategies()
+            return _jsonable({"strategies": strategies, "names": [row.get("name") for row in strategies]})
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.post("/api/timing/signal")
+    def timing_signal(payload: dict[str, Any], max_rows: int = 500) -> dict[str, Any]:
+        try:
+            req = _timing_request_from_payload(payload)
+            signals = _engine(app).get_system("timing").generate_signals(req)
+            return _jsonable(
+                {
+                    "strategy_name": req.strategy_name,
+                    "signals": _dataframe_preview(signals, max_rows=max_rows),
+                }
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.post("/api/timing/backtest")
+    def timing_backtest(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return _jsonable(jobs.start_job("timing_backtest", dict(payload)))
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.get("/api/timing/jobs/{job_id}/detail")
+    def timing_job_detail(job_id: str, max_rows: int = 1000) -> dict[str, Any]:
+        try:
+            job, summary, artifact_dir = _timing_job_artifact_dir(job_id)
+            return _jsonable(
+                {
+                    "job": job,
+                    "summary": summary,
+                    "artifact_dir": artifact_dir,
+                    "signals": _read_csv_preview(artifact_dir / "signals.csv", max_rows=max_rows),
+                    "trades": _read_csv_preview(artifact_dir / "trades.csv", max_rows=max_rows),
+                    "equity_curve": _read_csv_preview(artifact_dir / "equity_curve.csv", max_rows=max_rows),
+                    "positions": _read_csv_preview(artifact_dir / "positions.csv", max_rows=max_rows),
+                }
+            )
         except Exception as exc:  # noqa: BLE001
             raise _api_error(exc) from exc
 

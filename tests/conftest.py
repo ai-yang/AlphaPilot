@@ -92,6 +92,9 @@ EXPECTED_CLI_COMMANDS: frozenset[str] = frozenset(
         "strategy_backtest_list",
         "strategy_create",
         "timezone",
+        "timing_backtest",
+        "timing_signal",
+        "timing_strategies",
         "trade_session_cash",
         "trade_session_create",
         "trade_session_delete",
@@ -104,7 +107,7 @@ EXPECTED_CLI_COMMANDS: frozenset[str] = frozenset(
 )
 
 EXPECTED_SYSTEMS: frozenset[str] = frozenset(
-    {"data", "factor", "strategy", "backtest", "notify"}
+    {"data", "factor", "strategy", "backtest", "timing", "notify"}
 )
 EXPECTED_MODULES: frozenset[str] = frozenset(
     {
@@ -120,6 +123,7 @@ EXPECTED_MODULES: frozenset[str] = frozenset(
         "qlib_yaml",
         "stock_pool",
         "strategy_backtest",
+        "timing",
     }
 )
 

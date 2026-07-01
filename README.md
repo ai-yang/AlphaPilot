@@ -35,6 +35,7 @@ AlphaPilot is a stock-focused quantitative research platform for factor mining a
 | Strategy retesting | `alphapilot strategy_backtest` | Reuse saved strategy assets and models for continued validation |
 | Daily signals | `alphapilot daily_signals` | Advance positions by trading day and generate single-day rebalance signals |
 | Trade sessions | `alphapilot trade_session_create` | Snapshot a strategy into a self-contained, resumable daily-trade account |
+| Quant timing | `alphapilot timing_backtest` | Technical-indicator signal previews, long/cash backtests, and timing artifacts |
 | Unified portal | `alphapilot portal` | Central UI for data, factors, backtests, tasks, and notifications |
 | Data preparation | `alphapilot prepare_data` | baostock / tushare to Qlib data pipeline |
 | Notifications and remote control | `alphapilot notify_commands` | Task completion notifications through Telegram / Feishu / email plus remote chat commands |
@@ -226,6 +227,12 @@ alphapilot trade_session_create --strategy_name "<strategy name>" --name demo_se
 alphapilot daily_signals --session demo_session
 ```
 
+Or run a technical-indicator timing backtest:
+
+```bash
+alphapilot timing_backtest --strategy_name dual_ma --symbols 000001 --strategy_params '{"short_window":5,"long_window":20}'
+```
+
 ## 🧭 Typical Workflow
 
 1. Use `prepare_data` to prepare market data and Qlib data; factor h5 cache is generated automatically by backtest/mining tasks.
@@ -261,6 +268,7 @@ AlphaPilot/
 Planned directions:
 
 - [ ] Add support for US equities
+- [ ] Continue expanding quant timing strategies, minute-level research, and stock-selection strategy optimization
 - [ ] Improve the interactive UI and add more tunable options, including rebalancing methods and LightGBM model parameters
 - [ ] Integrate more factor mining methods
 - [ ] Continue fixing known issues and improving documentation and stability
@@ -274,6 +282,7 @@ For questions or development discussions, you can also contact us by email: ruiw
 
 | Date | Type | Feature / Module | Goal | Key Changes | Affected Entry | Verification | Status / Follow-up |
 |------|------|------------------|------|-------------|----------------|--------------|--------------------|
+| 2026-07-01 | New | Quant timing system | Add reusable technical-indicator timing on top of the existing stock-selection/backtest workflow, with an execution boundary reserved for later paper/live trading | Added the `timing` system/module and `alphapilot timing_strategies` / `timing_signal` / `timing_backtest` CLI commands; implemented built-in BOLL, SMA, dual MA, RSI, KDJ, Aroon, StochRSI, and ARBR strategies; added pandas technical indicators and signal helpers, a long/cash backtest engine, next-bar-open fills, fee/slippage/lot-size constraints, and signals/trades/equity_curve/positions/summary artifacts; added the Portal Timing page, APIs, background job support, and result previews; added downloaded-symbol picking for stock-pool create/add flows; fixed frontend `ignoreDeprecations` for TypeScript 5.x typecheck | `alphapilot timing_*` CLI; Portal Timing page; `/api/timing/*`; `timing_backtest` background job; Portal Market Data stock-pool manager | Added `tests/test_timing_indicators.py`, `tests/test_timing_engine.py`, and `tests/test_timing_system.py`; expanded CLI, Portal API/job, frontend page, and parameter-spec tests | Base version completed; next steps are broader minute-level timing, portfolio-level capital allocation, and live-trading adapters |
 | 2026-06-30 | New | Minute-level data workflow | Extend AlphaPilot beyond daily data so intraday research can run through the same workflow | Added support for minute-level market data download, visualization, factor mining, and backtesting | Market data download; Portal data visualization; factor mining; factor backtest | Pending full regression | Completed |
 | 2026-06-29 | New | Stock pool management | Let users batch-organize stocks into named pools reusable across backtest and factor mining | Added a `stock_pool` CLI module with full CRUD (`pool_create` / `pool_list` / `pool_add` / `pool_remove` / `pool_rename` / `pool_delete`, etc.); pools stored as JSON source-of-truth and synced to Qlib instruments; Portal Market Data page gained a stock-pool management section, and mining / backtest / library / scheduler forms now turn the market / instruments field into a stock-pool dropdown | `alphapilot pool_*` CLI; Portal Market Data page; Mining / Backtest / Library / Scheduler forms; `/api/data/instrument-sets`; `/api/modules/run` | `pytest tests/test_stock_pool.py tests/test_kernel_registry.py`; `npm run build`; `npm run test` | Completed |
 | 2026-06-26 | New | Portal parameter help | Make complex task/config panels easier to use consistently | Added reusable question-mark help panel, expanded help copy across mining, backtest, library, market data, daily trade, scheduler, notifications, and advanced settings; added Daily Trade left-panel title | Portal task/config panels | `npm run build`; `npm run typecheck` blocked by existing `tsconfig.json` `ignoreDeprecations: "6.0"` incompatibility with TypeScript 5.9 | Completed; fix tsconfig before relying on typecheck |

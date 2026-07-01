@@ -889,6 +889,42 @@ summary { cursor: pointer; font-weight: 650; }
 /* Field-level hint under a manually built <label> (mirrors .dynamic-form small). */
 .field-hint { display: block; margin-top: -4px; color: var(--text-muted); font-size: 12px; line-height: 1.35; }
 
+/* Downloaded-symbol picker (stock pool creation / add members) */
+.symbol-picker-wrap { background: var(--surface); }
+.symbol-picker-wrap > summary { font-size: 13px; }
+.symbol-picker { display: grid; gap: 8px; margin-top: 10px; }
+.symbol-picker .picker-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.symbol-picker .picker-toolbar select { width: auto; min-width: 140px; margin-bottom: 0; }
+.symbol-picker .picker-toolbar input { flex: 1 1 120px; min-width: 0; margin-bottom: 0; }
+.symbol-picker .picker-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.symbol-list {
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  padding: 4px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 2px;
+  align-content: start;
+}
+.symbol-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-soft);
+  cursor: pointer;
+}
+.symbol-item:hover { background: var(--accent-50); }
+.symbol-item input { width: 15px; height: 15px; min-height: 15px; margin: 0; flex-shrink: 0; accent-color: var(--accent-600); }
+.symbol-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.symbol-item.added { color: var(--text-muted); opacity: 0.7; }
+
 /* Confirm dialog / modal */
 .modal-overlay {
   position: fixed;

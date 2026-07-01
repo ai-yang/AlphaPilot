@@ -5,6 +5,10 @@ Pipfile
 public
 release-notes.md
 Working_AlphaPilot.md
+important_data/stock_pools/
+/emt_api/
+/vnpy/
+/vnpy_emt/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

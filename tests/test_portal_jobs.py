@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from typing import Any
+
+import alphapilot.kernel
+
 from alphapilot.modules.portal import jobs
 
 
@@ -40,6 +44,28 @@ def test_start_job_persists_unique_directories(tmp_path):
 
     listed = jobs.list_jobs(job_root=tmp_path, refresh=False)
     assert {job["job_id"] for job in listed} == {first["job_id"], second["job_id"]}
+
+
+def test_timing_backtest_job_kind_dispatches_to_timing_module(monkeypatch):
+    calls: list[dict[str, Any]] = []
+
+    class FakeTimingModule:
+        def timing_backtest(self, **kwargs: Any) -> dict[str, Any]:
+            calls.append(kwargs)
+            return {"strategy": kwargs["strategy_name"], "artifact_dir": "/tmp/timing"}
+
+    class FakeEngine:
+        def get_module(self, name: str) -> Any:
+            assert name == "timing"
+            return FakeTimingModule()
+
+    monkeypatch.setattr(alphapilot.kernel, "build_engine", lambda discover=True: FakeEngine())
+
+    result = jobs._run_target("timing_backtest", {"strategy_name": "dual_ma", "symbols": ["000001"]})
+
+    assert "timing_backtest" in jobs.VALID_KINDS
+    assert result["strategy"] == "dual_ma"
+    assert calls == [{"strategy_name": "dual_ma", "symbols": ["000001"]}]
 
 
 def test_running_job_without_process_is_marked_lost(tmp_path, monkeypatch):

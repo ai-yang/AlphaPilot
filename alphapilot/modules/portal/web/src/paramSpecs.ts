@@ -236,10 +236,13 @@ export const llmMiningSpecs: FieldSpec[] = [
   { key: "scenario", label: "场景 Scenario", type: "text", defaultValue: "alpha_factor_mining" },
   freqField({ helpText: "分钟挖掘读取对应的 qlib_* 分钟数据；分钟仅 baostock。" }),
   { key: "direction", label: "方向 Direction", type: "textarea", placeholder: "挖掘方向或假说" },
+  // Stock-pool universe for the run: passed straight to run_mining(market=...), which maps to
+  // <qlib_dir>/instruments/<market>.txt. withInstrumentSetOptions turns this into a dropdown backed
+  // by the instrument sets on disk; empty = default universe. First-class option (previously hidden
+  // behind the strategy-overrides toggle).
+  { key: "market", label: "股票池 Stock pool", type: "text", placeholder: "默认股票池", helpText: "挖掘使用的股票池（instrument set），留空使用默认股票池；可在“市场数据”页管理股票池。" },
   // Auto-add each round's mined factors to the factor library (zoo) under a "mined" category.
   { key: "save_factors_to_library", label: "自动加入因子库", type: "checkbox", defaultValue: false, helpText: "每轮挖出的因子表达式会校验去重后存入因子库（mined 分类）。" },
-  // Mining drives its data universe by the top-level ``market`` kwarg (run dir + factor h5 spec).
-  { key: "market", label: "市场 / 股票池", type: "text", placeholder: "optional", visibleWhen: (v) => Boolean(v._show_overrides) },
   ...strategyParamFields(),
 ];
 
@@ -356,6 +359,104 @@ export const strategyBacktestSpecs: FieldSpec[] = [
   backtestMarketField,
   ...strategyParamFields(),
 ];
+
+const timingBuiltinStrategyOptions: FieldOption[] = [
+  { label: "BOLL 均值回归", value: "boll_mean_reversion" },
+  { label: "单均线过滤", value: "sma_filter" },
+  { label: "双均线", value: "dual_ma" },
+  { label: "RSI 均值回归", value: "rsi_reversion" },
+  { label: "KDJ 交叉", value: "kdj_cross" },
+  { label: "Aroon 趋势", value: "aroon_trend" },
+  { label: "StochRSI 均值回归", value: "stoch_rsi_reversion" },
+  { label: "ARBR 情绪反转", value: "arbr_reversion" },
+];
+
+function timingStrategyOptions(names: string[] = []): FieldOption[] {
+  if (!names.length) return timingBuiltinStrategyOptions;
+  const known = new Map(timingBuiltinStrategyOptions.map((option) => [String(option.value), option.label]));
+  return names.map((name) => ({ label: known.get(name) || name, value: name }));
+}
+
+function timingStrategyIs(...names: string[]) {
+  return (values: Record<string, FieldValue>) => names.includes(String(values.strategy_name || "boll_mean_reversion"));
+}
+
+const parseSymbolList = (value: FieldValue): string[] | undefined => {
+  const symbols = String(value || "")
+    .replace(/，/g, ",")
+    .split(/[\s,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return symbols.length ? symbols : undefined;
+};
+
+function timingBaseSpecs(strategyNames: string[] = []): FieldSpec[] {
+  return [
+    {
+      key: "strategy_name",
+      label: "择时策略 Timing Strategy",
+      type: "select",
+      defaultValue: "boll_mean_reversion",
+      required: true,
+      options: timingStrategyOptions(strategyNames),
+    },
+    {
+      key: "symbols",
+      label: "股票代码 Symbols",
+      type: "textarea",
+      placeholder: "sh600000, sz000001 或每行一个；留空则使用 stock_csv/data_dir",
+      helpText: "支持逗号、空格、换行分隔；会复用系统股票代码规范化。",
+      parse: parseSymbolList,
+    },
+    {
+      key: "stock_csv",
+      label: "股票池 CSV Stock CSV",
+      type: "text",
+      placeholder: "important_data/stock_lists/main_stock_2026_4_27.csv",
+      helpText: "symbols 留空时可从 CSV 读取股票池。",
+    },
+    { key: "start_date", label: "开始日期 Start Date", type: "date" },
+    { key: "end_date", label: "结束日期 End Date", type: "date" },
+    freqField({ helpText: "日频读取复权 CSV；分钟级读取 baostock 分钟 CSV（5/15/30/60min）。" }),
+    { key: "adjust_mode", label: "复权模式 Adjust Mode", type: "select", defaultValue: "backward", options: adjustModeOptions },
+    { key: "target_percent", label: "目标仓位 Target %", type: "number", defaultValue: 1, helpText: "1=满仓，0.5=半仓；v1 只做多/空仓。" },
+    { key: "strategy_params.window", label: "窗口 Window", type: "number", placeholder: "默认按策略", visibleWhen: timingStrategyIs("boll_mean_reversion", "sma_filter", "rsi_reversion", "kdj_cross", "aroon_trend", "arbr_reversion") },
+    { key: "strategy_params.num_std", label: "BOLL 标准差倍数", type: "number", placeholder: "2", visibleWhen: timingStrategyIs("boll_mean_reversion") },
+    { key: "strategy_params.short_window", label: "短均线窗口", type: "number", placeholder: "5", visibleWhen: timingStrategyIs("dual_ma") },
+    { key: "strategy_params.long_window", label: "长均线窗口", type: "number", placeholder: "20", visibleWhen: timingStrategyIs("dual_ma") },
+    { key: "strategy_params.rsi_window", label: "RSI 窗口", type: "number", placeholder: "14", visibleWhen: timingStrategyIs("stoch_rsi_reversion") },
+    { key: "strategy_params.stoch_window", label: "Stoch 窗口", type: "number", placeholder: "14", visibleWhen: timingStrategyIs("stoch_rsi_reversion") },
+    { key: "strategy_params.low", label: "低阈值 Low", type: "number", placeholder: "RSI=30 / StochRSI=0.2 / ARBR=70", visibleWhen: timingStrategyIs("rsi_reversion", "stoch_rsi_reversion", "arbr_reversion") },
+    { key: "strategy_params.high", label: "高阈值 High", type: "number", placeholder: "RSI=70 / StochRSI=0.8 / ARBR=150", visibleWhen: timingStrategyIs("rsi_reversion", "stoch_rsi_reversion", "arbr_reversion") },
+    { key: "strategy_params.up_threshold", label: "Aroon Up 阈值", type: "number", placeholder: "70", visibleWhen: timingStrategyIs("aroon_trend") },
+    {
+      key: "_show_timing_advanced",
+      label: "显示高级数据 / 成本参数",
+      type: "checkbox",
+      defaultValue: false,
+      helpText: "打开后可指定 data_dir、code_column、手续费、滑点和输出目录。",
+    },
+    { key: "data_dir", label: "行情目录 Data Dir", type: "text", placeholder: "留空使用系统默认目录", visibleWhen: (v) => Boolean(v._show_timing_advanced) },
+    { key: "code_column", label: "CSV 代码列 Code Column", type: "text", placeholder: "留空自动识别", visibleWhen: (v) => Boolean(v._show_timing_advanced) },
+  ];
+}
+
+export function timingSignalSpecs(strategyNames: string[] = []): FieldSpec[] {
+  return timingBaseSpecs(strategyNames);
+}
+
+export function timingBacktestSpecs(strategyNames: string[] = []): FieldSpec[] {
+  return [
+    ...timingBaseSpecs(strategyNames),
+    { key: "cash", label: "初始资金 Cash", type: "number", defaultValue: 100000 },
+    { key: "trade_unit", label: "每手股数 Trade Unit", type: "number", defaultValue: 100, helpText: "A 股默认 100；填 0 关闭整手约束。" },
+    { key: "open_cost", label: "买入费率 Open Cost", type: "number", defaultValue: 0.0002, visibleWhen: (v) => Boolean(v._show_timing_advanced) },
+    { key: "close_cost", label: "卖出费率 Close Cost", type: "number", defaultValue: 0.0008, visibleWhen: (v) => Boolean(v._show_timing_advanced) },
+    { key: "min_cost", label: "最低费用 Min Cost", type: "number", defaultValue: 5, visibleWhen: (v) => Boolean(v._show_timing_advanced) },
+    { key: "slippage", label: "滑点 Slippage", type: "number", defaultValue: 0, visibleWhen: (v) => Boolean(v._show_timing_advanced) },
+    { key: "output_dir", label: "输出目录 Output Dir", type: "text", placeholder: "留空写入 ALPHAPILOT_RUNS_DIR/timing", visibleWhen: (v) => Boolean(v._show_timing_advanced) },
+  ];
+}
 
 export function withStrategyOptions(specs: FieldSpec[], names: string[] = []): FieldSpec[] {
   return specs.map((field) => field.key === "strategy_name"

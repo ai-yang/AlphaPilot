@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { I18nProvider } from "./i18n";
-import { klineAxisType, klineCategoryTicks, klineIsIntraday, klineTimeLabel, LibraryPage } from "./pages";
+import { klineAxisType, klineCategoryTicks, klineIsIntraday, klineTimeLabel, LibraryPage, TimingPage } from "./pages";
 import { ToastProvider } from "./toast";
 
 vi.mock("react-plotly.js", () => ({ default: () => null }));
@@ -73,6 +73,16 @@ function renderLibraryPage() {
   );
 }
 
+function renderTimingPage() {
+  return render(
+    <I18nProvider>
+      <ToastProvider>
+        <TimingPage />
+      </ToastProvider>
+    </I18nProvider>,
+  );
+}
+
 function mockPortalFetch({
   factors = [],
   strategies = [],
@@ -108,8 +118,65 @@ function mockPortalFetch({
   return fetchMock;
 }
 
+function mockTimingFetch() {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input);
+    if (path === "/api/timing/strategies") {
+      return Response.json({
+        names: ["boll_mean_reversion", "dual_ma"],
+        strategies: [
+          {
+            name: "boll_mean_reversion",
+            description: "BOLL mean reversion",
+            defaults: { window: 20, num_std: 2 },
+          },
+          {
+            name: "dual_ma",
+            description: "Dual moving average",
+            defaults: { short_window: 5, long_window: 20 },
+          },
+        ],
+      });
+    }
+    if (path === "/api/timing/signal" && init?.method === "POST") {
+      return Response.json({
+        strategy_name: "boll_mean_reversion",
+        signals: {
+          columns: ["datetime", "instrument", "signal", "target_percent", "reason"],
+          rows: [{ datetime: "2026-01-01", instrument: "SZ000001", signal: 1, target_percent: 1, reason: "test" }],
+          row_count: 1,
+          truncated: false,
+        },
+      });
+    }
+    if (path === "/api/timing/backtest" && init?.method === "POST") {
+      return Response.json({
+        job_id: "timing-job",
+        kind: "timing_backtest",
+        status: "running",
+        progress: { percent: 0, stage: "queued" },
+      });
+    }
+    if (path === "/api/jobs/timing-job/progress") {
+      return Response.json({ job_id: "timing-job", status: "running", percent: 10, stage: "running" });
+    }
+    if (path === "/api/jobs") {
+      return Response.json([]);
+    }
+    return Response.json({}, { status: 404 });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
 function hasDeleteCall(fetchMock: ReturnType<typeof mockPortalFetch>, path: string) {
   return fetchMock.mock.calls.some(([input, init]) => String(input) === path && init?.method === "DELETE");
+}
+
+function postedJson(fetchMock: ReturnType<typeof mockTimingFetch>, path: string) {
+  const call = fetchMock.mock.calls.find(([input, init]) => String(input) === path && init?.method === "POST");
+  if (!call) return null;
+  return JSON.parse(String(call[1]?.body || "{}")) as Record<string, unknown>;
 }
 
 afterEach(() => {
@@ -205,5 +272,28 @@ describe("LibraryPage delete confirmations", () => {
     await waitFor(() => {
       expect(hasDeleteCall(fetchMock, "/api/strategies/confirmed_strategy")).toBe(true);
     });
+  });
+});
+
+describe("TimingPage", () => {
+  it("previews signals and starts a timing backtest job", async () => {
+    const fetchMock = mockTimingFetch();
+    renderTimingPage();
+
+    expect(await screen.findByText("BOLL mean reversion")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "预览信号" }));
+    await waitFor(() => {
+      expect(postedJson(fetchMock, "/api/timing/signal")).not.toBeNull();
+    });
+    expect(await screen.findByText("SZ000001")).toBeInTheDocument();
+    expect(postedJson(fetchMock, "/api/timing/signal")?.strategy_name).toBe("boll_mean_reversion");
+
+    fireEvent.click(screen.getByRole("button", { name: "运行择时回测" }));
+    await waitFor(() => {
+      expect(postedJson(fetchMock, "/api/timing/backtest")).not.toBeNull();
+    });
+    expect(postedJson(fetchMock, "/api/timing/backtest")?.strategy_name).toBe("boll_mean_reversion");
+    expect(await screen.findByText("timing-job")).toBeInTheDocument();
   });
 });

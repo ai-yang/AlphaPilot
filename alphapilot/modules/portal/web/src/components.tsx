@@ -10,6 +10,7 @@ const NAV: [string, string][] = [
   ["home", "/"],
   ["mining", "/mining"],
   ["backtest", "/backtest"],
+  ["timing", "/timing"],
   ["library", "/library"],
   ["market", "/market"],
   ["daily", "/daily-trade"],

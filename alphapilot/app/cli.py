@@ -15,7 +15,7 @@ import fire
 def _module_commands():
     """Collect CLI subcommands contributed by loaded kernel modules.
 
-    The engine loads the four built-in systems + the alpha_mining module
+    The engine loads built-in systems/modules
     and discovers any third-party systems/modules via entry points. Built-in
     explicit commands (defined below) take precedence; module-contributed
     commands extend the CLI surface for plug-and-play features.

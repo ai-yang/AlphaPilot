@@ -13,7 +13,8 @@ import {
   MarketPage,
   MiningPage,
   NotificationsPage,
-  SchedulerPage
+  SchedulerPage,
+  TimingPage
 } from "./pages";
 import "./styles.css";
 
@@ -28,6 +29,7 @@ const router = createBrowserRouter([
       { index: true, element: <HomePage /> },
       { path: "mining", element: <MiningPage /> },
       { path: "backtest", element: <BacktestPage /> },
+      { path: "timing", element: <TimingPage /> },
       { path: "library", element: <LibraryPage /> },
       { path: "market", element: <MarketPage /> },
       { path: "daily-trade", element: <DailyTradePage /> },

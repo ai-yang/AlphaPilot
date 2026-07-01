@@ -30,7 +30,15 @@ ALPHAFORGE_JOBS: dict[str, tuple[str, str]] = {
     "mine_rl": ("alphaforge_search", "mine_rl"),
 }
 
-VALID_KINDS = {"mine", "factor_backtest", "strategy_backtest", "daily_signals", "data", *ALPHAFORGE_JOBS}
+VALID_KINDS = {
+    "mine",
+    "factor_backtest",
+    "strategy_backtest",
+    "daily_signals",
+    "data",
+    "timing_backtest",
+    *ALPHAFORGE_JOBS,
+}
 
 # Data-system actions runnable as a ``data`` job; ``kwargs["action"]`` selects one.
 DATA_ACTIONS = ("pipeline", "download", "apply_adjust", "convert")
@@ -174,6 +182,8 @@ def _run_target(kind: JobKind, kwargs: dict[str, Any]) -> Any:
         return engine.get_module("strategy_backtest").strategy_backtest(**kwargs)
     if kind == "daily_signals":
         return engine.get_module("daily_trade").daily_signals(**kwargs)
+    if kind == "timing_backtest":
+        return engine.get_module("timing").timing_backtest(**kwargs)
     if kind == "data":
         call_kwargs = dict(kwargs)
         action = call_kwargs.pop("action", "pipeline")

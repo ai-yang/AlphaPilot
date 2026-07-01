@@ -1,4 +1,4 @@
-"""The four built-in capability systems: data / factor / model / backtest.
+"""Built-in capability systems: data / factor / strategy / backtest / timing.
 
 Each subpackage exposes a ``base.py`` (the system interface) and a
 ``service.py`` (the default implementation). Systems are attached to the

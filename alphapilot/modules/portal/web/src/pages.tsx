@@ -16,6 +16,7 @@ import {
   scheduleSpecsFor,
   sessionRunSpecs,
   strategyBacktestSpecs,
+  timingBacktestSpecs,
   withStrategyOptions,
   withInstrumentSetOptions,
 } from "./paramSpecs";
@@ -30,6 +31,40 @@ type Status = {
   systems: string[];
   modules: Record<string, string[]>;
   config: Record<string, unknown>;
+};
+
+type TablePreview = {
+  columns: string[];
+  rows: Array<Record<string, unknown>>;
+  row_count?: number;
+  truncated?: boolean;
+  missing?: boolean;
+};
+
+type TimingStrategySpec = {
+  name: string;
+  description: string;
+  defaults: Record<string, unknown>;
+};
+
+type TimingStrategiesPayload = {
+  strategies: TimingStrategySpec[];
+  names: string[];
+};
+
+type TimingSignalPayload = {
+  strategy_name: string;
+  signals: TablePreview;
+};
+
+type TimingDetailPayload = {
+  job: Job;
+  summary: Record<string, unknown>;
+  artifact_dir: string;
+  signals: TablePreview;
+  trades: TablePreview;
+  equity_curve: TablePreview;
+  positions: TablePreview;
 };
 
 type PortalSettings = {
@@ -255,6 +290,57 @@ function formatPercent(value?: number): string {
   return value === undefined ? "-" : `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
+function formatRatioPercent(value: unknown): string {
+  const n = toFiniteNumber(value);
+  return n === undefined ? "-" : `${n >= 0 ? "+" : ""}${(n * 100).toFixed(2)}%`;
+}
+
+function formatMoney(value: unknown): string {
+  const n = toFiniteNumber(value);
+  if (n === undefined) return "-";
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(n);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function mergeTimingAdvanced(base: Record<string, unknown>, advanced: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...base };
+  if (isRecord(base.strategy_params) || isRecord(advanced.strategy_params)) {
+    out.strategy_params = {
+      ...(isRecord(base.strategy_params) ? base.strategy_params : {}),
+      ...(isRecord(advanced.strategy_params) ? advanced.strategy_params : {}),
+    };
+  }
+  for (const [key, value] of Object.entries(advanced)) {
+    if (key !== "strategy_params") out[key] = value;
+  }
+  return out;
+}
+
+function previewColumns(table: TablePreview | undefined, fallback: string[] = []): Array<{ key: string; label: string; ellipsis?: boolean; align?: "left" | "right" | "center" }> {
+  const keys = (table?.columns?.length ? table.columns : fallback).slice(0, 10);
+  return keys.map((key) => ({
+    key,
+    label: key,
+    ellipsis: ["datetime", "signal_datetime", "instrument", "reason"].includes(key) ? undefined : true,
+    align: ["signal", "target_percent", "score", "amount", "price", "fee", "equity", "cash"].includes(key) ? "right" : undefined,
+  }));
+}
+
+function timingEquitySeries(rows: Array<Record<string, unknown>>): Array<{ datetime: string; equity: number }> {
+  const byTime = new Map<string, number>();
+  rows.forEach((row) => {
+    const dt = row.datetime ? String(row.datetime) : "";
+    const equity = toFiniteNumber(row.equity);
+    if (dt && equity !== undefined && !byTime.has(dt)) byTime.set(dt, equity);
+  });
+  return [...byTime.entries()]
+    .map(([datetime, equity]) => ({ datetime, equity }))
+    .sort((a, b) => a.datetime.localeCompare(b.datetime));
+}
+
 function cssVar(name: string, fallback: string): string {
   if (typeof window === "undefined") return fallback;
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
@@ -370,6 +456,7 @@ export function MiningPage() {
               items={[
                 t("llmMiningHelpStep"),
                 t("llmMiningHelpDirection"),
+                t("llmMiningHelpMarket"),
                 t("llmMiningHelpSave"),
                 t("llmMiningHelpOverrides"),
                 t("llmMiningHelpAdvanced")
@@ -587,6 +674,243 @@ export function BacktestPage() {
       </section>
       {detail ? <BacktestDetail detail={detail} workspaces={(list.data || []) as Record<string, unknown>[]} /> : null}
       <LeaderboardPanel />
+      <JobsPanel compact />
+    </>
+  );
+}
+
+export function TimingPage() {
+  const { t } = useI18n();
+  const strategies = useAsync(() => api.get<TimingStrategiesPayload>("/api/timing/strategies"), []);
+  const specs = useMemo(() => timingBacktestSpecs(strategies.data?.names || []), [strategies.data]);
+  const advanced = useJsonInput("{}");
+  const form = useParamForm(specs);
+  const { busy, run } = useAction();
+  const [signalPreview, setSignalPreview] = useState<TimingSignalPayload | null>(null);
+  const [activeJob, setActiveJob] = useState<Job | null>(null);
+  const [progress, setProgress] = useState<JobProgress | null>(null);
+  const [detail, setDetail] = useState<TimingDetailPayload | null>(null);
+
+  const selectedStrategy = useMemo(() => {
+    const name = String(form.values.strategy_name || "boll_mean_reversion");
+    return strategies.data?.strategies.find((item) => item.name === name) || null;
+  }, [form.values.strategy_name, strategies.data]);
+
+  const equity = useMemo(() => timingEquitySeries(detail?.equity_curve.rows || []), [detail]);
+
+  function parseTimingPayload() {
+    const base = form.parse();
+    const extra = advanced.parse();
+    return mergeTimingAdvanced(base, extra);
+  }
+
+  function previewSignals() {
+    void run(async () => {
+      const payload = parseTimingPayload();
+      const result = await api.post<TimingSignalPayload>("/api/timing/signal", payload);
+      setSignalPreview(result);
+    }, t("timingSignalReady"));
+  }
+
+  function startBacktest() {
+    void run(async () => {
+      const payload = parseTimingPayload();
+      const job = await api.post<Job>("/api/timing/backtest", payload);
+      setActiveJob(job);
+      setProgress(job.progress || null);
+      setDetail(null);
+    }, t("started"));
+  }
+
+  useEffect(() => {
+    if (!activeJob?.job_id || activeJob.status !== "running") return;
+    const jobId = activeJob.job_id;
+    let alive = true;
+    async function poll() {
+      try {
+        const next = await api.get<JobProgress>(`/api/jobs/${jobId}/progress`);
+        if (!alive) return;
+        setProgress(next);
+        if (next.status === "succeeded") {
+          const loaded = await api.get<TimingDetailPayload>(`/api/timing/jobs/${jobId}/detail`);
+          if (alive) setDetail(loaded);
+        }
+        if (!alive) return;
+        setActiveJob((current) => current && current.job_id === jobId
+          ? { ...current, status: String(next.status || current.status), progress: next }
+          : current);
+      } catch (err) {
+        if (!alive) return;
+        setProgress({
+          job_id: jobId,
+          status: "failed",
+          percent: 100,
+          stage: "failed",
+          message: err instanceof Error ? err.message : String(err),
+        });
+        setActiveJob((current) => current && current.job_id === jobId ? { ...current, status: "failed" } : current);
+      }
+    }
+    void poll();
+    const id = window.setInterval(poll, 3000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [activeJob?.job_id, activeJob?.status]);
+
+  const summary = detail?.summary || {};
+  const metricRows = [
+    [t("timingFinalEquity"), formatMoney(summary.final_equity)],
+    [t("timingTotalReturn"), formatRatioPercent(summary.total_return)],
+    [t("timingAnnualReturn"), formatRatioPercent(summary.annual_return)],
+    [t("timingMaxDrawdown"), formatRatioPercent(summary.max_drawdown)],
+    [t("timingTrades"), String(summary.n_trades ?? "-")],
+    [t("timingTotalFee"), formatMoney(summary.total_fee)],
+  ];
+
+  return (
+    <>
+      <PageTitle title={t("timing")} subtitle={t("timingSubtitle")} />
+      <div className="grid side">
+        <section className="panel">
+          <div className="panel-head compact">
+            <h2>{t("timingParams")}</h2>
+            <PanelHelp
+              label={t("timingHelp")}
+              title={t("timingHelpTitle")}
+              intro={t("timingHelpIntro")}
+              items={[
+                t("timingHelpData"),
+                t("timingHelpStrategy"),
+                t("timingHelpExecution"),
+                t("timingHelpAdvanced")
+              ]}
+              footer={t("timingHelpFlow")}
+            />
+          </div>
+          {strategies.error ? <Alert tone="error">{strategies.error}</Alert> : null}
+          <DynamicForm specs={specs} values={form.values} onChange={form.setValue} errors={form.errors} />
+          <details>
+            <summary>{t("advancedJson")}</summary>
+            <JsonTextArea value={advanced.raw} onChange={advanced.setRaw} rows={5} />
+          </details>
+          <div className="toolbar below">
+            <button className="button" disabled={busy} onClick={previewSignals}>{busy ? <Spinner /> : null}{t("timingPreviewSignal")}</button>
+            <button className="button primary" disabled={busy} onClick={startBacktest}>{busy ? <Spinner /> : null}{t("timingRunBacktest")}</button>
+          </div>
+        </section>
+        <aside className="panel">
+          <h2>{t("timingStrategyInfo")}</h2>
+          {selectedStrategy ? (
+            <>
+              <p><strong>{selectedStrategy.name}</strong></p>
+              <p className="muted">{selectedStrategy.description}</p>
+              <pre className="inline-json">{JSON.stringify(selectedStrategy.defaults, null, 2)}</pre>
+            </>
+          ) : strategies.loading ? (
+            <div className="empty loading-row"><Spinner /> {t("loading")}</div>
+          ) : (
+            <div className="empty">{t("empty")}</div>
+          )}
+          {activeJob ? (
+            <section className="panel inset">
+              <h3>{t("runStatus")}</h3>
+              <p className="muted">{activeJob.job_id}</p>
+              <StatusPill status={progress?.status || activeJob.status} />
+              {progress ? <ProgressBar percent={progress.percent || 0} label={progress.message || progress.stage} active={progress.status === "running"} /> : null}
+            </section>
+          ) : null}
+        </aside>
+      </div>
+
+      {signalPreview ? (
+        <section className="panel">
+          <div className="panel-head">
+            <h2>{t("timingSignalPreview")}</h2>
+            <span className="muted">
+              {signalPreview.signals.row_count ?? signalPreview.signals.rows.length} rows
+              {signalPreview.signals.truncated ? " · truncated" : ""}
+            </span>
+          </div>
+          <DataTable
+            rows={signalPreview.signals.rows}
+            empty={t("empty")}
+            columns={previewColumns(signalPreview.signals, ["datetime", "instrument", "signal", "target_percent", "score", "reason"])}
+          />
+        </section>
+      ) : null}
+
+      {detail ? (
+        <>
+          <section className="panel">
+            <div className="panel-head">
+              <h2>{t("timingBacktestResult")}</h2>
+              <span className="muted">{detail.artifact_dir}</span>
+            </div>
+            <div className="metric-grid">
+              {metricRows.map(([label, value]) => (
+                <div className="metric" key={label}>
+                  <span className="metric-label">{label}</span>
+                  <strong>{value}</strong>
+                </div>
+              ))}
+            </div>
+            {equity.length ? (
+              <Plot
+                data={[
+                  {
+                    x: equity.map((row) => row.datetime),
+                    y: equity.map((row) => row.equity),
+                    type: "scatter",
+                    mode: "lines",
+                    name: t("equityCurve"),
+                    line: { color: cssVar("--accent-600", "#2563eb"), width: 2 },
+                  },
+                ]}
+                layout={{
+                  autosize: true,
+                  height: chartHeight(),
+                  margin: { l: 50, r: 20, t: 20, b: 45 },
+                  hovermode: "x unified",
+                  paper_bgcolor: "rgba(0,0,0,0)",
+                  plot_bgcolor: "rgba(0,0,0,0)",
+                }}
+                config={{ responsive: true, displayModeBar: false }}
+                style={{ width: "100%" }}
+              />
+            ) : (
+              <div className="empty">{t("empty")}</div>
+            )}
+          </section>
+          <section className="panel">
+            <h2>{t("timingTrades")}</h2>
+            <DataTable
+              rows={detail.trades.rows}
+              empty={t("empty")}
+              columns={previewColumns(detail.trades, ["datetime", "instrument", "side", "amount", "price", "fee", "reason"])}
+            />
+          </section>
+          <div className="grid two">
+            <section className="panel">
+              <h2>{t("timingPositions")}</h2>
+              <DataTable
+                rows={detail.positions.rows}
+                empty={t("empty")}
+                columns={previewColumns(detail.positions, ["datetime", "instrument", "amount", "market_value"])}
+              />
+            </section>
+            <section className="panel">
+              <h2>{t("timingSignals")}</h2>
+              <DataTable
+                rows={detail.signals.rows}
+                empty={t("empty")}
+                columns={previewColumns(detail.signals, ["datetime", "instrument", "signal", "target_percent", "score", "reason"])}
+              />
+            </section>
+          </div>
+        </>
+      ) : null}
       <JobsPanel compact />
     </>
   );
@@ -1059,6 +1383,106 @@ function callPool<T>(command: string, kwargs: Record<string, unknown>): Promise<
   return api.post<T>("/api/modules/run", { module: "stock_pool", command, kwargs });
 }
 
+// Split a free-text symbol field into a normalized code list (accepts comma / whitespace / newline).
+function parseSymbolText(text: string): string[] {
+  return text.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
+}
+
+// Merge picked codes into an existing symbol field, de-duplicated and order-preserving.
+function mergeSymbolText(current: string, additions: string[]): string {
+  const seen = new Set<string>();
+  const merged: string[] = [];
+  for (const code of [...parseSymbolText(current), ...additions]) {
+    if (!seen.has(code)) {
+      seen.add(code);
+      merged.push(code);
+    }
+  }
+  return merged.join(", ");
+}
+
+// Picker over already-downloaded symbols (GET /api/data/symbols), with source switch, search,
+// select-all / clear and batch add. ``onAdd`` receives the checked codes; ``selectedText`` is the
+// caller's current symbol field so codes already queued there are shown as added.
+function SymbolPicker({ onAdd, selectedText }: { onAdd: (symbols: string[]) => void; selectedText: string }) {
+  const { t } = useI18n();
+  const [source, setSource] = useState("baostock_cn");
+  const [symbols, setSymbols] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+
+  async function load(src = source) {
+    setLoading(true);
+    try {
+      const result = await api.get<Record<string, string[]>>(`/api/data/symbols${qs({ source: src })}`);
+      setSymbols(Array.from(new Set(Object.values(result).flat())).sort());
+    } catch {
+      setSymbols([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const already = useMemo(() => new Set(parseSymbolText(selectedText)), [selectedText]);
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return q ? symbols.filter((s) => s.toLowerCase().includes(q)) : symbols;
+  }, [symbols, search]);
+
+  function toggle(sym: string) {
+    setChecked((cur) => {
+      const next = new Set(cur);
+      if (next.has(sym)) next.delete(sym);
+      else next.add(sym);
+      return next;
+    });
+  }
+  function commit() {
+    if (!checked.size) return;
+    onAdd([...checked]);
+    setChecked(new Set());
+  }
+
+  return (
+    <div className="symbol-picker">
+      <div className="picker-toolbar">
+        <select value={source} onChange={(e) => { setSource(e.target.value); void load(e.target.value); }}>
+          <option value="baostock_cn">baostock_cn</option>
+          <option value="tushare_cn">tushare_cn</option>
+        </select>
+        <input placeholder={t("search")} value={search} onChange={(e) => setSearch(e.target.value)} />
+        <RefreshButton iconOnly onClick={() => load()} />
+      </div>
+      <div className="picker-actions">
+        <button type="button" className="button small" disabled={!filtered.length} onClick={() => setChecked((cur) => new Set([...cur, ...filtered]))}>{t("selectAllList")}</button>
+        <button type="button" className="button small" disabled={!checked.size} onClick={() => setChecked(new Set())}>{t("clearSelection")}</button>
+        <span className="muted small-text">{t("selected")} {checked.size} / {symbols.length}</span>
+      </div>
+      {loading ? (
+        <div className="empty loading-row"><Spinner /> {t("loading")}</div>
+      ) : symbols.length === 0 ? (
+        <div className="empty">{t("spNoDownloaded")}</div>
+      ) : (
+        <div className="symbol-list">
+          {filtered.map((sym) => (
+            <label key={sym} className={`symbol-item${already.has(sym) ? " added" : ""}`}>
+              <input type="checkbox" checked={checked.has(sym)} onChange={() => toggle(sym)} />
+              <span>{sym}</span>
+            </label>
+          ))}
+          {filtered.length === 0 ? <span className="muted small-text">{t("empty")}</span> : null}
+        </div>
+      )}
+      <button type="button" className="button small primary" disabled={!checked.size} onClick={commit}>{t("spAddSelected")} ({checked.size})</button>
+    </div>
+  );
+}
+
 // Stock pool (股票池) CRUD: batch-create pools, edit members, rename, delete. Reuses the generic
 // /api/modules/run dispatch to call the stock_pool module's pool_* commands. Rendered inside the
 // Market Data page.
@@ -1175,6 +1599,10 @@ function StockPoolManager() {
             <label>{t("spSymbols")}<textarea rows={4} value={symbols} onChange={(e) => setSymbols(e.target.value)} placeholder="600519.SH, 000001.SZ" /><small>{t("spSymbolsHelp")}</small></label>
             <label>{t("spImportCsv")}<input value={csv} onChange={(e) => setCsv(e.target.value)} placeholder="important_data/stock_lists/xxx.csv" /></label>
           </div>
+          <details className="symbol-picker-wrap" open>
+            <summary>{t("spPickFromDownloaded")}</summary>
+            <SymbolPicker selectedText={symbols} onAdd={(picked) => setSymbols((cur) => mergeSymbolText(cur, picked))} />
+          </details>
           <button className="button primary" disabled={busy} onClick={createPool}>{busy ? <Spinner /> : null}{t("spCreateBtn")}</button>
         </div>
         <div>
@@ -1217,6 +1645,10 @@ function StockPoolManager() {
           <div className="grid two">
             <div>
               <label>{t("spAdd")}<textarea rows={2} value={addText} onChange={(e) => setAddText(e.target.value)} placeholder="600519.SH, 000001.SZ" /></label>
+              <details className="symbol-picker-wrap">
+                <summary>{t("spPickFromDownloaded")}</summary>
+                <SymbolPicker selectedText={addText} onAdd={(picked) => setAddText((cur) => mergeSymbolText(cur, picked))} />
+              </details>
               <button className="button small" disabled={busy} onClick={addSymbols}>{t("spAddBtn")}</button>
             </div>
             <div>

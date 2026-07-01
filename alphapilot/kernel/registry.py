@@ -80,7 +80,7 @@ def discover_entry_point_classes(group: str) -> Iterator[tuple[str, type]]:
 
 
 def _register_builtin_defaults() -> None:
-    """Register the four built-in systems + the alpha_mining module.
+    """Register the built-in systems and modules.
 
     Uses class-path strings so importing this module stays cheap and does
     not pull qlib/baostock until a system is actually instantiated.
@@ -89,6 +89,7 @@ def _register_builtin_defaults() -> None:
     register_system("factor", "alphapilot.systems.factor.service.FactorSystem")
     register_system("strategy", "alphapilot.systems.strategy.service.StrategySystem")
     register_system("backtest", "alphapilot.systems.backtest.service.QlibBacktestSystem")
+    register_system("timing", "alphapilot.systems.timing.service.TimingSystem")
     register_system("notify", "alphapilot.systems.notify.service.NotificationSystem")
     register_module(
         "alpha_mining",
@@ -117,6 +118,10 @@ def _register_builtin_defaults() -> None:
     register_module(
         "daily_trade",
         "alphapilot.modules.daily_trade.module.DailyTradeModule",
+    )
+    register_module(
+        "timing",
+        "alphapilot.modules.timing.module.TimingModule",
     )
     register_module(
         "factor_cli",

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 from fastapi.testclient import TestClient
 
 from alphapilot.modules.portal import jobs
@@ -164,6 +165,31 @@ class FakeBacktestSystem:
         return workspace_id == "run1"
 
 
+class FakeTimingSystem:
+    def list_strategies(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "name": "sma_filter",
+                "description": "Long when close is above MA.",
+                "defaults": {"window": 20, "target_percent": 1.0},
+            }
+        ]
+
+    def generate_signals(self, request: Any) -> pd.DataFrame:
+        return pd.DataFrame(
+            [
+                {
+                    "datetime": "2026-01-01",
+                    "instrument": "SZ000001",
+                    "signal": 1,
+                    "target_percent": request.target_percent,
+                    "score": 0.1,
+                    "reason": request.strategy_name,
+                }
+            ]
+        )
+
+
 class FakeConfig:
     class data:
         qlib_data_dir = "qlib"
@@ -190,6 +216,7 @@ class FakeEngine:
             "factor": FakeFactorSystem(),
             "strategy": FakeStrategySystem(),
             "backtest": FakeBacktestSystem(),
+            "timing": FakeTimingSystem(),
         }
         self.modules = {}
 
@@ -481,3 +508,70 @@ def test_strategy_import_export_routes(tmp_path, monkeypatch) -> None:  # noqa: 
 
     imported = c.post("/api/strategies/import", json={"kind": "pdf", "source": "paper.pdf"})
     assert imported.json()["strategy_name"] == "imported"
+
+
+def test_timing_routes_start_jobs_and_preview_artifacts(tmp_path, monkeypatch) -> None:  # noqa: ANN001
+    c = client(tmp_path, monkeypatch)
+
+    strategies = c.get("/api/timing/strategies")
+    assert strategies.status_code == 200
+    assert strategies.json()["names"] == ["sma_filter"]
+
+    signal = c.post(
+        "/api/timing/signal",
+        json={
+            "strategy_name": "sma_filter",
+            "symbols": "000001 sz600000",
+            "target_percent": 0.5,
+            "strategy_params": {"window": 3},
+        },
+    )
+    assert signal.status_code == 200
+    body = signal.json()
+    assert body["strategy_name"] == "sma_filter"
+    assert body["signals"]["row_count"] == 1
+    assert body["signals"]["rows"][0]["target_percent"] == 0.5
+
+    started: list[tuple[str, dict[str, Any]]] = []
+
+    def fake_start(kind: str, kwargs: dict[str, Any], **_opts: Any) -> dict[str, Any]:
+        started.append((kind, kwargs))
+        return {"job_id": "timing1", "kind": kind, "status": "running", "params": kwargs}
+
+    monkeypatch.setattr(jobs, "start_job", fake_start)
+    backtest = c.post("/api/timing/backtest", json={"strategy_name": "dual_ma", "symbols": ["000001"]})
+    assert backtest.json()["job_id"] == "timing1"
+    assert started == [("timing_backtest", {"strategy_name": "dual_ma", "symbols": ["000001"]})]
+
+    artifact = tmp_path / "timing_artifact"
+    artifact.mkdir()
+    (artifact / "summary.json").write_text(
+        '{"strategy":"dual_ma","final_equity":101000,"total_return":0.01,"artifact_dir":"' + str(artifact) + '"}',
+        encoding="utf-8",
+    )
+    pd.DataFrame([{"datetime": "2026-01-01", "equity": 100000}]).to_csv(artifact / "equity_curve.csv", index=False)
+    pd.DataFrame([{"datetime": "2026-01-02", "instrument": "SZ000001", "side": "buy"}]).to_csv(
+        artifact / "trades.csv",
+        index=False,
+    )
+    pd.DataFrame([{"datetime": "2026-01-01", "instrument": "SZ000001", "amount": 100}]).to_csv(
+        artifact / "positions.csv",
+        index=False,
+    )
+    pd.DataFrame([{"datetime": "2026-01-01", "instrument": "SZ000001", "signal": 1}]).to_csv(
+        artifact / "signals.csv",
+        index=False,
+    )
+    monkeypatch.setattr(
+        jobs,
+        "get_job",
+        lambda job_id, **_opts: {"job_id": job_id, "kind": "timing_backtest", "params": {}, "status": "succeeded"},
+    )
+    monkeypatch.setattr(jobs, "read_result", lambda job_id, **_opts: {"result": {"artifact_dir": str(artifact)}})
+
+    detail = c.get("/api/timing/jobs/timing1/detail")
+    assert detail.status_code == 200
+    data = detail.json()
+    assert data["summary"]["strategy"] == "dual_ma"
+    assert data["equity_curve"]["row_count"] == 1
+    assert data["trades"]["rows"][0]["side"] == "buy"

@@ -68,6 +68,9 @@ EXPECTED_COMMANDS = {
     "strategy_backtest_list",
     "strategy_create",
     "timezone",
+    "timing_backtest",
+    "timing_signal",
+    "timing_strategies",
     "trade_session_cash",
     "trade_session_create",
     "trade_session_delete",
@@ -471,6 +474,33 @@ def test_real_cli_command_smoke(cli_ctx: CliContext) -> None:
     assert (ctx.qlib_dir / "features" / STEM).is_dir()
 
     _run_ok(ctx, "list_stocks")
+    _run_ok(ctx, "timing_strategies")
+    timing_signals = ctx.cwd / "timing_signals.csv"
+    timing_out = ctx.cwd / "timing_backtest"
+    _run_ok(
+        ctx,
+        "timing_signal",
+        "--strategy_name=sma_filter",
+        f"--symbols={SYMBOL}",
+        f"--data_dir={ctx.raw_backward}",
+        f"--start_date={START_DATE}",
+        f"--end_date={END_DATE}",
+        "--strategy_params={\"window\":2}",
+        f"--output={timing_signals}",
+    )
+    assert timing_signals.is_file()
+    _run_ok(
+        ctx,
+        "timing_backtest",
+        "--strategy_name=sma_filter",
+        f"--symbols={SYMBOL}",
+        f"--data_dir={ctx.raw_backward}",
+        f"--start_date={START_DATE}",
+        f"--end_date={END_DATE}",
+        "--strategy_params={\"window\":2}",
+        f"--output_dir={timing_out}",
+    )
+    assert (timing_out / "summary.json").is_file()
     _run_ok(
         ctx,
         "delete_stock",

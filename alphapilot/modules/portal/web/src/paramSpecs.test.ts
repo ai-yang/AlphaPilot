@@ -10,6 +10,7 @@ import {
   llmMiningSpecs,
   oneOffRunSpecs,
   sessionRunSpecs,
+  timingBacktestSpecs,
   visibleFields,
   withSessionOptions,
   type FieldSpec,
@@ -162,5 +163,38 @@ describe("freq (minute K-line) entry points", () => {
     const bt = buildParams(factorBacktestSpecs, { factor_path: "x.csv", mode: "single_ic", freq: "5min" });
     expect(bt.freq).toBe("5min");
     expect(bt).not.toHaveProperty("yaml_params.freq");
+  });
+});
+
+describe("timing specs", () => {
+  it("build nested strategy_params and parse symbol text", () => {
+    const specs = timingBacktestSpecs(["dual_ma"]);
+    const params = buildParams(specs, {
+      strategy_name: "dual_ma",
+      symbols: "000001, sh600000\nsz000002",
+      freq: "5min",
+      adjust_mode: "backward",
+      target_percent: "0.8",
+      "strategy_params.short_window": "3",
+      "strategy_params.long_window": "12",
+      cash: "200000",
+      trade_unit: "100",
+    });
+
+    expect(params.symbols).toEqual(["000001", "sh600000", "sz000002"]);
+    expect(params.freq).toBe("5min");
+    expect(params.strategy_params).toEqual({ short_window: 3, long_window: 12 });
+    expect(params.cash).toBe(200000);
+  });
+
+  it("only shows parameters relevant to the selected timing strategy", () => {
+    const specs = timingBacktestSpecs();
+    const dualKeys = visibleFields(specs, { strategy_name: "dual_ma" }).map((field) => field.key);
+    const bollKeys = visibleFields(specs, { strategy_name: "boll_mean_reversion" }).map((field) => field.key);
+
+    expect(dualKeys).toContain("strategy_params.short_window");
+    expect(dualKeys).not.toContain("strategy_params.num_std");
+    expect(bollKeys).toContain("strategy_params.num_std");
+    expect(bollKeys).not.toContain("strategy_params.short_window");
   });
 });
