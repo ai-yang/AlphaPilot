@@ -78,3 +78,27 @@ services:
       - portal
     profiles:
       - notify
+
+  # Live-trading executor (vn.py + compiled XTP/EMT gateways). Separate image
+  # (Dockerfile.live) and disabled by default; enable with `--profile live`.
+  # Broker credentials go in .env as ALPHAPILOT_LIVE_<BROKER>_* variables —
+  # never baked into the image. Default command is the import smoke; run the
+  # gated real-connect check with:
+  #   docker compose --profile live run --rm live python scripts/live_smoke_connect_xtp.py
+  live:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.live
+      args:
+        APT_MIRROR: ${APT_MIRROR:-deb.debian.org}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+    image: alphapilot-live:latest
+    env_file:
+      - .env
+    working_dir: /app
+    volumes:
+      - ./docker-data/live:/app/git_ignore_folder      # live ledger / state
+      - ./docker-data/logs:/app/log
+    profiles:
+      - live

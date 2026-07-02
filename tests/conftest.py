@@ -65,6 +65,9 @@ EXPECTED_CLI_COMMANDS: frozenset[str] = frozenset(
         "list_mine_logs",
         "list_runs",
         "list_stocks",
+        "live_brokers",
+        "live_modes",
+        "live_status",
         "mine",
         "mine_aff",
         "mine_gp",
@@ -107,7 +110,7 @@ EXPECTED_CLI_COMMANDS: frozenset[str] = frozenset(
 )
 
 EXPECTED_SYSTEMS: frozenset[str] = frozenset(
-    {"data", "factor", "strategy", "backtest", "timing", "notify"}
+    {"data", "factor", "strategy", "backtest", "timing", "notify", "live"}
 )
 EXPECTED_MODULES: frozenset[str] = frozenset(
     {
@@ -118,6 +121,7 @@ EXPECTED_MODULES: frozenset[str] = frozenset(
         "daily_trade",
         "data_viz",
         "factor",
+        "live",
         "platform",
         "portal",
         "qlib_yaml",
@@ -246,6 +250,8 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AlphaEnv:
         "ALPHAPILOT_PORTAL_SETTINGS_PATH": str(tmp_path / "portal_settings.json"),
         "ALPHAPILOT_NOTIFY_CREDENTIALS_PATH": str(notify_credentials),
         "ALPHAPILOT_NOTIFY_COMMAND_ROOT": str(notify_command_root),
+        "ALPHAPILOT_LIVE_LEDGER_DIR": str(tmp_path / "live_ledger"),
+        "ALPHAPILOT_LIVE_STATE_DIR": str(tmp_path / "live_state"),
         "ALPHAPILOT_TIMEZONE": "Asia/Shanghai",
         "USE_LOCAL": "True",
     }

@@ -14,7 +14,17 @@ log/
 
 # VCS (excluded -> set SETUPTOOLS_SCM_PRETEND_VERSION at build time)
 .git/
+**/.git/
 .gitignore
+
+# Vendored broker SDK originals: their headers/libs are copied into the
+# vnpy_xtp / vnpy_emt packages, so the raw SDK folders never enter the image.
+XTP_API_20250806_2.2.50.8/
+emt_api/
+# vn.py repo extras not needed to pip-install it
+vnpy/docs/
+vnpy/examples/
+vnpy/tests/
 
 # Frontend: node_modules + any local dist are rebuilt in the web-builder stage
 alphapilot/modules/portal/web/node_modules/

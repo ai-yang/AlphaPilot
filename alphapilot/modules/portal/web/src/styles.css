@@ -984,3 +984,7 @@ summary { cursor: pointer; font-weight: 650; }
   .hybrid-json-row { grid-template-columns: minmax(0, 1fr); }
   .hybrid-json-row .icon-button { justify-self: start; }
 }
+
+/* Live trading page: status bar wraps; controls hug the right edge. */
+.live-status-bar { flex-wrap: wrap; align-items: center; }
+.live-status-bar .row-actions { margin-left: auto; }

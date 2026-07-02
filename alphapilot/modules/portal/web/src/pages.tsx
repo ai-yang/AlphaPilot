@@ -3486,3 +3486,220 @@ export function AdvancedPage() {
     </>
   );
 }
+
+// ---- Live trading (paper sandbox) ------------------------------------------
+type LiveConfigSnapshot = {
+  mode: string;
+  broker: string;
+  timezone: string;
+  ledger_dir: string;
+  state_dir: string;
+  risk: Record<string, number>;
+};
+type LivePosition = { code: string; exchange: string; volume: number; available: number; yd_volume: number; frozen: number; price: number };
+type LiveOrder = { order_id: string; code: string; side: string; price: number; volume: number; traded: number; status: string; active: boolean };
+type LiveTrade = { trade_id: string; code: string; side: string; price: number; volume: number };
+type LiveEngineSnapshot = { mode: string; halted: boolean; connection: string; session: string; buying_power: number; active_orders: number; positions: number };
+type LiveState = {
+  snapshot: LiveEngineSnapshot;
+  account: { buying_power: number; balance: number };
+  positions: LivePosition[];
+  orders: LiveOrder[];
+  trades: LiveTrade[];
+  ledger: Array<{ ts: string; kind: string }>;
+};
+type LiveStatus = { config: LiveConfigSnapshot; modes: string[]; running: boolean; state?: LiveState };
+
+export function LivePage() {
+  const { t } = useI18n();
+  const confirm = useConfirm();
+  const fmtMoney = (n: number) => (Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—");
+  const status = useAsync(() => api.get<LiveStatus>("/api/live/status"), []);
+  const { run } = useAction();
+  const [cash, setCash] = useState("1000000");
+  const [orderCode, setOrderCode] = useState("");
+  const [orderSide, setOrderSide] = useState("buy");
+  const [orderVol, setOrderVol] = useState("100");
+  const [orderPrice, setOrderPrice] = useState("");
+  const [targetJson, setTargetJson] = useState(
+    '{\n  "holdings": { "SH600000": 1000 },\n  "prices": { "SH600000": 10.0 }\n}',
+  );
+
+  const cfg = status.data?.config;
+  const running = Boolean(status.data?.running);
+  const state = status.data?.state;
+
+  const connect = () =>
+    run(async () => {
+      await api.post("/api/live/paper/connect", { cash: Number(cash) || undefined });
+      await status.refresh();
+    }, t("liveConnected"));
+  const submitOrder = () =>
+    run(async () => {
+      if (!orderCode.trim()) throw new Error(t("liveCode"));
+      await api.post("/api/live/paper/order", {
+        code: orderCode.trim(),
+        side: orderSide,
+        volume: Number(orderVol),
+        price: Number(orderPrice) || undefined,
+      });
+      await status.refresh();
+    }, t("liveOrderDone"));
+  const submitTarget = () =>
+    run(async () => {
+      await api.post("/api/live/paper/submit-target", JSON.parse(targetJson));
+      await status.refresh();
+    }, t("liveTargetDone"));
+  const halt = async () => {
+    if (!(await confirm({ message: t("liveHaltConfirm"), danger: true }))) return;
+    await run(async () => {
+      await api.post("/api/live/paper/halt", {});
+      await status.refresh();
+    }, t("liveHaltedDone"));
+  };
+  const resume = () =>
+    run(async () => {
+      await api.post("/api/live/paper/resume", {});
+      await status.refresh();
+    }, t("liveResumedDone"));
+  const reset = async () => {
+    if (!(await confirm({ message: t("liveResetConfirm"), danger: true }))) return;
+    await run(async () => {
+      await api.post("/api/live/paper/reset", {});
+      await status.refresh();
+    }, t("liveResetDone"));
+  };
+
+  const riskRows: Array<[string, string]> = cfg
+    ? [
+        [t("liveRiskMaxOrder"), fmtMoney(cfg.risk.max_order_value)],
+        [t("liveRiskMaxDaily"), fmtMoney(cfg.risk.max_daily_value)],
+        [t("liveRiskMaxPos"), `${Math.round((cfg.risk.max_position_pct || 0) * 100)}%`],
+        [t("liveRiskPriceGuard"), `${Math.round((cfg.risk.price_guard_pct || 0) * 100)}%`],
+        [t("liveRiskLot"), String(cfg.risk.lot_size)],
+        [t("liveRiskMaxOrders"), String(cfg.risk.max_orders_per_day)],
+      ]
+    : [];
+
+  return (
+    <div className="stack">
+      <PageTitle title={t("navLive")} subtitle={t("liveIntro")} />
+      <Alert tone="info">{t("livePaperNote")}</Alert>
+
+      <section className="panel">
+        <div className="panel-head">
+          <div className="panel-title-inline">
+            <h2>{t("liveConfig")}</h2>
+            <PanelHelp label={t("help")} title={t("liveConfig")} intro={t("liveConfigHelp")} items={[t("liveConfigHelp1"), t("liveConfigHelp2")]} />
+          </div>
+          <RefreshButton onClick={status.refresh} />
+        </div>
+        {cfg ? (
+          <div className="metric-grid compact">
+            <div className="metric"><span className="metric-label">{t("liveMode")}</span><StatusPill status={cfg.mode} /></div>
+            <div className="metric"><span className="metric-label">{t("liveBroker")}</span><strong>{cfg.broker}</strong></div>
+            {riskRows.map(([label, value]) => (
+              <div className="metric" key={label}><span className="metric-label">{label}</span><strong>{value}</strong></div>
+            ))}
+          </div>
+        ) : (
+          <Spinner />
+        )}
+      </section>
+
+      <section className="panel">
+        <div className="panel-head">
+          <div className="panel-title-inline">
+            <h2>{t("livePaper")}</h2>
+            <InfoDot tip={t("livePaperNote")} />
+          </div>
+        </div>
+
+        {!running || !state ? (
+          <div className="toolbar">
+            <label className="field">
+              <span>{t("liveInitCash")}</span>
+              <input value={cash} onChange={(e) => setCash(e.target.value)} inputMode="decimal" />
+            </label>
+            <AsyncButton onClick={connect}>{t("liveConnect")}</AsyncButton>
+          </div>
+        ) : (
+          <div className="stack">
+            <div className="toolbar live-status-bar">
+              <span className="metric"><span className="metric-label">{t("liveModeState")}</span><StatusPill status={state.snapshot.mode} /></span>
+              <span className="metric"><span className="metric-label">{t("liveKillState")}</span><StatusPill status={state.snapshot.halted ? "halted" : "running"} /></span>
+              <span className="metric"><span className="metric-label">{t("liveSession")}</span><StatusPill status={state.snapshot.session} /></span>
+              <span className="metric"><span className="metric-label">{t("liveConnection")}</span><StatusPill status={state.snapshot.connection} /></span>
+              <span className="metric"><span className="metric-label">{t("liveBuyingPower")}</span><strong>{fmtMoney(state.account.buying_power)}</strong></span>
+              <div className="row-actions">
+                {state.snapshot.halted ? (
+                  <AsyncButton onClick={resume}>{t("liveResume")}</AsyncButton>
+                ) : (
+                  <AsyncButton className="button danger" onClick={halt}>{t("liveHalt")}</AsyncButton>
+                )}
+                <AsyncButton className="button ghost" onClick={reset}>{t("liveReset")}</AsyncButton>
+              </div>
+            </div>
+
+            <div className="toolbar">
+              <input placeholder={t("liveCode")} value={orderCode} onChange={(e) => setOrderCode(e.target.value)} />
+              <select value={orderSide} onChange={(e) => setOrderSide(e.target.value)}>
+                <option value="buy">{t("liveBuy")}</option>
+                <option value="sell">{t("liveSell")}</option>
+              </select>
+              <input placeholder={t("liveVolume")} value={orderVol} onChange={(e) => setOrderVol(e.target.value)} inputMode="numeric" />
+              <input placeholder={t("livePrice")} value={orderPrice} onChange={(e) => setOrderPrice(e.target.value)} inputMode="decimal" />
+              <AsyncButton onClick={submitOrder}>{t("liveSubmitOrder")}</AsyncButton>
+            </div>
+
+            <div className="field">
+              <span>{t("liveSubmitTarget")}</span>
+              <textarea rows={5} value={targetJson} onChange={(e) => setTargetJson(e.target.value)} spellCheck={false} />
+              <small className="field-hint">{t("liveTargetHint")}</small>
+              <div className="row-actions"><AsyncButton onClick={submitTarget}>{t("liveSubmit")}</AsyncButton></div>
+            </div>
+
+            <h3>{t("livePositions")}</h3>
+            <DataTable<LivePosition>
+              rows={state.positions}
+              empty={t("empty")}
+              columns={[
+                { key: "code", label: t("liveCode") },
+                { key: "volume", label: t("liveVolume"), align: "right" },
+                { key: "available", label: t("liveAvailable"), align: "right" },
+                { key: "price", label: t("liveAvgPrice"), align: "right", render: (r) => fmtMoney(r.price) },
+              ]}
+            />
+
+            <h3>{t("liveOrders")}</h3>
+            <DataTable<LiveOrder>
+              rows={state.orders}
+              empty={t("empty")}
+              columns={[
+                { key: "order_id", label: t("liveOrderId"), ellipsis: true },
+                { key: "code", label: t("liveCode") },
+                { key: "side", label: t("liveSideCol"), render: (r) => t(r.side === "buy" ? "liveBuy" : "liveSell") },
+                { key: "price", label: t("livePrice"), align: "right", render: (r) => fmtMoney(r.price) },
+                { key: "volume", label: t("liveVolume"), align: "right" },
+                { key: "traded", label: t("liveTraded"), align: "right" },
+                { key: "status", label: t("status"), render: (r) => <StatusPill status={r.status} /> },
+              ]}
+            />
+
+            <h3>{t("liveTrades")}</h3>
+            <DataTable<LiveTrade>
+              rows={state.trades}
+              empty={t("empty")}
+              columns={[
+                { key: "code", label: t("liveCode") },
+                { key: "side", label: t("liveSideCol"), render: (r) => t(r.side === "buy" ? "liveBuy" : "liveSell") },
+                { key: "price", label: t("livePrice"), align: "right", render: (r) => fmtMoney(r.price) },
+                { key: "volume", label: t("liveVolume"), align: "right" },
+              ]}
+            />
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}

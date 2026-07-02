@@ -6,9 +6,26 @@ public
 release-notes.md
 Working_AlphaPilot.md
 important_data/stock_pools/
+
+# Broker SDKs / upstream trading dependencies
+#
+# Raw vendor SDK folders should not be committed. The gateway packages already
+# carry the headers/libs they need; keep originals local unless their license
+# explicitly allows redistribution.
 /emt_api/
+/XTP_API*/
+
+# Large upstream working copies are ignored by default. If you decide to vendor
+# them, remove these rules or add them as proper git submodules/private forks.
 /vnpy/
-/vnpy_emt/
+# /vnpy_xtp/ is intentionally left visible because Dockerfile.live currently
+# vendors it; remove its nested .git directory before committing as plain source.
+# /vnpy_emt/ is intentionally left visible for the same live-image reason.
+
+# Never commit nested repository metadata from vendored/checkouted dependencies.
+/vnpy/.git/
+/vnpy_emt/.git/
+/vnpy_xtp/.git/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -18,6 +35,8 @@ __pycache__/
 
 # C extensions
 *.so
+!vnpy_xtp/vnpy_xtp/api/*.so
+!vnpy_emt/vnpy_emt/api/*.so
 
 # Distribution / packaging
 .Python
@@ -120,6 +139,9 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
+!.env.example
+!.env.docker.example
 .venv
 ^env/
 venv/

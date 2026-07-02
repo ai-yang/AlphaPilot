@@ -14,6 +14,7 @@ const NAV: [string, string][] = [
   ["library", "/library"],
   ["market", "/market"],
   ["daily", "/daily-trade"],
+  ["live", "/live"],
   ["scheduler", "/scheduler"],
   ["notify", "/notifications"],
   ["advanced", "/advanced"]

@@ -10,6 +10,7 @@ import {
   DailyTradePage,
   HomePage,
   LibraryPage,
+  LivePage,
   MarketPage,
   MiningPage,
   NotificationsPage,
@@ -33,6 +34,7 @@ const router = createBrowserRouter([
       { path: "library", element: <LibraryPage /> },
       { path: "market", element: <MarketPage /> },
       { path: "daily-trade", element: <DailyTradePage /> },
+      { path: "live", element: <LivePage /> },
       { path: "scheduler", element: <SchedulerPage /> },
       { path: "notifications", element: <NotificationsPage /> },
       { path: "advanced", element: <AdvancedPage /> }

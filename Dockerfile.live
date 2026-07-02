@@ -1,0 +1,103 @@
+# syntax=docker/dockerfile:1
+############################################################
+# AlphaPilot live-trading image: vn.py + compiled broker gateways.
+#
+# Separate from the research image (Dockerfile): this one carries the C++
+# broker bindings (vnpy_xtp @ XTP 2.2.50.8, vnpy_emt @ new EMT SDK) compiled
+# for linux/amd64 — the only platform both vendor SDKs support. Build/run on
+# Apple Silicon via Docker's amd64 emulation; deploy the same image to a
+# Linux server for real trading.
+#
+#   docker build -f Dockerfile.live --platform linux/amd64 -t alphapilot-live .
+#   docker build ... --target live-xtp    # stop after the XTP gateway (debug)
+#
+# Staged so a broken EMT build never invalidates the heavy vnpy layer:
+#   live-base (toolchain + vn.py)  ->  live-xtp (+vnpy_xtp)  ->  live (+vnpy_emt + alphapilot)
+############################################################
+FROM python:3.11-slim-bookworm AS live-base
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0
+
+# Same optional Debian mirror knob as the main Dockerfile.
+ARG APT_MIRROR=deb.debian.org
+RUN if [ "$APT_MIRROR" != "deb.debian.org" ]; then \
+        sed -i "s|deb.debian.org|$APT_MIRROR|g; s|security.debian.org|$APT_MIRROR|g" \
+            /etc/apt/sources.list.d/debian.sources 2>/dev/null \
+        || sed -i "s|deb.debian.org|$APT_MIRROR|g; s|security.debian.org|$APT_MIRROR|g" /etc/apt/sources.list; \
+    fi
+
+# build-essential: compile the pybind11 gateway bindings (and any sdist deps).
+# tini: PID 1 for the long-lived live process. curl/ca-certificates: healthchecks + HTTPS.
+RUN apt-get update -o Acquire::Retries=5 \
+    && apt-get install -y --no-install-recommends -o Acquire::Retries=5 \
+        build-essential \
+        pkg-config \
+        tini \
+        curl \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Optional PyPI mirror (e.g. https://pypi.tuna.tsinghua.edu.cn/simple).
+ARG PIP_INDEX_URL=https://pypi.org/simple
+ENV PIP_INDEX_URL=${PIP_INDEX_URL}
+
+WORKDIR /app
+
+# Toolchain for the gateway builds. Installed into the main env because
+# vnpy_xtp's meson.build resolves pybind11 via `python3 -c "import pybind11"`,
+# so the packages must be importable outside pip's isolated build env
+# (we install the gateways with --no-build-isolation).
+RUN pip install meson meson-python ninja pybind11 patchelf importlib-metadata
+
+# vn.py core (event engine / trader engine / gateway ABC). Heavy layer
+# (PySide6, ta-lib manylinux wheels) — keep it early and cached.
+COPY vnpy/ ./vnpy/
+RUN pip install ./vnpy
+
+# The gateway bindings convert GBK/GB18030 vendor strings (ticker names, error
+# messages) via std::locale("zh_CN.GB18030") — generate it or the conversion
+# throws at runtime. Separate layer so it never invalidates the vnpy cache.
+RUN apt-get update -o Acquire::Retries=5 \
+    && apt-get install -y --no-install-recommends locales \
+    && rm -rf /var/lib/apt/lists/* \
+    && echo "zh_CN.GB18030 GB18030" >> /etc/locale.gen \
+    && locale-gen
+
+
+############################################################
+FROM live-base AS live-xtp
+
+# XTP gateway — compiles vnxtpmd/vnxtptd against the bundled 2.2.50.8 SDK
+# (headers + linux_glibc_2.17 libs already vendored inside the package).
+COPY vnpy_xtp/ ./vnpy_xtp/
+RUN pip install --no-build-isolation ./vnpy_xtp \
+    && python -c "from vnpy_xtp import XtpGateway; print('vnpy_xtp OK:', XtpGateway.default_name)"
+
+
+############################################################
+FROM live-xtp AS live
+
+# EMT gateway — compiles vnemtmd/vnemttd against the new EMT SDK
+# (headers + linux .so vendored inside the package; setup.py has a Linux branch).
+COPY vnpy_emt/ ./vnpy_emt/
+RUN pip install --no-build-isolation ./vnpy_emt \
+    && python -c "from vnpy_emt import EmtGateway; print('vnpy_emt OK:', EmtGateway.default_name)"
+
+# AlphaPilot itself, dependency-light: the live subsystem only needs the
+# stdlib + numpy (already pulled in by vn.py). Full research deps stay in the
+# main image.
+COPY pyproject.toml README.md requirements.txt ./
+COPY alphapilot/ ./alphapilot/
+RUN pip install --no-deps -e .
+
+# Build-time smoke: both gateways import, MainEngine wires them, and the
+# AlphaPilot adapter loads — fail the image build if any of that breaks.
+COPY scripts/live_smoke_import.py scripts/live_smoke_connect_xtp.py ./scripts/
+RUN python scripts/live_smoke_import.py
+
+ENTRYPOINT ["tini", "--"]
+# Default command re-runs the smoke; compose overrides with the real live process.
+CMD ["python", "scripts/live_smoke_import.py"]

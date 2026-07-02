@@ -1373,6 +1373,150 @@ def create_app(
         except Exception as exc:  # noqa: BLE001
             raise _api_error(exc) from exc
 
+    # ---- Live trading (in-process PAPER sandbox) ----------------------------
+    # Real LIVE trading runs in a separate long-lived daemon (Linux + vn.py). The
+    # portal drives an in-process PAPER LiveEngine so the whole stack (reconcile ->
+    # risk -> broker -> OMS -> ledger + kill-switch) can be exercised safely here.
+    def _live_system() -> Any:
+        return _engine(app).get_system("live")
+
+    def _require_paper() -> Any:
+        engine_obj = getattr(app.state, "live_engine", None)
+        if engine_obj is None:
+            raise ValueError("Paper session not started; connect first.")
+        return engine_obj
+
+    def _live_state(engine_obj: Any) -> dict[str, Any]:
+        oms = engine_obj.oms
+
+        def _side(direction: Any) -> str:
+            return "buy" if getattr(direction, "value", direction) == "long" else "sell"
+
+        positions = [
+            {"code": p.code, "exchange": p.exchange.value, "volume": p.volume,
+             "available": p.available, "yd_volume": p.yd_volume, "frozen": p.frozen, "price": p.price}
+            for p in oms.get_positions()
+        ]
+        orders = [
+            {"order_id": o.order_id, "code": o.code, "side": _side(o.direction), "price": o.price,
+             "volume": o.volume, "traded": o.traded, "status": o.status.value, "active": o.is_active()}
+            for o in oms.orders.values()
+        ]
+        trades = [
+            {"trade_id": t.trade_id, "code": t.code, "side": _side(t.direction),
+             "price": t.price, "volume": t.volume}
+            for t in oms.get_trades()
+        ]
+        account = oms.account
+        return {
+            "snapshot": engine_obj.snapshot(),
+            "account": {
+                "buying_power": oms.buying_power(),
+                "balance": account.balance if account else 0.0,
+            },
+            "positions": positions,
+            "orders": orders,
+            "trades": trades,
+            "ledger": engine_obj.ledger.events()[-50:],
+        }
+
+    @app.get("/api/live/status")
+    def live_status() -> dict[str, Any]:
+        try:
+            live = _live_system()
+            engine_obj = getattr(app.state, "live_engine", None)
+            data: dict[str, Any] = {
+                "config": live.snapshot(),
+                "modes": live.modes(),
+                "running": engine_obj is not None,
+            }
+            if engine_obj is not None:
+                data["state"] = _live_state(engine_obj)
+            return _jsonable(data)
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.post("/api/live/paper/connect")
+    def live_paper_connect(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            cash = float(payload.get("cash") or 1_000_000.0)
+            engine_obj = _live_system().create_paper_engine(cash=cash)
+            engine_obj.connect({"cash": cash})
+            app.state.live_engine = engine_obj
+            return _jsonable(_live_state(engine_obj))
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.get("/api/live/paper/state")
+    def live_paper_state() -> dict[str, Any]:
+        try:
+            engine_obj = getattr(app.state, "live_engine", None)
+            if engine_obj is None:
+                return _jsonable({"running": False})
+            return _jsonable({"running": True, **_live_state(engine_obj)})
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.post("/api/live/paper/order")
+    def live_paper_order(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            from alphapilot.systems.live.types import OrderRequest, normalize_symbol
+
+            engine_obj = _require_paper()
+            code = str(payload["code"]).strip()
+            side = str(payload.get("side", "buy")).lower()
+            volume = float(payload["volume"])
+            price = float(payload.get("price") or 0.0)
+            c, ex = normalize_symbol(code)
+            if price > 0:
+                engine_obj.gateway.set_prices({code: price})
+            req = (OrderRequest.buy if side == "buy" else OrderRequest.sell)(c, ex, volume, price)
+            order_id = engine_obj.submit(req)
+            return _jsonable({"order_id": order_id, **_live_state(engine_obj)})
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.post("/api/live/paper/submit-target")
+    def live_paper_submit_target(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            from alphapilot.systems.live.executor import reconcile
+            from alphapilot.systems.live.targets import TargetPortfolio
+
+            engine_obj = _require_paper()
+            holdings = {str(k): float(v) for k, v in (payload.get("holdings") or {}).items()}
+            prices = {str(k): float(v) for k, v in (payload.get("prices") or {}).items()}
+            if prices:
+                engine_obj.gateway.set_prices(prices)
+            target = TargetPortfolio(date=str(payload.get("date") or "portal"), holdings=holdings, prices=prices)
+            reqs = reconcile(target, engine_obj.oms, lot_size=engine_obj.config.risk.lot_size)
+            routed = [oid for oid in (engine_obj.submit(r) for r in reqs) if oid]
+            return _jsonable({"planned": len(reqs), "routed": len(routed), **_live_state(engine_obj)})
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.post("/api/live/paper/halt")
+    def live_paper_halt(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            engine_obj = _require_paper()
+            engine_obj.halt(str(payload.get("reason") or "portal kill-switch"))
+            return _jsonable(_live_state(engine_obj))
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.post("/api/live/paper/resume")
+    def live_paper_resume() -> dict[str, Any]:
+        try:
+            engine_obj = _require_paper()
+            engine_obj.resume()
+            return _jsonable(_live_state(engine_obj))
+        except Exception as exc:  # noqa: BLE001
+            raise _api_error(exc) from exc
+
+    @app.post("/api/live/paper/reset")
+    def live_paper_reset() -> dict[str, Any]:
+        app.state.live_engine = None
+        return _jsonable({"running": False})
+
     @app.get("/branding/logo.svg")
     def portal_logo() -> FileResponse:
         logo_path = Path(__file__).resolve().parents[3] / "docs" / "logo.svg"

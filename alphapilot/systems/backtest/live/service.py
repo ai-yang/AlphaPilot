@@ -28,7 +28,11 @@ from alphapilot.systems.backtest.live.predict import (
     predict_scores,
 )
 from alphapilot.systems.backtest.live.rebalance import run_one_day
-from alphapilot.systems.backtest.live.types import DailySignalRequest, DailyTradeResult
+from alphapilot.systems.backtest.live.types import (
+    DailySignalRequest,
+    DailyTradeResult,
+    PortfolioState,
+)
 
 if TYPE_CHECKING:
     from alphapilot.kernel.context import Context
@@ -155,7 +159,20 @@ def _maybe_refresh_data(context: "Context") -> None:
         logger.warning(f"[daily_trade] data refresh skipped ({exc}); please update data manually")
 
 
-def generate_daily_signal(context: "Context", request: DailySignalRequest) -> DailyTradeResult:
+def generate_daily_signal(
+    context: "Context",
+    request: DailySignalRequest,
+    *,
+    seed_state: PortfolioState | None = None,
+) -> DailyTradeResult:
+    """Compute today's trade plan.
+
+    ``seed_state`` overrides the account seed for the one-day rebalance: live
+    trading passes the **real** portfolio (cash + holdings, read from the broker /
+    OMS) so the resulting ``holdings`` target and ``trades`` diff are computed
+    against the true account rather than the rolled paper JSON. When ``None`` the
+    behavior is unchanged (load the rolling JSON state).
+    """
     use_local = (
         request.use_local if request.use_local is not None else context.config.backtest.use_local
     )
@@ -268,11 +285,17 @@ def generate_daily_signal(context: "Context", request: DailySignalRequest) -> Da
         state_path = live_session.state_path_for(session_name)
     else:
         state_path = Path(request.state_path) if request.state_path else _default_state_path(resolved.key)
-    prev_state = load_state(state_path)
-    if prev_state is None:
-        seed_cash = init_cash if init_cash is not None else float(params.account)
-        prev_state = init_state(seed_cash, date="", metadata={"seeded": True})
-        logger.info(f"[daily_trade] no prior state at {state_path}; seeded cash={seed_cash}")
+    if seed_state is not None:
+        # Live path: seed the rebalance from the real account (broker/OMS truth).
+        prev_state = seed_state
+        logger.info(f"[daily_trade] seeded from live account cash={seed_state.cash} "
+                    f"positions={len(seed_state.positions)}")
+    else:
+        prev_state = load_state(state_path)
+        if prev_state is None:
+            seed_cash = init_cash if init_cash is not None else float(params.account)
+            prev_state = init_state(seed_cash, date="", metadata={"seeded": True})
+            logger.info(f"[daily_trade] no prior state at {state_path}; seeded cash={seed_cash}")
 
     scores = predict_scores(
         date,
@@ -322,4 +345,27 @@ def generate_daily_signal(context: "Context", request: DailySignalRequest) -> Da
             "new_cash": new_state.cash,
             "n_scored": int(len(scores)),
         },
+    )
+
+
+def to_target_portfolio(result: DailyTradeResult, *, source: str | None = None):
+    """Bridge a :class:`DailyTradeResult` to a live :class:`TargetPortfolio`.
+
+    The daily strategy's ``holdings`` (target book after the day) become the target
+    the live executor reconciles against the real account. This is the decision ->
+    execution hand-off: the *what to hold* is reused verbatim, while *how it fills*
+    is left to the live executor / broker rather than the qlib simulation.
+    """
+    from alphapilot.systems.live.targets import TargetPortfolio
+
+    holdings = result.holdings
+    records = (
+        holdings.to_dict("records")
+        if holdings is not None and not getattr(holdings, "empty", True)
+        else []
+    )
+    return TargetPortfolio.from_holdings(
+        result.date,
+        records,
+        source=source or (result.info or {}).get("strategy", "daily_trade"),
     )

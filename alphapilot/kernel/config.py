@@ -15,8 +15,12 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from alphapilot.kernel.paths import factor_zoo_dir, strategy_zoo_dir
+
+if TYPE_CHECKING:
+    from alphapilot.systems.live.config import LiveConfig
 
 # Defaults aligned with alphapilot.core.pickle_cache (env names must stay in sync).
 def _default_pickle_cache_dir_mine() -> Path:
@@ -133,6 +137,12 @@ class StrategyConfig:
     )
 
 
+def _default_live_config() -> "LiveConfig":
+    from alphapilot.systems.live.config import LiveConfig
+
+    return LiveConfig.load()
+
+
 @dataclass
 class LLMConfig:
     """LLM provider selection (delegates credentials to oai/llm_conf)."""
@@ -149,6 +159,7 @@ class AppConfig:
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     backtest: BacktestConfig = field(default_factory=BacktestConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
+    live: "LiveConfig" = field(default_factory=_default_live_config)
     log_dir: Path = field(
         default_factory=lambda: _env_path("ALPHAPILOT_LOG_DIR", Path.cwd() / "log")
     )
@@ -172,6 +183,7 @@ class AppConfig:
             f"  backtest.pickle_cache_dir_backtest={self.backtest.pickle_cache_dir_backtest}\n"
             f"  backtest.pickle_cache_enabled={self.backtest.pickle_cache_enabled}\n"
             f"  llm.provider={self.llm.provider}\n"
+            f"  live.mode={self.live.mode} live.broker={self.live.broker}\n"
             f"  log_dir={self.log_dir}\n"
             ")"
         )
