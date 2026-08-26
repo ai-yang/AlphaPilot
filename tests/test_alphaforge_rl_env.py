@@ -83,7 +83,7 @@ def test_default_target_rejects_unsupported_horizon_or_price() -> None:
 
     from alphapilot.modules.alphaforge.data_adapter import default_target
 
-    with pytest.raises(ValueError, match="between 1 and 29"):
+    with pytest.raises(ValueError, match="positive integer"):
         default_target(target_horizon=0)
     with pytest.raises(ValueError, match="close, vwap"):
         default_target(target_price="open")

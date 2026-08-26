@@ -63,10 +63,14 @@ class AlphaForgeSearchModule(BaseModule):
         self,
         instruments: str = "csi300",
         train_end_year: int = 2020,
+        train_start_date: str | None = None,
+        train_end_date: str | None = None,
         freq: str = "day",
         seed: int = 0,
         population_size: int = 1000,
         generations: int = 40,
+        target_horizon: int = 20,
+        target_price: str = "vwap",
         device: str | None = None,
         qlib_dir: str | None = None,
         backtest: bool = False,
@@ -79,11 +83,15 @@ class AlphaForgeSearchModule(BaseModule):
 
         runner = GPRunner(
             context=self.context, instruments=instruments, train_end_year=train_end_year,
+            train_start_date=train_start_date, train_end_date=train_end_date,
             freq=freq, seed=seed, population_size=population_size, generations=generations,
+            target_horizon=target_horizon, target_price=target_price,
             device=device, qlib_dir=qlib_dir, **kwargs,
         )
         exprs, scores = runner.run()
-        return self._emit(exprs, scores, source="alphaforge_gp", backtest=backtest, save=save)
+        return self._emit(
+            exprs, scores, source="alphaforge_gp", backtest=backtest, save=save
+        )
 
     # ---- RL (medium) ----
 
@@ -91,6 +99,8 @@ class AlphaForgeSearchModule(BaseModule):
         self,
         instruments: str = "csi300",
         train_end_year: int = 2020,
+        train_start_date: str | None = None,
+        train_end_date: str | None = None,
         freq: str = "day",
         seed: int = 0,
         steps: int = 200_000,
@@ -111,11 +121,15 @@ class AlphaForgeSearchModule(BaseModule):
 
         runner = RLRunner(
             context=self.context, instruments=instruments, train_end_year=train_end_year,
+            train_start_date=train_start_date, train_end_date=train_end_date,
             freq=freq, seed=seed, steps=steps, pool_capacity=pool_capacity,
             target_horizon=target_horizon, target_price=target_price,
             device=device, qlib_dir=qlib_dir, **kwargs,
         )
         exprs, scores = runner.run()
+        if runner.training_data is None:
+            raise RuntimeError("RL runner completed without a resolved training contract")
+        training_data = runner.training_data
         provider_uri = str(
             Path(qlib_dir or self.context.config.data.qlib_data_dir)
             .expanduser()
@@ -125,10 +139,12 @@ class AlphaForgeSearchModule(BaseModule):
             "algorithm": "MaskablePPO",
             "steps": steps,
             "pool_capacity": pool_capacity,
-            "target_horizon": target_horizon,
-            "target_price": target_price,
+            "target_horizon": training_data.target_spec.horizon,
+            "target_price": training_data.target_spec.price,
             "instruments": instruments,
-            "train_end_year": train_end_year,
+            "training_source": training_data.training_spec.source,
+            "train_start_date": training_data.training_spec.requested_start_date,
+            "train_end_date": training_data.training_spec.requested_end_date,
             "freq": freq,
             "seed": seed,
         }
@@ -154,24 +170,11 @@ class AlphaForgeSearchModule(BaseModule):
             "market": instruments,
             "provider_uri": provider_uri,
             "factor_data_fingerprint": data_fingerprint,
-            "data_split": {
-                "train": ["2010-01-01", f"{train_end_year}-12-31"],
-                "validation": [
-                    f"{train_end_year + 1}-01-01",
-                    f"{train_end_year + 1}-12-31",
-                ],
-                "test": [
-                    f"{train_end_year + 2}-01-01",
-                    f"{train_end_year + 2}-12-31",
-                ],
-            },
+            "data_split": training_data.data_split_metadata(),
             "hypothesis": research_hypothesis,
             "mining_round": 1,
             "seed": seed,
-            "target_expression": (
-                f"Ref(${target_price.lower()},-{target_horizon + 1})/"
-                f"Ref(${target_price.lower()},-1)-1"
-            ),
+            "target_expression": training_data.target_spec.qlib_expression,
             "search_config": search_config,
             "model_fingerprint": config_hash,
             "qlib_template_fingerprint": "",

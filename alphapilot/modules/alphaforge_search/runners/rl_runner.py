@@ -16,7 +16,12 @@ from typing import TYPE_CHECKING, Any
 
 # sys.path shim for vendored packages.
 import alphapilot.modules.alphaforge  # noqa: F401
-from alphapilot.modules.alphaforge.data_adapter import default_target, get_data_splits
+from alphapilot.modules.alphaforge.data_adapter import (
+    LoadedTrainingData,
+    TargetSpec,
+    TrainingSpec,
+    get_train_data,
+)
 from alphapilot.modules.alphaforge.device import resolve_device, use_fork_start_method
 
 if TYPE_CHECKING:
@@ -30,6 +35,8 @@ class RLRunner:
         context: "Context",
         instruments: str = "csi300",
         train_end_year: int = 2020,
+        train_start_date: str | None = None,
+        train_end_date: str | None = None,
         freq: str = "day",
         seed: int = 0,
         steps: int = 200_000,
@@ -43,15 +50,24 @@ class RLRunner:
         self.context = context
         self.instruments = instruments
         self.train_end_year = train_end_year
+        self.train_start_date = train_start_date
+        self.train_end_date = train_end_date
+        self.training_spec = TrainingSpec.resolve(
+            train_end_year=train_end_year,
+            train_start_date=train_start_date,
+            train_end_date=train_end_date,
+        )
         self.freq = freq
         self.seed = seed
         self.steps = steps
         self.pool_capacity = pool_capacity
-        self.target_horizon = target_horizon
-        self.target_price = target_price
+        self.target_spec = TargetSpec(target_horizon, target_price)
+        self.target_horizon = self.target_spec.horizon
+        self.target_price = self.target_spec.price
         self.device_pref = device
         self.qlib_dir = qlib_dir
         self.raw = raw
+        self.training_data: LoadedTrainingData | None = None
 
     def run(self) -> tuple[list[Any], list[float]]:
         from sb3_contrib.ppo_mask import MaskablePPO
@@ -63,15 +79,16 @@ class RLRunner:
         use_fork_start_method()
         dev = resolve_device(self.device_pref)
         reseed_everything(self.seed)
-        splits = get_data_splits(
-            self.context, instruments=self.instruments, train_end_year=self.train_end_year,
+        target = self.target_spec.build_expression()
+        training_data = get_train_data(
+            self.context,
+            training_spec=self.training_spec,
+            target_spec=self.target_spec,
+            instruments=self.instruments,
             freq=self.freq, device=dev, raw=self.raw, qlib_dir=self.qlib_dir,
         )
-        data = splits.train
-        target = default_target(
-            target_horizon=self.target_horizon,
-            target_price=self.target_price,
-        )
+        self.training_data = training_data
+        data = training_data.data
 
         pool = AlphaPool(capacity=self.pool_capacity, stock_data=data, target=target, ic_lower_bound=None)
         env = AlphaEnv(pool=pool, device=dev, print_expr=False)

@@ -94,6 +94,8 @@ class StockData:
         self.max_future_days = max_future_days
         self._start_time = start_time
         self._end_time = end_time
+        self._effective_start_time: Optional[str] = None
+        self._effective_end_time: Optional[str] = None
         self._features = features if features is not None else list(FeatureType)
         self.device = device
         self.freq = freq
@@ -130,6 +132,13 @@ class StockData:
             self.max_backtrack_days,
             self.max_future_days,
         )
+        effective_start = pd.Timestamp(cal[start_index])
+        effective_end = pd.Timestamp(cal[end_index])
+        # AlphaForge's public training contract is date-based even when the
+        # provider calendar is intraday.  Preserve that contract in metadata;
+        # the tensor itself still retains the full timestamp index in ``_dates``.
+        self._effective_start_time = effective_start.date().isoformat()
+        self._effective_end_time = effective_end.date().isoformat()
 
         real_start_time = cal[start_index - self.max_backtrack_days]
         real_end_time = cal[end_index + self.max_future_days]
@@ -169,6 +178,18 @@ class StockData:
     @property
     def n_days(self) -> int:
         return self.data.shape[0] - self.max_backtrack_days - self.max_future_days
+
+    @property
+    def effective_start_time(self) -> str:
+        if self._effective_start_time is None:
+            raise RuntimeError("StockData has not resolved its effective calendar range")
+        return self._effective_start_time
+
+    @property
+    def effective_end_time(self) -> str:
+        if self._effective_end_time is None:
+            raise RuntimeError("StockData has not resolved its effective calendar range")
+        return self._effective_end_time
 
     def add_data(self,data:torch.Tensor,dates:pd.Index):
         data = data.to(self.device)
