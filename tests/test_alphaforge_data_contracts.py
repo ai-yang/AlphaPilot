@@ -14,6 +14,7 @@ from alphapilot.modules.alphaforge.data_adapter import (
     LoadedTrainingData,
     TargetSpec,
     TrainingSpec,
+    VwapSpec,
     get_train_data,
 )
 
@@ -113,7 +114,9 @@ def test_get_train_data_builds_only_one_slice_with_target_padding(monkeypatch) -
     assert calls[0]["start_time"] == "2017-06-06"
     assert calls[0]["end_time"] == "2023-11-30"
     assert calls[0]["max_future_days"] == 6
+    assert calls[0]["vwap_spec"] == VwapSpec("amount_volume")
     assert loaded.data is stock_data
+    assert loaded.vwap_spec == VwapSpec("amount_volume")
     assert loaded.data_split_metadata() == {
         "train": {
             "requested": ["2017-06-06", "2023-11-30"],
@@ -186,6 +189,7 @@ def test_all_miners_resolve_the_same_contract_before_run(runner_class) -> None: 
         "2018-01-02", "2021-12-30", "explicit_dates"
     )
     assert runner.target_spec == TargetSpec(5, "close")
+    assert runner.vwap_spec == VwapSpec("amount_volume")
 
 
 @pytest.mark.parametrize("runner_class", _runner_classes())
@@ -221,6 +225,7 @@ def test_rl_metadata_records_requested_and_effective_train_only(
                 data=object(),
                 training_spec=training,
                 target_spec=target,
+                vwap_spec=VwapSpec(kwargs["vwap_mode"]),
                 effective_start_date="2017-06-07",
                 effective_end_date="2023-11-29",
             )
@@ -248,6 +253,7 @@ def test_rl_metadata_records_requested_and_effective_train_only(
         train_end_date="2023-11-30",
         target_horizon=5,
         target_price=" CLOSE ",
+        vwap_mode=" FACTOR_ADJUSTED_AMOUNT_VOLUME ",
         qlib_dir=str(tmp_path / "provider"),
         save=False,
     )
@@ -263,4 +269,8 @@ def test_rl_metadata_records_requested_and_effective_train_only(
     assert "test" not in metadata["data_split"]
     assert metadata["target_expression"] == "Ref($close,-6)/Ref($close,-1)-1"
     assert metadata["search_config"]["training_source"] == "explicit_dates"
+    assert metadata["search_config"]["vwap_mode"] == (
+        "factor_adjusted_amount_volume"
+    )
+    assert metadata["vwap_mode"] == "factor_adjusted_amount_volume"
     assert "train_end_year" not in metadata["search_config"]

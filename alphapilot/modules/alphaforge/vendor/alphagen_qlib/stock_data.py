@@ -1,5 +1,9 @@
 from typing import List, Union, Optional, Tuple, Dict
+from collections.abc import Mapping
 from enum import IntEnum
+import json
+from pathlib import Path
+import threading
 import numpy as np
 import pandas as pd
 import torch
@@ -48,10 +52,11 @@ class FeatureType(IntEnum):
     VWAP = 5
 
 def change_to_raw_min(features):
+    """Apply legacy minute scaling to non-VWAP fields only."""
     result = []
     for feature in features:
         if feature in ['$vwap']:
-            result.append(f"$money/$volume")
+            raise ValueError("VWAP must be supplied by the explicit vwap expression")
         elif feature in ['$volume']:
             result.append(f"{feature}/100000")
             # result.append('$close')
@@ -60,10 +65,13 @@ def change_to_raw_min(features):
     return result
 
 def change_to_raw(features):
+    """Apply legacy daily factor adjustment to non-VWAP OHLCV fields."""
     result = []
     for feature in features:
-        if feature in ['$open','$close','$high','$low','$vwap']:
+        if feature in ['$open','$close','$high','$low']:
             result.append(f"{feature}*$factor")
+        elif feature in ['$vwap']:
+            raise ValueError("VWAP must be supplied by the explicit vwap expression")
         elif feature in ['$volume']:
             result.append(f"{feature}/$factor/1000000")
             # result.append('$close')
@@ -72,7 +80,8 @@ def change_to_raw(features):
     return result
 
 class StockData:
-    _qlib_initialized: bool = False
+    _qlib_provider_identity: str | None = None
+    _qlib_init_lock = threading.RLock()
 
     def __init__(self,
                  instrument: Union[str, List[str]],
@@ -83,12 +92,18 @@ class StockData:
                  features: Optional[List[FeatureType]] = None,
                  device: torch.device = torch.device('cuda:0'),
                  raw:bool = False,
+                 vwap_expression:str = '($amount/$volume)',
                  qlib_path:Union[str,Dict] = "",
                  freq:str = 'day',
                  ) -> None:
+        if raw and freq != 'day':
+            raise ValueError("raw=True AlphaForge data is supported only for day frequency")
+        if not isinstance(vwap_expression, str) or not vwap_expression.strip():
+            raise ValueError("vwap_expression must be a non-empty Qlib expression")
         self._init_qlib(qlib_path)
         self.df_bak = None
         self.raw = raw
+        self.vwap_expression = vwap_expression.strip()
         self._instrument = instrument
         self.max_backtrack_days = max_backtrack_days
         self.max_future_days = max_future_days
@@ -103,13 +118,29 @@ class StockData:
 
 
     @classmethod
+    def _provider_identity(cls, qlib_path) -> str:
+        if isinstance(qlib_path, (str, Path)):
+            return f"path:{Path(qlib_path).expanduser().resolve()}"
+        if isinstance(qlib_path, Mapping):
+            payload = json.dumps(
+                dict(qlib_path),
+                sort_keys=True,
+                separators=(',', ':'),
+                default=str,
+            )
+            return f"mapping:{payload}"
+        return f"{type(qlib_path).__module__}.{type(qlib_path).__qualname__}:{qlib_path!r}"
+
+    @classmethod
     def _init_qlib(cls,qlib_path) -> None:
-        if cls._qlib_initialized:
-            return
-        import qlib
-        from qlib.config import REG_CN
-        qlib.init(provider_uri=qlib_path, region=REG_CN)
-        cls._qlib_initialized = True
+        identity = cls._provider_identity(qlib_path)
+        with cls._qlib_init_lock:
+            if cls._qlib_provider_identity == identity:
+                return
+            import qlib
+            from qlib.config import REG_CN
+            qlib.init(provider_uri=qlib_path, region=REG_CN)
+            cls._qlib_provider_identity = identity
 
     def _load_exprs(self, exprs: Union[str, List[str]]) -> pd.DataFrame:
         # This evaluates an expression on the data and returns the dataframe
@@ -147,16 +178,18 @@ class StockData:
         return result
 
     def _get_data(self) -> Tuple[torch.Tensor, pd.Index, pd.Index]:
-        features = ['$' + f.name.lower() for f in self._features]
-        if self.raw and self.freq == 'day':
-            features = change_to_raw(features)
-        elif self.raw:
-            features = change_to_raw_min(features)
-        # The alphapilot baostock day dump has no native ``$vwap`` field; the
-        # qlib store does carry ``$amount`` (turnover) + ``$volume``, so define
-        # vwap := amount/volume. Keeps the 6-feature vocabulary (incl. vwap)
-        # usable on this data without re-dumping. (alphapilot compat patch.)
-        features = [f.replace('$vwap', '($amount/$volume)') for f in features]
+        # VWAP is already resolved and validated by the public data adapter.
+        # ``raw`` remains solely responsible for transforming other OHLCV
+        # fields, so factor-adjusted VWAP can never be multiplied twice here.
+        features = []
+        for feature_type in self._features:
+            feature = '$' + feature_type.name.lower()
+            if feature_type == FeatureType.VWAP:
+                features.append(self.vwap_expression)
+            elif self.raw:
+                features.extend(change_to_raw([feature]))
+            else:
+                features.append(feature)
         df = self._load_exprs(features)
         self.df_bak = df
         # print(df)

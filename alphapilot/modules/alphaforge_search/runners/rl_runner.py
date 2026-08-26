@@ -20,6 +20,7 @@ from alphapilot.modules.alphaforge.data_adapter import (
     LoadedTrainingData,
     TargetSpec,
     TrainingSpec,
+    VwapSpec,
     get_train_data,
 )
 from alphapilot.modules.alphaforge.device import resolve_device, use_fork_start_method
@@ -43,6 +44,7 @@ class RLRunner:
         pool_capacity: int = 10,
         target_horizon: int = 20,
         target_price: str = "vwap",
+        vwap_mode: str = "amount_volume",
         device: str | None = None,
         qlib_dir: str | None = None,
         raw: bool = False,
@@ -64,6 +66,7 @@ class RLRunner:
         self.target_spec = TargetSpec(target_horizon, target_price)
         self.target_horizon = self.target_spec.horizon
         self.target_price = self.target_spec.price
+        self.vwap_spec = VwapSpec(vwap_mode)
         self.device_pref = device
         self.qlib_dir = qlib_dir
         self.raw = raw
@@ -84,6 +87,7 @@ class RLRunner:
             self.context,
             training_spec=self.training_spec,
             target_spec=self.target_spec,
+            vwap_spec=self.vwap_spec,
             instruments=self.instruments,
             freq=self.freq, device=dev, raw=self.raw, qlib_dir=self.qlib_dir,
         )

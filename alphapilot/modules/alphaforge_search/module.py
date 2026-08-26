@@ -71,14 +71,19 @@ class AlphaForgeSearchModule(BaseModule):
         generations: int = 40,
         target_horizon: int = 20,
         target_price: str = "vwap",
+        vwap_mode: str = "amount_volume",
         device: str | None = None,
         qlib_dir: str | None = None,
         backtest: bool = False,
         save: bool = True,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """Mine factors via genetic programming (gplearn). Extra knobs
-        (``tournament_size``, ``top_n``, ``raw``) pass through to ``GPRunner``."""
+        """Mine factors via genetic programming (gplearn).
+
+        ``raw`` controls non-VWAP OHLCV adjustment; ``vwap_mode`` independently
+        selects VWAP construction. Extra knobs such as ``tournament_size`` and
+        ``top_n`` pass through to ``GPRunner``.
+        """
         from alphapilot.modules.alphaforge_search.runners.gp_runner import GPRunner
 
         runner = GPRunner(
@@ -86,6 +91,7 @@ class AlphaForgeSearchModule(BaseModule):
             train_start_date=train_start_date, train_end_date=train_end_date,
             freq=freq, seed=seed, population_size=population_size, generations=generations,
             target_horizon=target_horizon, target_price=target_price,
+            vwap_mode=vwap_mode,
             device=device, qlib_dir=qlib_dir, **kwargs,
         )
         exprs, scores = runner.run()
@@ -107,6 +113,7 @@ class AlphaForgeSearchModule(BaseModule):
         pool_capacity: int = 10,
         target_horizon: int = 20,
         target_price: str = "vwap",
+        vwap_mode: str = "amount_volume",
         campaign_id: str | None = None,
         research_hypothesis: str = "rl_symbolic_factor_search",
         device: str | None = None,
@@ -116,7 +123,10 @@ class AlphaForgeSearchModule(BaseModule):
         **kwargs: Any,
     ) -> dict[str, Any]:
         """Mine factors via PPO RL search (stable-baselines3 + sb3-contrib).
-        Extra knobs (``raw`` ...) pass through to ``RLRunner``."""
+
+        ``raw`` controls non-VWAP OHLCV adjustment; ``vwap_mode`` independently
+        selects VWAP construction. Other extra knobs pass through to ``RLRunner``.
+        """
         from alphapilot.modules.alphaforge_search.runners.rl_runner import RLRunner
 
         runner = RLRunner(
@@ -124,6 +134,7 @@ class AlphaForgeSearchModule(BaseModule):
             train_start_date=train_start_date, train_end_date=train_end_date,
             freq=freq, seed=seed, steps=steps, pool_capacity=pool_capacity,
             target_horizon=target_horizon, target_price=target_price,
+            vwap_mode=vwap_mode,
             device=device, qlib_dir=qlib_dir, **kwargs,
         )
         exprs, scores = runner.run()
@@ -141,6 +152,7 @@ class AlphaForgeSearchModule(BaseModule):
             "pool_capacity": pool_capacity,
             "target_horizon": training_data.target_spec.horizon,
             "target_price": training_data.target_spec.price,
+            "vwap_mode": training_data.vwap_spec.mode,
             "instruments": instruments,
             "training_source": training_data.training_spec.source,
             "train_start_date": training_data.training_spec.requested_start_date,
@@ -175,6 +187,7 @@ class AlphaForgeSearchModule(BaseModule):
             "mining_round": 1,
             "seed": seed,
             "target_expression": training_data.target_spec.qlib_expression,
+            "vwap_mode": training_data.vwap_spec.mode,
             "search_config": search_config,
             "model_fingerprint": config_hash,
             "qlib_template_fingerprint": "",
