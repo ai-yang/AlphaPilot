@@ -89,6 +89,29 @@ def test_generated_documentation_is_current() -> None:
         assert f"`{command}`" in appendix
 
 
+def test_documentation_generator_imports_its_own_checkout(tmp_path: Path) -> None:
+    shadow_root = tmp_path / "shadow"
+    shadow_package = shadow_root / "alphapilot"
+    shadow_package.mkdir(parents=True)
+    (shadow_package / "__init__.py").write_text(
+        'raise RuntimeError("imported shadow AlphaPilot checkout")\n',
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(shadow_root)
+
+    result = subprocess.run(
+        [sys.executable, "scripts/generate_docs_reference.py", "--check"],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_mermaid_diagrams_parse() -> None:
     web = ROOT / "alphapilot/modules/portal/web"
     result = subprocess.run(
