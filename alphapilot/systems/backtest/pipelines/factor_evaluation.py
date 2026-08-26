@@ -62,6 +62,14 @@ def _yaml_provider_uri(yaml_params) -> str | None:  # noqa: ANN001
     return str(value).strip() if value else None
 
 
+def _has_single_ic_label(yaml_params) -> bool:  # noqa: ANN001
+    if isinstance(yaml_params, dict):
+        value = yaml_params.get("single_ic_label_expression")
+    else:
+        value = getattr(yaml_params, "single_ic_label_expression", None)
+    return isinstance(value, str) and bool(value.strip())
+
+
 def _resolve_factor_qlib_dir(context, request, freq: str) -> str:  # noqa: ANN001
     """Resolve the provider used to build factor H5 data.
 
@@ -255,13 +263,17 @@ class FactorEvaluationPipeline:
 
         factor_csv, is_temp = prepare_factor_csv(request)
         try:
+            extra_tasks = [] if _has_single_ic_label(request.yaml_params) else [make_close_task()]
             experiment, scenario, use_local = self._build_experiment(
-                context, request, factor_csv, extra_tasks=[make_close_task()]
+                context, request, factor_csv, extra_tasks=extra_tasks
             )
             with pickle_cache_scope("backtest"):
                 experiment = self._develop(scenario, experiment)
                 outcome = QlibSignalEngine().run(
-                    experiment, use_local=use_local, run_env=experiment.run_env
+                    experiment,
+                    use_local=use_local,
+                    run_env=experiment.run_env,
+                    single_ic_options=request.single_ic_options,
                 )
             return FactorBacktestResult(
                 experiment=outcome.experiment,

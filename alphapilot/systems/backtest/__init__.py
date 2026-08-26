@@ -9,6 +9,7 @@ from alphapilot.systems.backtest.types import (
     FactorDefinition,
     FactorExperimentBacktestRequest,
     ModelExperimentBacktestRequest,
+    SingleICCoverageOptions,
     WorkspaceBacktestRequest,
     WorkspaceBacktestResult,
 )
@@ -29,6 +30,7 @@ __all__ = [
     "QlibFBWorkspace",
     "QlibModelExperiment",
     "run_factor_evaluation",
+    "SingleICCoverageOptions",
     "WorkspaceBacktestRequest",
     "WorkspaceBacktestResult",
 ]
