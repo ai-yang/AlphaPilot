@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 import re
@@ -23,6 +24,77 @@ from alphapilot.core.conf import RD_AGENT_SETTINGS
 
 code_template = CodeTemplate(template_path=Path(__file__).parent / "template.jinjia2")
 implement_prompts = Prompts(file_path=Path(__file__).parent / "prompts.yaml")
+
+
+def _expression_from_rendered_code(code: str) -> str:
+    """Read the literal expression embedded in the generated factor program."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as exc:
+        raise ValueError(f"Generated factor code is not valid Python: {exc.msg}") from exc
+
+    values: list[str] = []
+
+    class ModuleAssignmentVisitor(ast.NodeVisitor):
+        """Inspect executable module control flow without entering nested scopes."""
+
+        def visit_Assign(self, node: ast.Assign) -> None:  # noqa: N802
+            if (
+                isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+                and any(
+                    isinstance(target, ast.Name) and target.id == "expr"
+                    for target in node.targets
+                )
+            ):
+                values.append(node.value.value)
+
+        def visit_FunctionDef(self, _node: ast.FunctionDef) -> None:  # noqa: N802
+            return
+
+        def visit_AsyncFunctionDef(  # noqa: N802
+            self, _node: ast.AsyncFunctionDef
+        ) -> None:
+            return
+
+        def visit_ClassDef(self, _node: ast.ClassDef) -> None:  # noqa: N802
+            return
+
+        def visit_Lambda(self, _node: ast.Lambda) -> None:  # noqa: N802
+            return
+
+    ModuleAssignmentVisitor().visit(tree)
+    if len(values) != 1:
+        raise ValueError(
+            "Generated factor code must contain exactly one literal expr assignment."
+        )
+    expression = values[0].strip()
+    if not expression:
+        raise ValueError("Generated factor code contains an empty expr assignment.")
+    return expression
+
+
+def _assign_factor_codes(code_list, evo):
+    """Inject code and keep the task/workspace expression equal to executed code."""
+    if len(code_list) != len(evo.sub_tasks):
+        raise ValueError("Generated code count must match the factor task count.")
+    for index, code in enumerate(code_list):
+        if code is None:
+            continue
+        executed_expression = _expression_from_rendered_code(code)
+        target_task = evo.sub_tasks[index]
+        if evo.sub_workspace_list[index] is None:
+            evo.sub_workspace_list[index] = FactorFBWorkspace(target_task=target_task)
+        workspace = evo.sub_workspace_list[index]
+        workspace.inject_code(**{"factor.py": code})
+        target_task.factor_expression = executed_expression
+        if getattr(workspace, "target_task", None) is not None:
+            workspace.target_task.factor_expression = executed_expression
+        # Persist an explicit audit field even if a caller later replaces the
+        # task object.  The executable source remains the cache authority.
+        workspace.executed_factor_expression = executed_expression
+    return evo
+
 
 class FactorMultiProcessEvolvingStrategy(MultiProcessEvolvingStrategy):
     def __init__(self, *args, **kwargs) -> None:
@@ -368,13 +440,7 @@ class FactorParsingStrategy(MultiProcessEvolvingStrategy):
                     pass
     
     def assign_code_list_to_evo(self, code_list, evo):
-        for index in range(len(evo.sub_tasks)):
-            if code_list[index] is None:
-                continue
-            if evo.sub_workspace_list[index] is None:
-                evo.sub_workspace_list[index] = FactorFBWorkspace(target_task=evo.sub_tasks[index])
-            evo.sub_workspace_list[index].inject_code(**{"factor.py": code_list[index]})
-        return evo
+        return _assign_factor_codes(code_list, evo)
     
     
     
@@ -399,13 +465,7 @@ class FactorRunningStrategy(MultiProcessEvolvingStrategy):
         
     
     def assign_code_list_to_evo(self, code_list, evo):
-        for index in range(len(evo.sub_tasks)):
-            if code_list[index] is None:
-                continue
-            if evo.sub_workspace_list[index] is None:
-                evo.sub_workspace_list[index] = FactorFBWorkspace(target_task=evo.sub_tasks[index])
-            evo.sub_workspace_list[index].inject_code(**{"factor.py": code_list[index]})
-        return evo
+        return _assign_factor_codes(code_list, evo)
     
     
     def evolve(
