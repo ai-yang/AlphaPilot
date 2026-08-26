@@ -45,38 +45,48 @@ def RANK(df:pd.DataFrame):
 
 @datatype_adapter
 def MEAN(df:pd.DataFrame):
-    """计算横截面平均值"""
-    return df.groupby('datetime').mean()
+    """计算横截面平均值，并广播回每个原始样本。"""
+    return df.groupby('datetime').transform('mean')
 
 @datatype_adapter
 def STD(df:pd.DataFrame):
-    """计算横截面标准差"""
-    return df.groupby('datetime').std()
+    """计算横截面标准差，并广播回每个原始样本。"""
+    return df.groupby('datetime').transform('std')
 
 @datatype_adapter
 def SKEW(df:pd.DataFrame):
-    """计算横截面偏度"""
-    return df.groupby('datetime').skew()
+    """计算横截面偏度，并广播回每个原始样本。"""
+    return df.groupby('datetime').transform('skew')
 
 @datatype_adapter
 def KURT(df:pd.DataFrame):
-    """计算横截面峰度"""
-    return df.groupby('datetime').kurt()
+    """计算横截面峰度，并广播回每个原始样本。"""
+    # ``kurt`` is not a named GroupBy transform in every supported pandas
+    # version, so use a callable while retaining the input index.
+    return df.groupby('datetime').transform(lambda x: x.kurt())
 
 @datatype_adapter
-def MAX(df:pd.DataFrame):
-    """计算横截面最大值"""
-    return df.groupby('datetime').max()
+def MAX(x: pd.DataFrame, y: pd.DataFrame = None, z: pd.DataFrame = None):
+    """一元时计算横截面最大值；二元/三元时计算逐元素最大值。"""
+    if y is None:
+        return x.groupby('datetime').transform('max')
+    if z is None:
+        return np.maximum(x, y)
+    return np.maximum(np.maximum(x, y), z)
 
 @datatype_adapter
-def MIN(df:pd.DataFrame):
-    """计算横截面最小值"""
-    return df.groupby('datetime').min()
+def MIN(x: pd.DataFrame, y: pd.DataFrame = None, z: pd.DataFrame = None):
+    """一元时计算横截面最小值；二元/三元时计算逐元素最小值。"""
+    if y is None:
+        return x.groupby('datetime').transform('min')
+    if z is None:
+        return np.minimum(x, y)
+    return np.minimum(np.minimum(x, y), z)
 
 @datatype_adapter
 def MEDIAN(df:pd.DataFrame):
-    """计算横截面中位数"""
-    return df.groupby('datetime').median()
+    """计算横截面中位数，并广播回每个原始样本。"""
+    return df.groupby('datetime').transform('median')
 
 
 @datatype_adapter
@@ -148,25 +158,6 @@ def TS_ARGMIN(df: pd.DataFrame, p: int = 5):
         return len(window) - window.argmin() - 1
     return df.groupby('instrument').transform(lambda x: x.rolling(p, min_periods=1).apply(rolling_argmin, raw=True))
 
-
-
-def MAX(x:pd.DataFrame, y:pd.DataFrame, z:pd.DataFrame=None):
-    """计算多个DataFrame之间的最大值"""
-    if z is None:
-        return np.maximum(x, y)
-    else:
-        return np.maximum(np.maximum(x, y), z)
-
-
-
-
-def MIN(x:pd.DataFrame, y:pd.DataFrame, z:pd.DataFrame=None):
-    """计算多个DataFrame之间的最小值""" 
-    if z is None:
-        return np.minimum(x, y)
-    else:
-        return np.minimum(np.minimum(x, y), z)
-    
 
 
 @datatype_adapter
@@ -409,7 +400,10 @@ def HIGHDAY(df:pd.DataFrame, p:int=5):
     """
     assert isinstance(p, int), ValueError(f"HIGHDAY仅接收正整数参数n，接收到{type(p).__name__}")
     def highday(window):
-        return len(window) - window.argmax(axis=0)
+        # Search newest-to-oldest so ties resolve to the most recent extreme.
+        # The current observation is day 0; the oldest value in a full p-day
+        # window is day p-1.
+        return np.nanargmax(window[::-1])
     return df.groupby('instrument').transform(lambda x: x.rolling(p, min_periods=1).apply(highday, raw=True))
 
 @datatype_adapter
@@ -426,7 +420,10 @@ def LOWDAY(df:pd.DataFrame, p:int=5):
     """
     assert isinstance(p, int), ValueError(f"LOWDAY仅接收正整数参数n，接收到{type(p).__name__}")
     def lowday(window):
-        return len(window) - window.argmin(axis=0)
+        # Search newest-to-oldest so ties resolve to the most recent extreme.
+        # The current observation is day 0; the oldest value in a full p-day
+        # window is day p-1.
+        return np.nanargmin(window[::-1])
     return df.groupby('instrument').transform(lambda x: x.rolling(p, min_periods=1).apply(lowday, raw=True))
     
 
@@ -663,10 +660,8 @@ def SQRT(df: pd.DataFrame):
 
 @datatype_adapter
 def LOG(df:pd.DataFrame):
-    """计算序列的自然对数"""
-    if isinstance(df, int):
-        return np.log(df)
-    return (df+1).apply(np.log)
+    """计算序列的自然对数；输入必须严格为正。"""
+    return np.log(df)
 
 @datatype_adapter
 def INV(df: pd.DataFrame):
@@ -691,22 +686,29 @@ def TS_ZSCORE(df: pd.DataFrame, p:int=5):
 @datatype_adapter
 def ZSCORE(df):
     # 在每个因子截面上计算平均值和标准差
-    mean = df.groupby('datetime').mean()
-    std = df.groupby('datetime').std()
-    
+    mean = df.groupby('datetime').transform('mean')
+    std = df.groupby('datetime').transform('std')
+
     # 计算z-score: (X - μ) / σ
-    zscore = (df - mean) / std
-    return zscore
+    centered = df - mean
+    zscore = centered.div(std.mask(std.eq(0)))
+    # A constant (or single-observation) cross-section has no dispersion.  Its
+    # neutral standardized value is zero; original missing values stay missing.
+    degenerate = std.eq(0) | std.isna()
+    return zscore.mask(degenerate & df.notna(), 0.0)
 
 @datatype_adapter
 def SCALE(df: pd.DataFrame, target_sum: float = 1.0):
     """
     将序列标准化使其绝对值之和等于target_sum
     """
-    # 计算当前绝对值之和
-    abs_sum = ABS(df).groupby('datetime').sum()
-    # 进行缩放
-    return df.multiply(target_sum).div(abs_sum, axis=0)
+    # Broadcast each cross-section's denominator back to the original rows so
+    # the result can be safely composed with other factor expressions.
+    abs_sum = df.abs().groupby('datetime').transform('sum')
+    scaled = df.multiply(target_sum).div(abs_sum.mask(abs_sum.eq(0)))
+    # An all-zero cross-section cannot be rescaled to a non-zero absolute sum;
+    # keep it neutral instead of manufacturing NaN/inf. Preserve input NaNs.
+    return scaled.mask(abs_sum.eq(0) & df.notna(), 0.0)
 
 
 @datatype_adapter
@@ -942,7 +944,7 @@ def BB_UPPER(price_df, window, n_jobs=-1):
         # 合并结果
         std = pd.concat([result for _, result in sorted(results, key=lambda x: x[0])])
     
-    return middle_band + std
+    return middle_band + 2 * std
 
 @datatype_adapter
 def BB_LOWER(price_df, window, n_jobs=-1):
@@ -979,4 +981,4 @@ def BB_LOWER(price_df, window, n_jobs=-1):
         # 合并结果
         std = pd.concat([result for _, result in sorted(results, key=lambda x: x[0])])
     
-    return middle_band - std
+    return middle_band - 2 * std
