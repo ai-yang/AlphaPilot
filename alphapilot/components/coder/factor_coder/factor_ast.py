@@ -16,8 +16,9 @@ from pyparsing import (
     one_of,
 )
 from dataclasses import dataclass
-from typing import List, Union, Optional as Opt
+from typing import List, Literal as TypingLiteral, Union, Optional as Opt
 from collections import defaultdict
+import math
 import sys
 import pandas as pd
 
@@ -221,6 +222,568 @@ def parse_expression(text: str) -> Node:
         return result[0]  # Extract the first element from ParseResults
     except ParseException as e:
         raise ValueError(f"Failed to parse expression: {str(e)}")
+
+
+class ExpressionSemanticError(ValueError):
+    """Raised when a parsed factor expression violates a stable DSL contract."""
+
+    def __init__(self, message: str, *, code: str = "semantic_error") -> None:
+        super().__init__(message)
+        self.code = code
+
+
+LookbackKind = TypingLiteral["finite", "unbounded_causal"]
+
+FINITE_LOOKBACK: LookbackKind = "finite"
+UNBOUNDED_CAUSAL: LookbackKind = "unbounded_causal"
+
+
+@dataclass(frozen=True)
+class TemporalAnalysis:
+    """Causal history required by an expression.
+
+    ``lookback`` counts periods before the current timestamp.  Exponentially
+    weighted operators consume the complete available past and are represented
+    as ``unbounded_causal`` rather than being assigned a misleading finite span.
+    """
+
+    lookback_kind: LookbackKind
+    lookback: int | None
+
+    def __post_init__(self) -> None:
+        if self.lookback_kind == FINITE_LOOKBACK:
+            if isinstance(self.lookback, bool) or not isinstance(self.lookback, int):
+                raise ValueError("Finite temporal analysis requires an integer lookback.")
+            if self.lookback < 0:
+                raise ValueError("Finite lookback must be non-negative.")
+        elif self.lookback_kind == UNBOUNDED_CAUSAL:
+            if self.lookback is not None:
+                raise ValueError("Unbounded causal analysis cannot have a finite lookback.")
+        else:
+            raise ValueError(f"Unknown lookback kind: {self.lookback_kind!r}.")
+
+    @classmethod
+    def finite(cls, lookback: int = 0) -> "TemporalAnalysis":
+        return cls(lookback_kind=FINITE_LOOKBACK, lookback=lookback)
+
+    @classmethod
+    def unbounded_causal(cls) -> "TemporalAnalysis":
+        return cls(lookback_kind=UNBOUNDED_CAUSAL, lookback=None)
+
+
+@dataclass(frozen=True)
+class TemporalValidationPolicy:
+    """Configurable temporal limits applied after causal safety checks.
+
+    The public default permits every positive rolling window and any finite
+    causal lookback.  Callers that need experiment-specific limits must opt in
+    through :meth:`bounded`; no mining campaign limits are global defaults.
+    """
+
+    min_window: int = 1
+    max_window: int | None = None
+    max_lookback: int | None = None
+    allow_unbounded_causal: bool = True
+
+    def __post_init__(self) -> None:
+        if isinstance(self.min_window, bool) or not isinstance(self.min_window, int):
+            raise ValueError("min_window must be an integer.")
+        if self.min_window < 1:
+            raise ValueError("min_window must be at least 1.")
+        if self.max_window is not None:
+            if isinstance(self.max_window, bool) or not isinstance(self.max_window, int):
+                raise ValueError("max_window must be an integer or None.")
+            if self.max_window < self.min_window:
+                raise ValueError("max_window must be greater than or equal to min_window.")
+        if self.max_lookback is not None:
+            if isinstance(self.max_lookback, bool) or not isinstance(self.max_lookback, int):
+                raise ValueError("max_lookback must be an integer or None.")
+            if self.max_lookback < 0:
+                raise ValueError("max_lookback must be non-negative.")
+        if not isinstance(self.allow_unbounded_causal, bool):
+            raise ValueError("allow_unbounded_causal must be a boolean.")
+
+    @classmethod
+    def bounded(
+        cls,
+        *,
+        min_window: int,
+        max_window: int,
+        max_lookback: int,
+        allow_unbounded_causal: bool = False,
+    ) -> "TemporalValidationPolicy":
+        return cls(
+            min_window=min_window,
+            max_window=max_window,
+            max_lookback=max_lookback,
+            allow_unbounded_causal=allow_unbounded_causal,
+        )
+
+
+@dataclass(frozen=True)
+class _FunctionSignature:
+    min_args: int
+    max_args: int
+
+
+# This is the executable expression surface in function_lib.py, excluding
+# implementation helpers and operational-only n_jobs parameters.
+_FUNCTION_SIGNATURES: dict[str, _FunctionSignature] = {
+    "DELTA": _FunctionSignature(1, 2),
+    "RANK": _FunctionSignature(1, 1),
+    "MEAN": _FunctionSignature(1, 1),
+    "STD": _FunctionSignature(1, 1),
+    "SKEW": _FunctionSignature(1, 1),
+    "KURT": _FunctionSignature(1, 1),
+    "MAX": _FunctionSignature(1, 3),
+    "MIN": _FunctionSignature(1, 3),
+    "MEDIAN": _FunctionSignature(1, 1),
+    "TS_RANK": _FunctionSignature(1, 2),
+    "TS_MAX": _FunctionSignature(1, 2),
+    "TS_MIN": _FunctionSignature(1, 2),
+    "TS_MEAN": _FunctionSignature(1, 2),
+    "TS_MEDIAN": _FunctionSignature(1, 2),
+    "PERCENTILE": _FunctionSignature(2, 3),
+    "TS_SUM": _FunctionSignature(1, 2),
+    "TS_ARGMAX": _FunctionSignature(1, 2),
+    "TS_ARGMIN": _FunctionSignature(1, 2),
+    "ABS": _FunctionSignature(1, 1),
+    "DELAY": _FunctionSignature(1, 2),
+    "TS_CORR": _FunctionSignature(2, 3),
+    "TS_COVARIANCE": _FunctionSignature(2, 3),
+    "TS_STD": _FunctionSignature(1, 2),
+    "TS_VAR": _FunctionSignature(1, 3),
+    "SIGN": _FunctionSignature(1, 1),
+    "SMA": _FunctionSignature(2, 3),
+    "EMA": _FunctionSignature(2, 2),
+    "WMA": _FunctionSignature(1, 2),
+    "COUNT": _FunctionSignature(1, 2),
+    "SUMIF": _FunctionSignature(3, 3),
+    "FILTER": _FunctionSignature(2, 2),
+    "PROD": _FunctionSignature(1, 2),
+    "DECAYLINEAR": _FunctionSignature(1, 2),
+    "HIGHDAY": _FunctionSignature(1, 2),
+    "LOWDAY": _FunctionSignature(1, 2),
+    "SEQUENCE": _FunctionSignature(1, 1),
+    "SUMAC": _FunctionSignature(1, 2),
+    "REGBETA": _FunctionSignature(2, 3),
+    "REGRESI": _FunctionSignature(2, 3),
+    "EXP": _FunctionSignature(1, 1),
+    "SQRT": _FunctionSignature(1, 1),
+    "LOG": _FunctionSignature(1, 1),
+    "INV": _FunctionSignature(1, 1),
+    "POW": _FunctionSignature(2, 2),
+    "FLOOR": _FunctionSignature(1, 1),
+    "TS_ZSCORE": _FunctionSignature(1, 2),
+    "ZSCORE": _FunctionSignature(1, 1),
+    "SCALE": _FunctionSignature(1, 2),
+    "TS_MAD": _FunctionSignature(1, 2),
+    "TS_QUANTILE": _FunctionSignature(1, 3),
+    "TS_PCTCHANGE": _FunctionSignature(1, 2),
+    "ADD": _FunctionSignature(2, 2),
+    "SUBTRACT": _FunctionSignature(2, 2),
+    "MULTIPLY": _FunctionSignature(2, 2),
+    "DIVIDE": _FunctionSignature(2, 2),
+    "AND": _FunctionSignature(2, 2),
+    "OR": _FunctionSignature(2, 2),
+    "MACD": _FunctionSignature(1, 3),
+    "RSI": _FunctionSignature(1, 2),
+    "BB_MIDDLE": _FunctionSignature(2, 2),
+    "BB_UPPER": _FunctionSignature(2, 2),
+    "BB_LOWER": _FunctionSignature(2, 2),
+}
+
+
+# The system factor zoo predates the executable all-uppercase DSL and stores a
+# small Qlib-style surface.  Keep these aliases explicit and case-sensitive:
+# notably ``MEAN(A)`` is cross-sectional while legacy ``Mean(A, n)`` is rolling.
+_LEGACY_FUNCTION_ALIASES: dict[str, tuple[str, _FunctionSignature]] = {
+    "Mean": ("TS_MEAN", _FunctionSignature(2, 2)),
+    "Std": ("TS_STD", _FunctionSignature(2, 2)),
+    "Ref": ("DELAY", _FunctionSignature(2, 2)),
+    "Rank": ("RANK", _FunctionSignature(1, 1)),
+}
+
+
+# Function name -> ((positional argument index, runtime default), ...).
+_ROLLING_WINDOW_SPECS: dict[str, tuple[tuple[int, int], ...]] = {
+    "TS_RANK": ((1, 5),),
+    "TS_MAX": ((1, 5),),
+    "TS_MIN": ((1, 5),),
+    "TS_MEAN": ((1, 5),),
+    "TS_MEDIAN": ((1, 5),),
+    "TS_SUM": ((1, 5),),
+    "TS_ARGMAX": ((1, 5),),
+    "TS_ARGMIN": ((1, 5),),
+    "TS_CORR": ((2, 5),),
+    "TS_COVARIANCE": ((2, 5),),
+    "TS_STD": ((1, 20),),
+    "TS_VAR": ((1, 5),),
+    "WMA": ((1, 20),),
+    "COUNT": ((1, 20),),
+    "SUMIF": ((1, 0),),
+    "PROD": ((1, 5),),
+    "DECAYLINEAR": ((1, 5),),
+    "HIGHDAY": ((1, 5),),
+    "LOWDAY": ((1, 5),),
+    "SUMAC": ((1, 10),),
+    "REGBETA": ((2, 5),),
+    "REGRESI": ((2, 5),),
+    "TS_ZSCORE": ((1, 5),),
+    "TS_MAD": ((1, 5),),
+    "TS_QUANTILE": ((1, 5),),
+    "PERCENTILE": ((2, 0),),
+    "BB_MIDDLE": ((1, 0),),
+    "BB_UPPER": ((1, 0),),
+    "BB_LOWER": ((1, 0),),
+}
+
+_LAG_SPECS: dict[str, tuple[int, int]] = {
+    "DELTA": (1, 1),
+    "DELAY": (1, 1),
+    "TS_PCTCHANGE": (1, 1),
+}
+
+_SEQUENCE_PARENT_FUNCTIONS = {
+    "TS_CORR",
+    "TS_COVARIANCE",
+    "REGBETA",
+    "REGRESI",
+}
+
+
+def _function_name(
+    node: FunctionNode, *, allow_legacy_aliases: bool
+) -> str:
+    raw_name = str(node.name)
+    if raw_name.startswith("$"):
+        raise ExpressionSemanticError(
+            f"Function names cannot use the variable prefix: {raw_name}.",
+            code="invalid_function_name",
+        )
+    if allow_legacy_aliases and raw_name in _LEGACY_FUNCTION_ALIASES:
+        return _LEGACY_FUNCTION_ALIASES[raw_name][0]
+    # Runtime evaluation imports exact, upper-case names from function_lib.py.
+    # Do not normalize arbitrary casing: accepting ``mean(...)`` here would
+    # only defer the failure to eval(), where no such callable exists.
+    return raw_name
+
+
+def _integer_literal(node: Node, *, function_name: str, argument_name: str) -> int:
+    if not isinstance(node, NumberNode):
+        raise ExpressionSemanticError(
+            f"{function_name} {argument_name} must be a literal integer.",
+            code="invalid_integer_argument",
+        )
+    value = float(node.value)
+    if not math.isfinite(value) or not value.is_integer():
+        raise ExpressionSemanticError(
+            f"{function_name} {argument_name} must be a finite integer; got {node.value}.",
+            code="invalid_integer_argument",
+        )
+    return int(value)
+
+
+def _positional_integer(
+    node: FunctionNode,
+    *,
+    function_name: str,
+    index: int,
+    default: int,
+    argument_name: str,
+) -> int:
+    if index < len(node.args):
+        return _integer_literal(
+            node.args[index],
+            function_name=function_name,
+            argument_name=argument_name,
+        )
+    return int(default)
+
+
+def _validate_arity(
+    node: FunctionNode,
+    function_name: str,
+    *,
+    allow_legacy_aliases: bool,
+) -> None:
+    raw_name = str(node.name)
+    legacy = (
+        _LEGACY_FUNCTION_ALIASES.get(raw_name)
+        if allow_legacy_aliases
+        else None
+    )
+    signature = (
+        legacy[1]
+        if legacy is not None
+        else _FUNCTION_SIGNATURES.get(function_name)
+    )
+    if signature is None:
+        raise ExpressionSemanticError(
+            f"Unknown factor function: {function_name}.",
+            code="unknown_function",
+        )
+    count = len(node.args)
+    if not signature.min_args <= count <= signature.max_args:
+        if signature.min_args == signature.max_args:
+            noun = "argument" if signature.min_args == 1 else "arguments"
+            expected = f"exactly {signature.min_args} {noun}"
+        else:
+            expected = f"{signature.min_args} to {signature.max_args} arguments"
+        raise ExpressionSemanticError(
+            f"{raw_name} expects {expected}; got {count}.",
+            code="invalid_arity",
+        )
+
+
+def _combine_temporal(analyses: list[TemporalAnalysis]) -> TemporalAnalysis:
+    if any(item.lookback_kind == UNBOUNDED_CAUSAL for item in analyses):
+        return TemporalAnalysis.unbounded_causal()
+    return TemporalAnalysis.finite(
+        max((item.lookback or 0 for item in analyses), default=0)
+    )
+
+
+def _add_finite_lookback(
+    analysis: TemporalAnalysis, additional: int
+) -> TemporalAnalysis:
+    if analysis.lookback_kind == UNBOUNDED_CAUSAL:
+        return analysis
+    return TemporalAnalysis.finite((analysis.lookback or 0) + additional)
+
+
+def _validate_window(
+    window: int,
+    *,
+    function_name: str,
+    policy: TemporalValidationPolicy,
+) -> None:
+    if window < 1:
+        raise ExpressionSemanticError(
+            f"{function_name} window must be positive; got {window}.",
+            code="invalid_window",
+        )
+    if window < policy.min_window or (
+        policy.max_window is not None and window > policy.max_window
+    ):
+        upper = "unbounded" if policy.max_window is None else str(policy.max_window)
+        raise ExpressionSemanticError(
+            f"{function_name} window must be in [{policy.min_window}, {upper}]; got {window}.",
+            code="window_out_of_policy",
+        )
+
+
+def validate_expression_semantics(
+    expression: str | Node,
+    *,
+    policy: TemporalValidationPolicy | None = None,
+    allow_legacy_aliases: bool = False,
+) -> TemporalAnalysis:
+    """Validate the function surface and causal semantics of an expression.
+
+    A rolling window of ``n`` observes the current value plus ``n - 1`` prior
+    values.  Lags and differences add their full period to the oldest input
+    timestamp.  EWM-based functions remain causal but use unbounded history.
+    Runtime validation is case-sensitive by default; callers that read legacy
+    Qlib factor zoos may opt into the four explicit compatibility aliases.
+    """
+    resolved_policy = policy if policy is not None else TemporalValidationPolicy()
+    if not isinstance(resolved_policy, TemporalValidationPolicy):
+        raise TypeError("policy must be a TemporalValidationPolicy instance.")
+    if not isinstance(allow_legacy_aliases, bool):
+        raise TypeError("allow_legacy_aliases must be a boolean.")
+    try:
+        root = parse_expression(expression) if isinstance(expression, str) else expression
+    except ValueError as exc:
+        raise ExpressionSemanticError(str(exc), code="syntax_error") from exc
+
+    def visit(
+        node: Node,
+        *,
+        parent_function: str | None = None,
+        argument_index: int | None = None,
+    ) -> TemporalAnalysis:
+        if isinstance(node, (NumberNode, VarNode)):
+            return TemporalAnalysis.finite()
+        if isinstance(node, BinaryOpNode):
+            return _combine_temporal([visit(node.left), visit(node.right)])
+        if isinstance(node, ConditionalNode):
+            return _combine_temporal(
+                [
+                    visit(node.condition),
+                    visit(node.true_expr),
+                    visit(node.false_expr),
+                ]
+            )
+        if not isinstance(node, FunctionNode):
+            return TemporalAnalysis.finite()
+
+        name = _function_name(
+            node, allow_legacy_aliases=allow_legacy_aliases
+        )
+        _validate_arity(
+            node,
+            name,
+            allow_legacy_aliases=allow_legacy_aliases,
+        )
+        child_analysis = _combine_temporal(
+            [
+                visit(arg, parent_function=name, argument_index=index)
+                for index, arg in enumerate(node.args)
+            ]
+        )
+
+        if name in _LAG_SPECS:
+            index, default = _LAG_SPECS[name]
+            lag = _positional_integer(
+                node,
+                function_name=name,
+                index=index,
+                default=default,
+                argument_name="lag",
+            )
+            if lag < 0:
+                raise ExpressionSemanticError(
+                    f"{name} lag must be non-negative; got {lag}.",
+                    code="future_looking_lag",
+                )
+            return _add_finite_lookback(child_analysis, lag)
+
+        if name == "SEQUENCE":
+            if (
+                parent_function not in _SEQUENCE_PARENT_FUNCTIONS
+                or argument_index != 1
+            ):
+                allowed = ", ".join(sorted(_SEQUENCE_PARENT_FUNCTIONS))
+                raise ExpressionSemanticError(
+                    "SEQUENCE may only be used as the direct second argument "
+                    f"of: {allowed}.",
+                    code="invalid_sequence_context",
+                )
+            length = _positional_integer(
+                node,
+                function_name=name,
+                index=0,
+                default=0,
+                argument_name="length",
+            )
+            _validate_window(length, function_name=name, policy=resolved_policy)
+            # SEQUENCE is a fixed regressor, not an additional market-data lookback.
+            return child_analysis
+
+        if name == "PERCENTILE" and len(node.args) < 3:
+            raise ExpressionSemanticError(
+                "PERCENTILE without a rolling window uses the instrument's full "
+                "history and is not causal.",
+                code="noncausal_percentile",
+            )
+
+        if name == "SMA":
+            window = _positional_integer(
+                node,
+                function_name=name,
+                index=1,
+                default=0,
+                argument_name="window",
+            )
+            _validate_window(window, function_name=name, policy=resolved_policy)
+            if len(node.args) == 3:
+                return TemporalAnalysis.unbounded_causal()
+            return _add_finite_lookback(child_analysis, window - 1)
+
+        if name == "EMA":
+            window = _positional_integer(
+                node,
+                function_name=name,
+                index=1,
+                default=0,
+                argument_name="window",
+            )
+            _validate_window(window, function_name=name, policy=resolved_policy)
+            return TemporalAnalysis.unbounded_causal()
+
+        if name == "MACD":
+            for index, default in ((1, 12), (2, 26)):
+                window = _positional_integer(
+                    node,
+                    function_name=name,
+                    index=index,
+                    default=default,
+                    argument_name="window",
+                )
+                _validate_window(window, function_name=name, policy=resolved_policy)
+            return TemporalAnalysis.unbounded_causal()
+
+        if name == "RSI":
+            window = _positional_integer(
+                node,
+                function_name=name,
+                index=1,
+                default=14,
+                argument_name="window",
+            )
+            _validate_window(window, function_name=name, policy=resolved_policy)
+            return TemporalAnalysis.unbounded_causal()
+
+        specs = _ROLLING_WINDOW_SPECS.get(name)
+        if specs is None:
+            return child_analysis
+
+        windows: list[int] = []
+        for index, default in specs:
+            window = _positional_integer(
+                node,
+                function_name=name,
+                index=index,
+                default=default,
+                argument_name="window",
+            )
+            _validate_window(window, function_name=name, policy=resolved_policy)
+            windows.append(window)
+
+        # The runtime replaces TS_CORR/TS_COVARIANCE's explicit or default
+        # window with len(SEQUENCE(n)) when the second operand is that fixed
+        # ndarray.  Analyze the window that will actually execute, while still
+        # validating any supplied p above as part of the public DSL contract.
+        if name in {"TS_CORR", "TS_COVARIANCE"}:
+            sequence_arg = node.args[1]
+            if (
+                isinstance(sequence_arg, FunctionNode)
+                and _function_name(
+                    sequence_arg,
+                    allow_legacy_aliases=allow_legacy_aliases,
+                )
+                == "SEQUENCE"
+            ):
+                windows = [
+                    _positional_integer(
+                        sequence_arg,
+                        function_name="SEQUENCE",
+                        index=0,
+                        default=0,
+                        argument_name="length",
+                    )
+                ]
+        return _add_finite_lookback(child_analysis, max(windows) - 1)
+
+    analysis = visit(root)
+    if analysis.lookback_kind == UNBOUNDED_CAUSAL:
+        if not resolved_policy.allow_unbounded_causal:
+            raise ExpressionSemanticError(
+                "Expression uses causal operators with unbounded historical memory.",
+                code="unbounded_lookback",
+            )
+        return analysis
+    if (
+        resolved_policy.max_lookback is not None
+        and (analysis.lookback or 0) > resolved_policy.max_lookback
+    ):
+        raise ExpressionSemanticError(
+            f"Cumulative lookback {analysis.lookback} exceeds the maximum "
+            f"{resolved_policy.max_lookback}.",
+            code="lookback_out_of_policy",
+        )
+    return analysis
     
     
     
