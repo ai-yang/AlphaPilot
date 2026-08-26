@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import os
 import subprocess
 import uuid
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Tuple, Union
+from typing import Any, Tuple, Union
 
 import pandas as pd
 from filelock import FileLock
@@ -17,7 +21,142 @@ from alphapilot.components.coder.factor_coder.data import (
 from alphapilot.core.exception import CodeFormatError, CustomRuntimeError, NoOutputError
 from alphapilot.core.experiment import Experiment, FBWorkspace
 from alphapilot.core.utils import cache_with_pickle
+from alphapilot.log import logger
 from alphapilot.oai.llm_utils import md5_hash
+
+
+_FACTOR_ENV_ALLOWLIST = frozenset(
+    {
+        "CONDA_DEFAULT_ENV",
+        "CONDA_PREFIX",
+        "CUDA_HOME",
+        "CUDA_PATH",
+        "CUDA_VISIBLE_DEVICES",
+        "DYLD_LIBRARY_PATH",
+        "LANG",
+        "LANGUAGE",
+        "LC_ALL",
+        "LD_LIBRARY_PATH",
+        "PATH",
+        "PATHEXT",
+        "PYTHONHASHSEED",
+        "PYTHONIOENCODING",
+        "PYTHONNOUSERSITE",
+        "PYTHONPATH",
+        "PYTHONUTF8",
+        "SYSTEMROOT",
+        "TEMP",
+        "TMP",
+        "TMPDIR",
+        "TZ",
+        "VIRTUAL_ENV",
+        "WINDIR",
+    }
+)
+_FACTOR_ENV_PREFIX_ALLOWLIST = (
+    "ALPHAPILOT_FACTOR_",
+    "KMP_",
+    "LC_",
+    "MKL_",
+    "NUMEXPR_",
+    "OMP_",
+    "OPENBLAS_",
+)
+
+_RUNTIME_PROBE_PREFIX = "__ALPHAPILOT_FACTOR_RUNTIME__="
+_RUNTIME_PROBE = rf"""
+import hashlib
+import importlib.metadata
+import importlib.util
+import json
+import pathlib
+import platform
+import sys
+
+packages = {{}}
+for package in ("numpy", "pandas", "tables", "joblib", "pyparsing"):
+    try:
+        packages[package] = importlib.metadata.version(package)
+    except importlib.metadata.PackageNotFoundError:
+        packages[package] = "missing"
+
+sources = {{}}
+for module_name in (
+    "alphapilot.components.coder.factor_coder.expr_parser",
+    "alphapilot.components.coder.factor_coder.function_lib",
+):
+    spec = importlib.util.find_spec(module_name)
+    origin = getattr(spec, "origin", None) if spec is not None else None
+    if not origin:
+        raise RuntimeError(f"Cannot resolve runtime module {{module_name}}")
+    path = pathlib.Path(origin).resolve()
+    sources[module_name] = {{
+        "path": str(path),
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    }}
+
+payload = {{
+    "cache_tag": getattr(sys.implementation, "cache_tag", None),
+    "executable": str(pathlib.Path(sys.executable).resolve()),
+    "packages": packages,
+    "platform": platform.platform(),
+    "python": sys.version,
+    "sources": sources,
+}}
+print({_RUNTIME_PROBE_PREFIX!r} + json.dumps(payload, sort_keys=True, separators=(",", ":")))
+"""
+
+
+def _factor_subprocess_env(
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Build a minimal execution environment for generated factor code.
+
+    This reduces accidental credential inheritance; it is not a filesystem or
+    network sandbox.  Only Python/runtime paths, numerical-library tuning, and
+    factor-data variables are passed through.
+    """
+
+    source = os.environ if environ is None else environ
+    return {
+        key: value
+        for key, value in source.items()
+        if key.upper() in _FACTOR_ENV_ALLOWLIST
+        or key.upper().startswith(_FACTOR_ENV_PREFIX_ALLOWLIST)
+    }
+
+
+def _factor_runtime_fingerprint(python_bin: str) -> str | None:
+    """Fingerprint the interpreter and sources used by the factor subprocess.
+
+    The probe intentionally runs for every cache-key calculation.  This avoids
+    stale results when an external environment or editable source tree changes
+    while the parent AlphaPilot process stays alive.  Probe failure disables
+    caching for the call instead of falling back to the parent runtime.
+    """
+
+    try:
+        output = subprocess.check_output(
+            [python_bin, "-c", _RUNTIME_PROBE],
+            env=_factor_subprocess_env(),
+            stderr=subprocess.STDOUT,
+            timeout=min(30, FACTOR_COSTEER_SETTINGS.file_based_execution_timeout),
+            text=True,
+        )
+        payload_line = next(
+            line for line in reversed(output.splitlines())
+            if line.startswith(_RUNTIME_PROBE_PREFIX)
+        )
+        payload = json.loads(payload_line.removeprefix(_RUNTIME_PROBE_PREFIX))
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            f"Factor runtime fingerprint probe failed for {python_bin!r}; "
+            f"pickle cache disabled: {exc}"
+        )
+        return None
 
 
 class FactorTask(CoSTEERTask):
@@ -100,14 +239,25 @@ class FactorFBWorkspace(FBWorkspace):
         super().__init__(*args, **kwargs)
         self.raise_exception = raise_exception
 
-    def hash_func(self, data_type: str = "Debug") -> str:
+    def hash_func(self, data_type: str = "Debug") -> str | None:
         if "factor.py" not in self.code_dict or self.raise_exception:
             return None
+        python_bin = resolve_factor_python_bin()
+        runtime_fingerprint = _factor_runtime_fingerprint(python_bin)
+        if runtime_fingerprint is None:
+            return None
         return md5_hash(
-            data_type
-            + self.code_dict["factor.py"]
-            + resolve_factor_python_bin()
-            + resolve_factor_data_fingerprint(self)
+            json.dumps(
+                {
+                    "data_fingerprint": resolve_factor_data_fingerprint(self),
+                    "data_type": data_type,
+                    "factor_source": self.code_dict["factor.py"],
+                    "python_bin": python_bin,
+                    "runtime_fingerprint": runtime_fingerprint,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            )
         )
 
     @staticmethod
@@ -168,6 +318,7 @@ class FactorFBWorkspace(FBWorkspace):
                 subprocess.check_output(
                     [python_bin, str(execution_code_path)],
                     cwd=self.workspace_path,
+                    env=_factor_subprocess_env(),
                     stderr=subprocess.STDOUT,
                     timeout=FACTOR_COSTEER_SETTINGS.file_based_execution_timeout,
                 )
