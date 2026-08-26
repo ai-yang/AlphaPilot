@@ -21,6 +21,13 @@ import numpy as np
 
 # Ensure the vendored top-level packages are importable (sys.path shim).
 import alphapilot.modules.alphaforge  # noqa: F401
+from alphapilot.modules.alphaforge.data_adapter import (
+    LoadedTrainingData,
+    TargetSpec,
+    TrainingSpec,
+    VwapSpec,
+    get_train_data,
+)
 from alphapilot.modules.alphaforge.device import empty_cache, resolve_device, use_fork_start_method
 
 if TYPE_CHECKING:
@@ -146,6 +153,8 @@ class AFFMiner:
         context: "Context",
         instruments: str = "csi300",
         train_end_year: int = 2020,
+        train_start_date: str | None = None,
+        train_end_date: str | None = None,
         freq: str = "day",
         seed: int = 0,
         zoo_size: int = 100,
@@ -153,6 +162,9 @@ class AFFMiner:
         ic_thresh: float = 0.03,
         icir_thresh: float = 0.1,
         max_len: int = 20,
+        target_horizon: int = 20,
+        target_price: str = "vwap",
+        vwap_mode: str = "amount_volume",
         device: str | None = None,
         qlib_dir: str | None = None,
         raw: bool = False,
@@ -169,6 +181,13 @@ class AFFMiner:
         self.context = context
         self.instruments = instruments
         self.train_end_year = train_end_year
+        self.train_start_date = train_start_date
+        self.train_end_date = train_end_date
+        self.training_spec = TrainingSpec.resolve(
+            train_end_year=train_end_year,
+            train_start_date=train_start_date,
+            train_end_date=train_end_date,
+        )
         self.freq = freq
         self.seed = seed
         self.zoo_size = zoo_size
@@ -176,6 +195,10 @@ class AFFMiner:
         self.ic_thresh = ic_thresh
         self.icir_thresh = icir_thresh
         self.max_len = max_len
+        self.target_spec = TargetSpec(target_horizon, target_price)
+        self.target_horizon = self.target_spec.horizon
+        self.target_price = self.target_spec.price
+        self.vwap_spec = VwapSpec(vwap_mode)
         self.device_pref = device
         self.qlib_dir = qlib_dir
         self.raw = raw
@@ -187,6 +210,7 @@ class AFFMiner:
         self.max_iter_init = max_iter_init
         self.max_iter = max_iter
         self.max_loops = max_loops
+        self.training_data: LoadedTrainingData | None = None
 
     def _build_cfg(self, device) -> _Cfg:
         return _Cfg(
@@ -212,19 +236,23 @@ class AFFMiner:
         from gan.network.masker import NetM
         from gan.network.predictor import NetP, NetP_CNN
         from gan.utils import Builders, filter_valid_blds
-        from alphapilot.modules.alphaforge.data_adapter import default_target, get_data_splits
 
         use_fork_start_method()
         dev = resolve_device(self.device_pref)
         reseed_everything(self.seed)
         cfg = self._build_cfg(dev)
 
-        splits = get_data_splits(
-            self.context, instruments=self.instruments, train_end_year=self.train_end_year,
+        target = self.target_spec.build_expression()
+        training_data = get_train_data(
+            self.context,
+            training_spec=self.training_spec,
+            target_spec=self.target_spec,
+            vwap_spec=self.vwap_spec,
+            instruments=self.instruments,
             freq=self.freq, device=dev, raw=self.raw, qlib_dir=self.qlib_dir,
         )
-        data = splits.train
-        target = default_target()
+        self.training_data = training_data
+        data = training_data.data
 
         # AlphaForge's original DCGAN and predictor have a fixed length-20
         # convolution layout.  The vendored package also provides equivalent

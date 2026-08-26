@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from alphapilot.systems.backtest.types import SingleICCoverageOptions
 from alphapilot.systems.data.frequency import get_frequency
 
 BASELINE_FEATURES = [
@@ -118,6 +119,15 @@ class QlibYamlParams(BaseModel):
     enable_signal_record: bool = True
     enable_sig_ana_record: bool = True
     enable_port_ana_record: bool = True
+    single_ic_label_expression: str | None = None
+    """Optional label used only by ``single_ic``. ``None`` keeps the historical
+    close-derived one-period label and avoids changing ordinary Qlib configs."""
+    # ``single_ic`` does not render these values into qrun YAML.  Keeping the
+    # policy in the typed parameter object nevertheless lets CLI/API callers
+    # configure signal evaluation without campaign-specific magic defaults.
+    single_ic_options: SingleICCoverageOptions = Field(
+        default_factory=SingleICCoverageOptions
+    )
 
     @field_validator(
         "start_time",
@@ -141,6 +151,16 @@ class QlibYamlParams(BaseModel):
     def validate_freq(cls, value: str) -> str:
         # Normalize aliases ("5" -> "5min") and reject unsupported frequencies early.
         return get_frequency(value).key
+
+    @field_validator("single_ic_label_expression")
+    @classmethod
+    def validate_single_ic_label_expression(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("single_ic_label_expression cannot be blank")
+        return value
 
     @model_validator(mode="after")
     def apply_freq_defaults(self) -> "QlibYamlParams":

@@ -35,6 +35,8 @@ class AlphaForgeAFFModule(BaseModule):
         self,
         instruments: str = "csi300",
         train_end_year: int = 2020,
+        train_start_date: str | None = None,
+        train_end_date: str | None = None,
         freq: str = "day",
         seed: int = 0,
         zoo_size: int = 100,
@@ -42,6 +44,9 @@ class AlphaForgeAFFModule(BaseModule):
         ic_thresh: float = 0.03,
         icir_thresh: float = 0.1,
         max_len: int = 20,
+        target_horizon: int = 20,
+        target_price: str = "vwap",
+        vwap_mode: str = "amount_volume",
         device: str | None = None,
         qlib_dir: str | None = None,
         backtest: bool = False,
@@ -55,6 +60,9 @@ class AlphaForgeAFFModule(BaseModule):
         Extra training knobs (``batch_size``, ``num_epochs_g``, ``num_epochs_p``,
         ``init_collect``, ``iter_collect``, ``max_loops``, ``raw`` ...) pass
         through ``**kwargs`` to :class:`AFFMiner`.
+
+        ``raw`` adjusts non-VWAP OHLCV fields. ``vwap_mode`` is a separate,
+        explicit VWAP construction contract.
         """
         from alphapilot.modules.alphaforge_aff.miner import AFFMiner
 
@@ -62,6 +70,8 @@ class AlphaForgeAFFModule(BaseModule):
             context=self.context,
             instruments=instruments,
             train_end_year=train_end_year,
+            train_start_date=train_start_date,
+            train_end_date=train_end_date,
             freq=freq,
             seed=seed,
             zoo_size=zoo_size,
@@ -69,6 +79,9 @@ class AlphaForgeAFFModule(BaseModule):
             ic_thresh=ic_thresh,
             icir_thresh=icir_thresh,
             max_len=max_len,
+            target_horizon=target_horizon,
+            target_price=target_price,
+            vwap_mode=vwap_mode,
             device=device,
             qlib_dir=qlib_dir,
             **kwargs,

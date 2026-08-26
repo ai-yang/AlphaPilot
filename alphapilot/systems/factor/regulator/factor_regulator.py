@@ -10,12 +10,15 @@ import numpy as np
 import pandas as pd
 
 from alphapilot.components.coder.factor_coder.expr_parser import parse_expression
-from alphapilot.components.coder.factor_coder.factor_ast import parse_expression as parse_expression_ast
 from alphapilot.components.coder.factor_coder.factor_ast import (
+    ExpressionSemanticError,
+    TemporalValidationPolicy,
     count_all_nodes,
     count_free_args,
     count_unique_vars,
     match_alphazoo,
+    parse_expression as parse_expression_ast,
+    validate_expression_semantics,
 )
 from alphapilot.core.evaluation import Evaluator
 from alphapilot.log import logger
@@ -37,11 +40,35 @@ _STRUCTURAL_EVAL_MESSAGE = "Expression failed structural evaluation (duplicate /
 class FactorRegulator(Evaluator):
     """Evaluate factor expressions for parsability and duplication."""
 
-    def __init__(self, factor_zoo_path: str | None = None, duplication_threshold: int = 8):
+    def __init__(
+        self,
+        factor_zoo_path: str | None = None,
+        duplication_threshold: int = 8,
+        temporal_policy: TemporalValidationPolicy | None = None,
+        allow_legacy_aliases: bool = True,
+    ) -> None:
         super().__init__(None)
+        if temporal_policy is not None and not isinstance(
+            temporal_policy, TemporalValidationPolicy
+        ):
+            raise TypeError("temporal_policy must be a TemporalValidationPolicy.")
+        if not isinstance(allow_legacy_aliases, bool):
+            raise TypeError("allow_legacy_aliases must be a boolean.")
         self.factor_zoo_path = factor_zoo_path
-        self.alphazoo = pd.read_csv(factor_zoo_path, index_col=None) if factor_zoo_path else pd.DataFrame()
+        self.alphazoo = (
+            pd.read_csv(factor_zoo_path, index_col=None)
+            if factor_zoo_path
+            else pd.DataFrame()
+        )
         self.duplication_threshold = duplication_threshold
+        self.temporal_policy = (
+            temporal_policy
+            if temporal_policy is not None
+            else TemporalValidationPolicy()
+        )
+        # Factor-system zoos store Qlib-style Mean/Std/Ref/Rank spellings.
+        # Code generation uses the strict runtime DSL and leaves this disabled.
+        self.allow_legacy_aliases = allow_legacy_aliases
         self.new_factors: list[tuple[str, str]] = []
 
     def is_parsable(self, expression: str) -> bool:
@@ -49,10 +76,17 @@ class FactorRegulator(Evaluator):
         return ok
 
     def check_expression(self, expression: str) -> tuple[bool, dict | None, str | None]:
-        """Validate syntax (lenient + strict AST) and run evaluate.
+        """Backward-compatible expression check without the structured code."""
+        ok, eval_dict, message, _ = self.check_expression_detailed(expression)
+        return ok, eval_dict, message
 
-        Returns (True, eval_dict, None) when ready for duplication checks, or
-        (False, None, error_message) with a reason suitable for LLM feedback.
+    def check_expression_detailed(
+        self, expression: str
+    ) -> tuple[bool, dict | None, str | None, str | None]:
+        """Validate syntax, causal semantics, and structural originality.
+
+        The fourth tuple item is a stable semantic/parse error code.  It is
+        ``None`` on success and is also surfaced by :meth:`validate_expression`.
         """
         try:
             with contextlib.redirect_stdout(io.StringIO()):
@@ -60,21 +94,37 @@ class FactorRegulator(Evaluator):
         except Exception as exc:  # noqa: BLE001
             msg = str(exc)
             logger.error(f"Failed to parse expression: {expression}. Error: {msg}")
-            return False, None, msg
+            return False, None, msg, REJECT_PARSE_ERROR
 
         try:
-            parse_expression_ast(expression)
+            expression_ast = parse_expression_ast(expression)
         except Exception as exc:  # noqa: BLE001
             msg = str(exc)
             if msg.startswith("Failed to parse expression:"):
                 msg = msg[len("Failed to parse expression:") :].strip()
             logger.error(f"Failed to parse expression (AST): {expression}. Error: {msg}")
-            return False, None, msg
+            return False, None, msg, REJECT_PARSE_ERROR
+
+        try:
+            temporal_analysis = validate_expression_semantics(
+                expression_ast,
+                policy=self.temporal_policy,
+                allow_legacy_aliases=self.allow_legacy_aliases,
+            )
+        except ExpressionSemanticError as exc:
+            msg = str(exc)
+            logger.error(
+                f"Failed semantic validation: {expression}. "
+                f"Code: {exc.code}. Error: {msg}"
+            )
+            return False, None, msg, exc.code
 
         success, eval_dict = self.evaluate(expression)
         if not success or eval_dict is None:
-            return False, None, _STRUCTURAL_EVAL_MESSAGE
-        return True, eval_dict, None
+            return False, None, _STRUCTURAL_EVAL_MESSAGE, REJECT_EVALUATION_FAILED
+        eval_dict["lookback"] = temporal_analysis.lookback
+        eval_dict["lookback_kind"] = temporal_analysis.lookback_kind
+        return True, eval_dict, None, None
 
     def evaluate(self, expression: str) -> tuple[bool, dict | None]:
         try:
@@ -123,6 +173,8 @@ class FactorRegulator(Evaluator):
             "num_free_args": num_free_args,
             "num_unique_vars": num_unique_vars,
             "num_all_nodes": num_all_nodes,
+            "lookback": eval_dict.get("lookback"),
+            "lookback_kind": eval_dict.get("lookback_kind"),
         }
 
         if num_all_nodes == 0:
@@ -192,12 +244,11 @@ class FactorRegulator(Evaluator):
                 details=None,
             )
 
-        ok, eval_dict, error_message = self.check_expression(expr)
+        ok, eval_dict, error_message, error_code = self.check_expression_detailed(expr)
         if not ok or eval_dict is None:
-            code = REJECT_EVALUATION_FAILED if error_message == _STRUCTURAL_EVAL_MESSAGE else REJECT_PARSE_ERROR
             return FactorValidationResult(
                 acceptable=False,
-                code=code,
+                code=error_code or REJECT_PARSE_ERROR,
                 message=error_message or "Expression validation failed.",
                 details=None,
             )

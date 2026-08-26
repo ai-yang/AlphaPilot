@@ -19,6 +19,7 @@ from alphapilot.components.coder.factor_coder.factor_ast import (
     find_largest_common_subtree,
     parse_expression,
 )
+from alphapilot.systems.backtest.report_metrics import average_daily_turnover
 
 
 @dataclass(frozen=True)
@@ -409,6 +410,9 @@ def evaluate_economic_gate(
     frame = report.sort_index().copy()
     for column in (return_column, "benchmark_return", "cost", "turnover"):
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    # Turnover is an execution-intensity metric.  Do not drop a bad bar and
+    # silently aggregate a partial trading day.
+    average_turnover = average_daily_turnover(frame[["turnover"]])
     frame = frame.replace([np.inf, -np.inf], np.nan).dropna(
         subset=[return_column, "benchmark_return", "cost", "turnover"]
     )
@@ -446,7 +450,6 @@ def evaluate_economic_gate(
         if rolling_values and any(math.isfinite(value) for value in rolling_values)
         else 0.0
     )
-    average_turnover = float(frame["turnover"].mean())
     baseline_excess = float(baseline_metrics.get("annualized_excess", float("nan")))
     baseline_ir = float(baseline_metrics.get("information_ratio", float("nan")))
     checks = {

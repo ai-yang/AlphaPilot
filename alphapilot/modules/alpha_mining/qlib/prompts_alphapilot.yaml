@@ -265,12 +265,13 @@ factor_feedback_generation:
     - ICIR: Mean IC divided by its time-series volatility; larger positive values indicate more stable predictive power.
     - Rank IC / RankIC: Spearman rank correlation between factor scores and future returns. (the bigger the better)
     - Rank ICIR / RankICIR: Stability of Rank IC through time. (the bigger the better)
+    - average_daily_turnover: Mean daily trading intensity. Intraday bar turnover is summed within each trading day before averaging; lower is preferable when predictive quality is similar.
 
     When judging the results:
       1. **Recommendation for Replacement:**
         - Prefer cost-adjusted performance over gross performance when both are available.
         - Recommend replacement only when the evidence is coherent across predictive stability
-          (ICIR/Rank ICIR), cost-adjusted return/risk, and drawdown.
+          (ICIR/Rank ICIR), cost-adjusted return/risk, drawdown, and average daily turnover.
         - Treat a gain in one noisy metric with broad deterioration elsewhere as insufficient evidence.
 
     Note: Only factors with 'Factor Implementation' as True are implemented and tested in this experiment. If 'Factor Implementation' is False, the hypothesis for that factor cannot be verified in this run.

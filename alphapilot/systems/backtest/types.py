@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
+from numbers import Real
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +15,42 @@ class FactorDefinition:
 
     factor_name: str
     factor_expression: str
+
+
+@dataclass(frozen=True, slots=True)
+class SingleICCoverageOptions:
+    """Coverage and ordering policy for ``single_ic`` evaluation.
+
+    The defaults intentionally preserve the historical public behavior: a
+    factor only needs two stocks on one date, no minimum finite-overlap ratio
+    is imposed, and the resulting leaderboard is ranked by absolute IC.  A
+    sealed-reporting workflow can opt into candidate order explicitly without
+    changing ordinary backtests.
+    """
+
+    min_stocks_per_day: int = 2
+    min_days: int = 1
+    min_overlap_ratio: float = 0.0
+    preserve_candidate_order: bool = False
+
+    def __post_init__(self) -> None:
+        for name, value, minimum in (
+            ("min_stocks_per_day", self.min_stocks_per_day, 2),
+            ("min_days", self.min_days, 1),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise TypeError(f"{name} must be an integer")
+            if value < minimum:
+                raise ValueError(f"{name} must be at least {minimum}")
+        ratio = self.min_overlap_ratio
+        if isinstance(ratio, bool) or not isinstance(ratio, Real):
+            raise TypeError("min_overlap_ratio must be a real number")
+        ratio = float(ratio)
+        if not math.isfinite(ratio) or not 0.0 <= ratio <= 1.0:
+            raise ValueError("min_overlap_ratio must be finite and between 0 and 1")
+        object.__setattr__(self, "min_overlap_ratio", ratio)
+        if not isinstance(self.preserve_candidate_order, bool):
+            raise TypeError("preserve_candidate_order must be a boolean")
 
 
 @dataclass
@@ -40,6 +78,8 @@ class FactorBacktestRequest:
     """Reuse an already-built factor h5 cache dir (``<spec_hash>/``) instead of building."""
     factor_data_fingerprint: str | None = None
     """Optional fingerprint of the reused factor data (informational / cache keying)."""
+    single_ic_options: SingleICCoverageOptions | None = None
+    """Typed ``single_ic`` coverage/ordering policy; ``None`` uses config or public defaults."""
 
 
 @dataclass

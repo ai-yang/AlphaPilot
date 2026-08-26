@@ -9,11 +9,16 @@ import json
 import os
 from pathlib import Path
 import re
+import sys
 import tempfile
 from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
+# A source checkout may coexist with an editable install or another Git
+# worktree. Always document the checkout that owns this generator.
+if sys.path[0] != str(ROOT):
+    sys.path.insert(0, str(ROOT))
 DOCS = ROOT / "docs"
 CATALOG_PATH = DOCS / "catalog.json"
 REFERENCE_DIR = DOCS / "reference"

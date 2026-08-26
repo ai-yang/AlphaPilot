@@ -40,7 +40,7 @@ class UntranslatableError(Exception):
 _UNARY_MAP = {
     "Abs": "ABS",
     "Sign": "SIGN",
-    "Log": "LOG",      # both are log1p-style: alphapilot LOG == log(x+1)
+    "Log": "LOG",      # both use the natural logarithm
     "Inv": "INV",
     "CSRank": "RANK",  # cross-sectional percentile rank
 }
@@ -97,8 +97,10 @@ def translate(expr: Expression) -> str:
         x = translate(expr._operand)
         if name in _UNARY_MAP:
             return f"{_UNARY_MAP[name]}({x})"
-        if name == "S_log1p":  # sign(x) * log1p(|x|); alphapilot LOG is log1p
-            return f"MULTIPLY(SIGN({x}),LOG(ABS({x})))"
+        if name == "S_log1p":
+            # alphagen: sign(x) * log1p(abs(x)); alphapilot LOG is the natural
+            # logarithm, so the +1 must remain explicit at this boundary.
+            return f"MULTIPLY(SIGN({x}),LOG(ADD(ABS({x}),1)))"
         raise UntranslatableError(f"unary operator {name!r}")
 
     # ---- binary ----

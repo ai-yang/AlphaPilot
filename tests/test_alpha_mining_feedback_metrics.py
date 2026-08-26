@@ -31,4 +31,6 @@ def test_feedback_selects_cost_aware_predictive_metrics_at_any_frequency(
         *reversed(predictive),
     ]
 
-    assert _select_important_metrics(index) == gross + with_cost + predictive
+    selected = _select_important_metrics(index)
+    assert selected == gross + with_cost + predictive + ["average_daily_turnover"]
+    assert f"{frequency}.turnover" not in selected

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
-import re
 from jinja2 import Environment, StrictUndefined
 
 from alphapilot.components.coder.CoSTEER.evolving_strategy import (
@@ -14,6 +14,10 @@ from alphapilot.components.coder.CoSTEER.knowledge_management import (
 )
 from alphapilot.components.coder.factor_coder.config import FACTOR_COSTEER_SETTINGS
 from alphapilot.components.coder.factor_coder.factor import FactorFBWorkspace, FactorTask
+from alphapilot.components.coder.factor_coder.factor_ast import (
+    ExpressionSemanticError,
+    validate_expression_semantics,
+)
 from alphapilot.core.prompts import Prompts
 from alphapilot.core.template import CodeTemplate
 from alphapilot.oai.llm_conf import LLM_SETTINGS
@@ -23,6 +27,120 @@ from alphapilot.core.conf import RD_AGENT_SETTINGS
 
 code_template = CodeTemplate(template_path=Path(__file__).parent / "template.jinjia2")
 implement_prompts = Prompts(file_path=Path(__file__).parent / "prompts.yaml")
+
+
+def _render_factor_code(*, expression: str, factor_name: str) -> str:
+    """Render expressions that satisfy the public causal DSL contract."""
+    if not isinstance(expression, str) or not expression.strip():
+        raise ExpressionSemanticError(
+            "Factor expression must be a non-empty string.",
+            code="empty_expression",
+        )
+    expression = expression.strip()
+    validate_expression_semantics(expression)
+    return code_template.render(expression=expression, factor_name=str(factor_name))
+
+
+def _expression_from_rendered_code(code: str) -> str:
+    """Read the literal expression embedded in the generated factor program."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as exc:
+        raise ValueError(f"Generated factor code is not valid Python: {exc.msg}") from exc
+
+    values: list[str] = []
+
+    class ModuleAssignmentVisitor(ast.NodeVisitor):
+        """Inspect executable module control flow without entering nested scopes."""
+
+        def visit_Assign(self, node: ast.Assign) -> None:  # noqa: N802
+            if (
+                isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+                and any(
+                    isinstance(target, ast.Name) and target.id == "expr"
+                    for target in node.targets
+                )
+            ):
+                values.append(node.value.value)
+
+        def visit_FunctionDef(self, _node: ast.FunctionDef) -> None:  # noqa: N802
+            return
+
+        def visit_AsyncFunctionDef(  # noqa: N802
+            self, _node: ast.AsyncFunctionDef
+        ) -> None:
+            return
+
+        def visit_ClassDef(self, _node: ast.ClassDef) -> None:  # noqa: N802
+            return
+
+        def visit_Lambda(self, _node: ast.Lambda) -> None:  # noqa: N802
+            return
+
+    ModuleAssignmentVisitor().visit(tree)
+    if len(values) != 1:
+        raise ValueError(
+            "Generated factor code must contain exactly one literal expr assignment."
+        )
+    expression = values[0].strip()
+    if not expression:
+        raise ValueError("Generated factor code contains an empty expr assignment.")
+    return expression
+
+
+def _repaired_expression_from_response(response: object) -> str:
+    """Decode one LLM repair response and enforce its minimal JSON schema."""
+    if not isinstance(response, str):
+        raise ExpressionSemanticError(
+            "Repair response must be a JSON string.",
+            code="invalid_repair_response",
+        )
+    try:
+        response_dict = json.loads(response)
+    except json.decoder.JSONDecodeError as exc:
+        raise ExpressionSemanticError(
+            "Repair response is not valid JSON.",
+            code="invalid_repair_response",
+        ) from exc
+    if not isinstance(response_dict, dict) or not isinstance(
+        response_dict.get("expr"), str
+    ):
+        raise ExpressionSemanticError(
+            "Repair response must contain a string field named 'expr'.",
+            code="invalid_repair_response",
+        )
+    expression = response_dict["expr"].strip()
+    if not expression:
+        raise ExpressionSemanticError(
+            "Repair response field 'expr' must not be empty.",
+            code="invalid_repair_response",
+        )
+    return expression
+
+
+def _assign_factor_codes(code_list, evo):
+    """Inject code and keep the task/workspace expression equal to executed code."""
+    if len(code_list) != len(evo.sub_tasks):
+        raise ValueError("Generated code count must match the factor task count.")
+    for index, code in enumerate(code_list):
+        if code is None:
+            continue
+        executed_expression = _expression_from_rendered_code(code)
+        validate_expression_semantics(executed_expression)
+        target_task = evo.sub_tasks[index]
+        if evo.sub_workspace_list[index] is None:
+            evo.sub_workspace_list[index] = FactorFBWorkspace(target_task=target_task)
+        workspace = evo.sub_workspace_list[index]
+        workspace.inject_code(**{"factor.py": code})
+        target_task.factor_expression = executed_expression
+        if getattr(workspace, "target_task", None) is not None:
+            workspace.target_task.factor_expression = executed_expression
+        # Persist an explicit audit field even if a caller later replaces the
+        # task object.  The executable source remains the cache authority.
+        workspace.executed_factor_expression = executed_expression
+    return evo
+
 
 class FactorMultiProcessEvolvingStrategy(MultiProcessEvolvingStrategy):
     def __init__(self, *args, **kwargs) -> None:
@@ -203,12 +321,9 @@ class FactorParsingStrategy(MultiProcessEvolvingStrategy):
 
     def extract_expr(self, code_str: str) -> str:
         """从代码字符串中提取expr表达式"""
-        # 使用正则表达式匹配expr = "xxx"或expr = 'xxx'的模式
-        pattern = r'expr\s*=\s*["\']([^"\']*)["\']'
-        match = re.search(pattern, code_str)
-        if match:
-            return match.group(1)
-        else:
+        try:
+            return _expression_from_rendered_code(code_str)
+        except (ExpressionSemanticError, ValueError):
             return ""
 
 
@@ -262,9 +377,9 @@ class FactorParsingStrategy(MultiProcessEvolvingStrategy):
         
         # 首次执行时：直接使用模板生成代码
         if len(queried_former_failed_knowledge) == 0:
-            rendered_code = code_template.render(
-                expression=target_task.factor_expression, 
-                factor_name=target_task.factor_name 
+            rendered_code = _render_factor_code(
+                expression=target_task.factor_expression,
+                factor_name=target_task.factor_name,
             )
             return rendered_code
         
@@ -345,36 +460,38 @@ class FactorParsingStrategy(MultiProcessEvolvingStrategy):
                     queried_similar_error_knowledge_to_render = queried_similar_error_knowledge_to_render[:-1]
                     
             # 尝试最多10次从LLM获取表达式
-            for _ in range(10):
+            repair_user_prompt = user_prompt
+            last_error: Exception | None = None
+            for attempt in range(1, 11):
                 try:
                     # 调用API获取新的表达式
-                    expr = json.loads(
-                        get_llm(
-                            use_chat_cache=FACTOR_COSTEER_SETTINGS.coder_use_cache
-                        ).chat_completion(
-                            user_prompt=user_prompt, system_prompt=system_prompt, json_mode=True, reasoning_flag=False
-                        )
-                    )["expr"]
-                    
-                    # 使用新表达式渲染代码模板
-                    rendered_code = code_template.render(
-                        expression=expr, 
-                        factor_name=target_task.factor_name 
+                    response = get_llm(
+                        use_chat_cache=FACTOR_COSTEER_SETTINGS.coder_use_cache
+                    ).chat_completion(
+                        user_prompt=repair_user_prompt,
+                        system_prompt=system_prompt,
+                        json_mode=True,
+                        reasoning_flag=False,
                     )
-                    return rendered_code
-                    
-                except json.decoder.JSONDecodeError:
-                    # JSON解析失败时继续尝试
-                    pass
+                    expr = _repaired_expression_from_response(response)
+                    return _render_factor_code(
+                        expression=expr,
+                        factor_name=target_task.factor_name,
+                    )
+                except ExpressionSemanticError as exc:
+                    last_error = exc
+                    repair_user_prompt = (
+                        user_prompt
+                        + "\n\nThe previous repaired expression was rejected by the local "
+                        f"validator on attempt {attempt}: {exc}. Return a different, safe "
+                        "expression in the required JSON schema."
+                    )
+            raise ValueError(
+                f"Unable to obtain a semantically valid repaired expression: {last_error}"
+            ) from last_error
     
     def assign_code_list_to_evo(self, code_list, evo):
-        for index in range(len(evo.sub_tasks)):
-            if code_list[index] is None:
-                continue
-            if evo.sub_workspace_list[index] is None:
-                evo.sub_workspace_list[index] = FactorFBWorkspace(target_task=evo.sub_tasks[index])
-            evo.sub_workspace_list[index].inject_code(**{"factor.py": code_list[index]})
-        return evo
+        return _assign_factor_codes(code_list, evo)
     
     
     
@@ -391,21 +508,15 @@ class FactorRunningStrategy(MultiProcessEvolvingStrategy):
         queried_knowledge: CoSTEERQueriedKnowledge,
     ) -> str:
 
-        rendered_code = code_template.render(
-            expression=target_task.factor_expression, 
-            factor_name=target_task.factor_name 
+        rendered_code = _render_factor_code(
+            expression=target_task.factor_expression,
+            factor_name=target_task.factor_name,
         )
         return rendered_code
         
     
     def assign_code_list_to_evo(self, code_list, evo):
-        for index in range(len(evo.sub_tasks)):
-            if code_list[index] is None:
-                continue
-            if evo.sub_workspace_list[index] is None:
-                evo.sub_workspace_list[index] = FactorFBWorkspace(target_task=evo.sub_tasks[index])
-            evo.sub_workspace_list[index].inject_code(**{"factor.py": code_list[index]})
-        return evo
+        return _assign_factor_codes(code_list, evo)
     
     
     def evolve(
