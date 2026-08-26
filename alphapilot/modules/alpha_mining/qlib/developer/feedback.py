@@ -55,6 +55,7 @@ _IMPORTANT_NONFREQ_METRICS = [
     "Rank ICIR",
     "RankIC",
     "RankICIR",
+    "average_daily_turnover",
 ]
 
 

@@ -11,6 +11,8 @@ from typing import Optional
 
 import pandas as pd
 
+from alphapilot.systems.backtest.report_metrics import average_daily_turnover
+
 
 def default_workspace_root() -> Path:
     fallback = Path.cwd() / "git_ignore_folder" / "RD-Agent_workspace"
@@ -378,7 +380,7 @@ def build_summary(report: pd.DataFrame) -> dict[str, float]:
         "最大回撤(不含成本)": _max_drawdown(gross),
         "最大回撤(含成本)": _max_drawdown(net),
         "平均日换手": (
-            float(report["turnover"].mean()) if "turnover" in report.columns else 0.0
+            average_daily_turnover(report) if "turnover" in report.columns else 0.0
         ),
         "累计手续费": float(report["cost"].sum()) if "cost" in report.columns else 0.0,
         "期末总资产": (
