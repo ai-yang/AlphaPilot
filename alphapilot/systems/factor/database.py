@@ -428,7 +428,9 @@ class SqliteFactorDatabase(BaseFactorDatabase):
         df = pd.DataFrame(
             self._factor_rows(), columns=["factor_name", "factor_expression"]
         )
-        df.to_csv(target, index=False)
+        from alphapilot.research.common import atomic_text
+        with atomic_text(target) as stream:
+            df.to_csv(stream, index=False)
         logger.info(f"Saved factor zoo CSV mirror to {target}")
 
     # ---- category registry ----

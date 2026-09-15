@@ -312,7 +312,9 @@ class FactorRegulator(Evaluator):
 
     def save_factor_zoo(self, output_path: Optional[str] = None) -> None:
         save_path = output_path if output_path else self.factor_zoo_path
-        self.alphazoo.to_csv(save_path, index=False)
+        from alphapilot.research.common import atomic_text
+        with atomic_text(save_path) as stream:
+            self.alphazoo.to_csv(stream, index=False)
         logger.info(f"Saved updated factor zoo to {save_path}")
 
     def get_new_factors(self) -> list[tuple[str, str]]:

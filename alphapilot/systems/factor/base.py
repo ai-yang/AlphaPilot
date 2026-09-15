@@ -6,6 +6,7 @@ reuses the existing DSL and ``FactorRegulator``.
 """
 
 from __future__ import annotations
+from alphapilot.research.guards import guarded
 
 from abc import abstractmethod
 from typing import Any
@@ -53,19 +54,23 @@ class BaseFactorSystem(BaseSystem):
         """Return all category names in the registry."""
         return self.database.list_categories()
 
+    @guarded("factor", "write")
     def create_category(self, name: str) -> bool:
         """Create an (initially empty) category; return True if newly created."""
         return self.database.create_category(name)
 
+    @guarded("factor", "write")
     def rename_category(self, old_name: str, new_name: str) -> bool:
         return self.database.rename_category(old_name, new_name)
 
+    @guarded("factor", "write")
     def delete_category(self, name: str, *, save: bool = True) -> bool:
         removed = self.database.delete_category(name)
         if removed and save:
             self.database.save()
         return removed
 
+    @guarded("factor", "write")
     def set_factor_categories(
         self, factor_name: str, categories: list[str], *, save: bool = True
     ) -> bool:
@@ -75,6 +80,7 @@ class BaseFactorSystem(BaseSystem):
             self.database.save()
         return ok
 
+    @guarded("factor", "write")
     def add_factors_to_category(
         self, factor_names: list[str], category: str, *, save: bool = True
     ) -> dict[str, Any]:
@@ -84,6 +90,7 @@ class BaseFactorSystem(BaseSystem):
             self.database.save()
         return summary
 
+    @guarded("factor", "write")
     def remove_factors_from_category(
         self, factor_names: list[str], category: str, *, save: bool = True
     ) -> dict[str, Any]:

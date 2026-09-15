@@ -146,7 +146,7 @@ def _extract_portfolio_metrics(metrics) -> dict:
     return out
 
 
-def _write_sequential_leaderboard(leaderboard, experiment) -> None:
+def _write_sequential_leaderboard(leaderboard, experiment) -> Path | None:
     if leaderboard is None or getattr(leaderboard, "empty", True):
         return
     try:
@@ -158,6 +158,7 @@ def _write_sequential_leaderboard(leaderboard, experiment) -> None:
             target = Path(default_workspace_root())
         target.mkdir(parents=True, exist_ok=True)
         leaderboard.to_csv(target / "factor_portfolio_leaderboard.csv", index=False)
+        return target / "factor_portfolio_leaderboard.csv"
     except Exception:  # noqa: BLE001
         pass
 
@@ -250,8 +251,10 @@ class FactorEvaluationPipeline:
                 )
             experiment = outcome.experiment
             experiment.qlib_config_name = resolve_qlib_config_name(experiment)
+            from alphapilot.research.artifacts import record_experiment
+            record_experiment(experiment, outcome.metrics)
             return FactorBacktestResult(
-                experiment=experiment, metrics=outcome.metrics, mode="multi_combined"
+                experiment=experiment, metrics=outcome.metrics, mode="multi_combined", experiments=[experiment]
             )
         finally:
             _cleanup_temp_csv(factor_csv, is_temp)
@@ -275,11 +278,14 @@ class FactorEvaluationPipeline:
                     run_env=experiment.run_env,
                     single_ic_options=request.single_ic_options,
                 )
+            from alphapilot.research.artifacts import record_experiment
+            record_experiment(outcome.experiment, outcome.metrics, outcome.per_factor)
             return FactorBacktestResult(
                 experiment=outcome.experiment,
                 metrics=outcome.metrics,
                 mode="single_ic",
                 per_factor=outcome.per_factor,
+                experiments=[outcome.experiment],
             )
         finally:
             _cleanup_temp_csv(factor_csv, is_temp)
@@ -300,6 +306,7 @@ class FactorEvaluationPipeline:
 
             rows: list[dict] = []
             last_experiment = None
+            experiments = []
             with pickle_cache_scope("backtest"):
                 for _, frow in factor_df.iterrows():
                     single_csv = _write_single_factor_csv(
@@ -316,6 +323,10 @@ class FactorEvaluationPipeline:
                         experiment = outcome.experiment
                         experiment.qlib_config_name = resolve_qlib_config_name(experiment)
                         last_experiment = experiment
+                        experiments.append(experiment)
+                        from alphapilot.research.artifacts import record_experiment
+                        record_experiment(experiment, outcome.metrics, [{"factor_name": frow["factor_name"],
+                                                                        "factor_expression": frow["factor_expression"]}])
                         rows.append(
                             {"factor_name": frow["factor_name"], **_extract_portfolio_metrics(outcome.metrics)}
                         )
@@ -327,12 +338,16 @@ class FactorEvaluationPipeline:
                 leaderboard = leaderboard.sort_values(
                     "IC", ascending=False, key=lambda s: s.abs()
                 ).reset_index(drop=True)
-            _write_sequential_leaderboard(leaderboard, last_experiment)
+            leaderboard_path = _write_sequential_leaderboard(leaderboard, last_experiment)
+            if leaderboard_path:
+                from alphapilot.research.artifacts import record_output
+                record_output(None, "factor_portfolio_leaderboard", path=leaderboard_path)
             return FactorBacktestResult(
                 experiment=last_experiment,
                 metrics=leaderboard,
                 mode="multi_sequential",
                 per_factor=rows,
+                experiments=experiments,
             )
         finally:
             _cleanup_temp_csv(factor_csv, is_temp)

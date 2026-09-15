@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from alphapilot.modules.portal import jobs
+from alphapilot.research.tasks import TaskService
 from alphapilot.systems.notify import config as notify_config
 from alphapilot.systems.notify import fsbrowse, inbound
 from alphapilot.systems.notify import receivers
@@ -22,6 +22,11 @@ from alphapilot.systems.notify.commands import (
     dispatch_text,
     parse_command,
 )
+
+
+@pytest.fixture(autouse=True)
+def isolated_research_state(isolated_env):
+    yield
 
 
 def _setup(tmp_path: Path, monkeypatch) -> None:  # noqa: ANN001
@@ -86,7 +91,7 @@ def test_start_pairing_bypasses_allowlist_and_enrolls(tmp_path, monkeypatch) -> 
     assert cfg["telegram"]["receive_enabled"] is True
 
     # Now the same user is authorized for a normal command.
-    monkeypatch.setattr(jobs, "list_jobs", lambda **_o: [])
+    monkeypatch.setattr(TaskService, "list", lambda *a, **k: {"items": [], "next_cursor": None})
     follow = dispatch_text("/jobs", channel="telegram", user_id="42", chat_id="100", enforce_auth=True)
     assert follow["ok"] is True
 
@@ -167,7 +172,7 @@ def test_transcript_roundtrip_and_dispatch_writes_turn(tmp_path, monkeypatch) ->
     assert [t["text"] for t in turns] == ["one", "two"]  # ordered oldest-first
 
     _save(telegram={"receive_enabled": True, "allowed_user_ids": ["7"]})
-    monkeypatch.setattr(jobs, "list_jobs", lambda **_o: [])
+    monkeypatch.setattr(TaskService, "list", lambda *a, **k: {"items": [], "next_cursor": None})
     dispatch_text("/jobs", channel="telegram", user_id="7", chat_id="555", enforce_auth=True)
     assert inbound.recent_turns("telegram", "555")[-1]["text"] == "/jobs"
 
@@ -176,7 +181,7 @@ def test_natural_language_planner_receives_history(tmp_path, monkeypatch) -> Non
     _setup(tmp_path, monkeypatch)
     _save(telegram={"receive_enabled": True, "allowed_user_ids": ["u1"]})
     inbound.append_turn("telegram", "c1", {"text": "mine momentum factors", "reply": "started job X", "ok": True})
-    monkeypatch.setattr(jobs, "list_jobs", lambda **_o: [])
+    monkeypatch.setattr(TaskService, "list", lambda *a, **k: {"items": [], "next_cursor": None})
 
     captured: dict[str, str] = {}
 

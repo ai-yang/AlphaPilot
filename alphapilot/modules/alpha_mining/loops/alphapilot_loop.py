@@ -1,3 +1,4 @@
+from alphapilot.research.guards import guarded
 """
 Model workflow with session control
 It is from `rdagent/modules/alpha_mining/model.py` and try to replace `rdagent/modules/alpha_mining/RDAgent.py`
@@ -374,6 +375,7 @@ class AlphaPilotLoop(LoopBase, metaclass=LoopMeta):
             logger.warning(f"[strategy.save] round asset save failed: {e}")
             return {"saved": False, "error": f"{type(e).__name__}: {e}"}
 
+    @guarded("factor", "write")
     def _save_factors_to_library(self, prev_out: dict[str, Any]) -> dict[str, Any]:
         """Add this round's mined factor expressions to the factor library (zoo).
 
@@ -398,6 +400,7 @@ class AlphaPilotLoop(LoopBase, metaclass=LoopMeta):
                 }
             round_no = self.loop_idx + 1
             factor_system = self.context.factor()
+            factor_system.database.reload()
             added = 0
             direction = getattr(self, "potential_direction", None)
             direction_slug = _keyword_slug(direction, max_len=24)

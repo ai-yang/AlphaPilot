@@ -110,6 +110,9 @@ EXPECTED_CLI_COMMANDS: frozenset[str] = frozenset(
         "pool_show",
         "portal",
         "portal_operator_auth",
+        "research_token",
+        "research_migrate",
+        "task_runtime",
         "portal_restart",
         "prepare_data",
         "qlib_yaml_generate",
@@ -394,14 +397,14 @@ def captured_notify(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
 def installed_live_test_plugins():
     """Model the EMT/XTP wheels as installed for the existing live tests."""
     from alphapilot.systems.live.brokers import registry
-    from alphapilot_broker_emt.plugin import get_plugin_spec as emt_plugin
-    from alphapilot_broker_xtp.plugin import get_plugin_spec as xtp_plugin
+    from importlib import import_module, util
 
     registry.reset_plugin_registry_for_tests()
     installed = {spec.name for spec in registry.list_brokers()}
-    if "emt" not in installed:
-        registry.register_plugin_spec(emt_plugin(), distribution="alphapilot-broker-emt", version="test")
-    if "xtp" not in installed:
-        registry.register_plugin_spec(xtp_plugin(), distribution="alphapilot-broker-xtp", version="test")
+    for name in ("emt", "xtp"):
+        package = f"alphapilot_broker_{name}"
+        if name not in installed and util.find_spec(package) is not None:
+            plugin = import_module(package + ".plugin").get_plugin_spec()
+            registry.register_plugin_spec(plugin, distribution=f"alphapilot-broker-{name}", version="test")
     yield
     registry.reset_plugin_registry_for_tests()

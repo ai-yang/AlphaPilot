@@ -13,6 +13,7 @@ module.
 """
 
 from __future__ import annotations
+from alphapilot.research.guards import guarded
 
 import hashlib
 import json
@@ -59,6 +60,7 @@ class AlphaForgeSearchModule(BaseModule):
 
     # ---- GP (light) ----
 
+    @guarded("data", "read")
     def mine_gp(
         self,
         instruments: str = "csi300",
@@ -101,6 +103,7 @@ class AlphaForgeSearchModule(BaseModule):
 
     # ---- RL (medium) ----
 
+    @guarded("data", "read")
     def mine_rl(
         self,
         instruments: str = "csi300",

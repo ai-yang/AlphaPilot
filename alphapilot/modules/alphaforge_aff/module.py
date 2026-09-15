@@ -14,6 +14,7 @@ discovery) stays cheap.
 """
 
 from __future__ import annotations
+from alphapilot.research.guards import guarded
 
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -31,6 +32,7 @@ class AlphaForgeAFFModule(BaseModule):
     def setup(self, context: "Context") -> None:
         self.context = context
 
+    @guarded("data", "read")
     def mine_aff(
         self,
         instruments: str = "csi300",

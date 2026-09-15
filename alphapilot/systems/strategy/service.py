@@ -6,6 +6,7 @@ backtest system so strategy and factor share one execution backend.
 """
 
 from __future__ import annotations
+from alphapilot.research.guards import guarded
 
 from dataclasses import asdict
 from datetime import datetime
@@ -68,9 +69,11 @@ class StrategySystem(BaseStrategySystem):
             )
         )
 
+    @guarded("strategy", "write")
     def register_strategy(self, record: StrategyRecord) -> None:
         self._param_db.save_record(record)
 
+    @guarded("strategy", "write")
     def create_strategy_from_factors(
         self,
         *,
@@ -180,9 +183,8 @@ class StrategySystem(BaseStrategySystem):
             yaml_provider = str(frozen_yaml.get("provider_uri") or "").strip()
             bound_provider = str(metadata.get("provider_uri") or "").strip()
             if yaml_provider and bound_provider:
-                if str(Path(yaml_provider).expanduser().resolve()) != str(
-                    Path(bound_provider).expanduser().resolve()
-                ):
+                from alphapilot.research.execution import resource_path
+                if resource_path(yaml_provider) != resource_path(bound_provider):
                     raise ValueError(
                         "yaml_params.provider_uri does not match selected factors"
                     )
@@ -228,6 +230,7 @@ class StrategySystem(BaseStrategySystem):
                 records.append(rec)
         return records
 
+    @guarded("strategy", "write")
     def delete_strategy(self, strategy_name: str) -> bool:
         return self._param_db.delete_strategy(strategy_name.strip())
 
@@ -506,6 +509,7 @@ class StrategySystem(BaseStrategySystem):
         self.register_strategy(record)
         return record
 
+    @guarded("strategy", "write")
     def backtest_from_asset(self, request: StrategyBacktestRequest) -> list[StrategyBacktestOutcome]:
         record = self.get_strategy(request.strategy_name)
         if record is None:

@@ -8,6 +8,7 @@ Tries to create uniform environment for the agent to run;
 # TODO: move the scenario specific docker env into other folders.
 
 import json
+import contextlib
 import os
 import pickle
 import shlex
@@ -119,7 +120,9 @@ class LocalEnv(Env[LocalConf]):
         cwd = None
         if local_path:
             cwd = Path(local_path).resolve()
-        result = subprocess.run(command, cwd=cwd, env={**os.environ, **env}, capture_output=True, text=True)
+        from alphapilot.research.execution import managed_local_command
+        command, environment, isolated = managed_local_command(command, {**os.environ, **env})
+        result = subprocess.run(command, cwd=cwd, env=environment, capture_output=True, text=True, start_new_session=isolated)
 
         if result.returncode != 0:
             raise RuntimeError(f"Error while running the command: {result.stderr}")
@@ -165,7 +168,7 @@ class QlibLocalEnv(LocalEnv):
         table.add_column("Value", style="bold magenta")
         table.add_row("Entry", entry)
         table.add_row("Working Directory", local_path)
-        table.add_row("Environment Variables", "\n".join(f"{k}:{v}" for k, v in env.items()))
+        table.add_row("Environment Variables", "\n".join(sorted(env)))
         print(table)
         
         # Resolve commands against the running interpreter, not the parent
@@ -190,13 +193,9 @@ class QlibLocalEnv(LocalEnv):
         print(Rule("[bold green]开始本地执行[/bold green]", style="dark_orange"))
         
         # 运行命令
-        result = subprocess.run(
-            command, 
-            cwd=cwd, 
-            env={**os.environ, **env}, 
-            capture_output=True, 
-            text=True
-        )
+        from alphapilot.research.execution import managed_local_command
+        command, environment, isolated = managed_local_command(command, {**os.environ, **env})
+        result = subprocess.run(command, cwd=cwd, env=environment, capture_output=True, text=True, start_new_session=isolated)
         
         # 输出结果
         output = result.stdout
@@ -378,16 +377,15 @@ class DockerEnv(Env[DockerConf]):
         """get gpu kwargs based on its availability"""
         if not self.conf.enable_gpu:
             return {}
+        if "nvidia" not in client.info().get("Runtimes", {}):
+            return {}
         gpu_kwargs = {
             "device_requests": (
                 [docker.types.DeviceRequest(count=-1, capabilities=[["gpu"]])] if self.conf.enable_gpu else None
             ),
         }
-        try:
-            client.containers.run(self.conf.image, "nvidia-smi", **gpu_kwargs)
-            logger.info("GPU Devices are available.")
-        except docker.errors.APIError:
-            return {}
+        # Inspect the daemon without launching an untracked probe. Docker
+        # validates GPU access when it starts the managed execution.
         return gpu_kwargs
 
     def __run(
@@ -413,14 +411,19 @@ class DockerEnv(Env[DockerConf]):
                 volumns[lp] = {"bind": rp, "mode": "rw"}
 
         log_output = ""
-
+        from alphapilot.research.execution import ExecutionHandle
+        handle = ExecutionHandle.current()
+        container = None
+        if handle:
+            handle.docker_intent()
         try:
-            container: docker.models.containers.Container = client.containers.run(
+            container = client.containers.create(
                 image=self.conf.image,
                 command=entry,
                 volumes=volumns,
                 environment=env,
                 detach=True,
+                labels=handle.labels if handle else {},
                 working_dir=self.conf.mount_path,
                 # auto_remove=True, # remove too fast might cause the logs not to be get
                 network=self.conf.network,
@@ -428,6 +431,9 @@ class DockerEnv(Env[DockerConf]):
                 mem_limit=self.conf.mem_limit,  # Set memory limit
                 **self._gpu_kwargs(client),
             )
+            if handle:
+                handle.register_container(container.id)
+            container.start()
             logs = container.logs(stream=True)
             print(Rule("[bold green]Docker Logs Begin[/bold green]", style="dark_orange"))
             table = Table(title="Run Info", show_header=False)
@@ -437,7 +443,7 @@ class DockerEnv(Env[DockerConf]):
             table.add_row("Container ID", container.id)
             table.add_row("Container Name", container.name)
             table.add_row("Entry", entry)
-            table.add_row("Env", "\n".join(f"{k}:{v}" for k, v in env.items()))
+            table.add_row("Env keys", ", ".join(env))
             table.add_row("Volumns", "\n".join(f"{k}:{v}" for k, v in volumns.items()))
             print(table)
             for log in logs:
@@ -445,9 +451,9 @@ class DockerEnv(Env[DockerConf]):
                 Console().print(decoded_log, markup=False)
                 log_output += decoded_log + "\n"
             print(Rule("[bold green]Docker Logs End[/bold green]", style="dark_orange"))
-            container.wait()
-            container.stop()
-            container.remove()
+            outcome = container.wait()
+            if int(outcome.get("StatusCode", 1)) != 0:
+                raise RuntimeError(f"Container exited with status {outcome.get('StatusCode')}")
             return log_output
         except docker.errors.ContainerError as e:
             raise RuntimeError(f"Error while running the container: {e}")
@@ -455,6 +461,13 @@ class DockerEnv(Env[DockerConf]):
             raise RuntimeError("Docker image not found.")
         except docker.errors.APIError as e:
             raise RuntimeError(f"Error while running the container: {e}")
+        finally:
+            if container is not None:
+                # A killed worker may not reach finally; the daemon also discovers
+                # containers by persistent execution labels before freeing locks.
+                with contextlib.suppress(docker.errors.NotFound):
+                    container.stop(timeout=2)
+                    container.remove()
 
     def run(
         self,

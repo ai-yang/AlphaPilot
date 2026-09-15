@@ -92,6 +92,8 @@ class FactorBacktestResult:
     per_factor: list[dict] | None = None
     """Per-factor rows for ``single_ic`` (IC/RankIC/ICIR) and ``multi_sequential``
     (per-factor portfolio metrics); ``None`` for ``multi_combined``."""
+    experiments: list[Any] = field(default_factory=list)
+    """Every produced experiment, including all sequential evaluations."""
 
 
 @dataclass

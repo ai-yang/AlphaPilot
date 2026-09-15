@@ -10,9 +10,9 @@ from fastapi.testclient import TestClient
 from alphapilot.modules.portal.api import create_app
 
 
-EXPECTED_OPERATION_COUNT = 155
-EXPECTED_PATH_COUNT = 138
-EXPECTED_CONTRACT_SHA256 = "41d6ed2b02bd199ea8d51ff970e78bf11a9c7102bb1e59ddd13db32b6d5edfe8"
+EXPECTED_OPERATION_COUNT = 154
+EXPECTED_PATH_COUNT = 130
+EXPECTED_CONTRACT_SHA256 = "c27b28f9153b68e055e6e48efdf7b0d287287a6666f8acb7383df41b0da8fb58"
 HTTP_METHODS = {"get", "post", "put", "patch", "delete"}
 LEGACY_HTTP_OPERATIONS = {
     ("get", "/api/timing/strategies"),
@@ -89,7 +89,7 @@ def test_all_typed_operations_declare_validation_errors() -> None:
         )
         if has_typed_input:
             assert "422" in operation["responses"], item
-        assert "200" in operation["responses"], item
+        assert any(code.startswith("2") for code in operation["responses"]), item
 
 
 def test_removed_http_operations_are_absent_and_none_remain_deprecated() -> None:
@@ -124,4 +124,5 @@ def test_representative_resource_and_validation_failures_never_return_500(isolat
     ]
     for method, path, body in probes:
         response = client.request(method, path, json=body)
-        assert response.status_code in {400, 404, 422}, (method, path, response.text)
+        assert response.status_code == 410, (method, path, response.text)
+        assert response.json()["code"] == "API_REMOVED"

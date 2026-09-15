@@ -2851,6 +2851,9 @@ def create_app(
             raise HTTPException(status_code=404, detail="Logo file not found")
         return FileResponse(logo_path, media_type="image/svg+xml")
 
+    from alphapilot.research.api import install as install_research_api
+    install_research_api(app, lambda: _engine(app))
+
     static_path = Path(static_dir) if static_dir else Path(__file__).parent / "web" / "dist"
     if static_path.exists():
         assets_path = static_path / "assets"

@@ -6,6 +6,7 @@ pipeline orchestration is implemented under ``systems.data``.
 """
 
 from __future__ import annotations
+from alphapilot.research.guards import guarded
 
 from typing import TYPE_CHECKING, Any
 
@@ -30,6 +31,7 @@ class QlibDataSystem(BaseDataSystem):
         self.context = context
         self._storage = DataStorage(context.config.data)
 
+    @guarded("data", "write")
     def download(
         self,
         start_date: str | DataDownloadCommand,
@@ -62,6 +64,7 @@ class QlibDataSystem(BaseDataSystem):
         )
         return source.download(request)
 
+    @guarded("data", "write")
     def apply_adjust(self, **options: Any) -> Any:
         """Synthesize forward/backward CSVs from unadjusted bars + adjust factors.
 
@@ -79,6 +82,7 @@ class QlibDataSystem(BaseDataSystem):
             options.setdefault("output_dir", str(self._source_raw_dir(target_mode, source)))
         return self.run_action("apply_adjust", **options)
 
+    @guarded("data", "write")
     def convert(self, **options: Any) -> Any:
         if "command" in options and isinstance(options["command"], DataConvertCommand):
             command = options.pop("command")
@@ -93,6 +97,7 @@ class QlibDataSystem(BaseDataSystem):
 
         return data_pipeline.convert_data(**options)
 
+    @guarded("data", "write")
     def pipeline(self, **options: Any) -> Any:
         """Run the full download -> adjust -> convert pipeline."""
         if "command" in options and isinstance(options["command"], DataPipelineCommand):
@@ -114,6 +119,7 @@ class QlibDataSystem(BaseDataSystem):
             code_column=options.get("code_column"),
         )
 
+    @guarded("data", "write")
     def run_action(self, action: str | DataActionCommand, **options: Any) -> Any:
         """Unified dispatcher for ``alphapilot prepare_data`` actions."""
         if isinstance(action, DataActionCommand):
@@ -170,12 +176,16 @@ class QlibDataSystem(BaseDataSystem):
 
         return manage.list_symbols(adjust_mode, source=source)
 
+    @guarded("data", "write")
     def delete_symbol(
         self,
         symbol: str,
         *,
         adjust_mode: Any = None,
         source: str | None = None,
+        raw_dir: str | None = None,
+        qlib_dir: str | None = None,
+        factor_dir: str | None = None,
         remove_factor: bool = True,
         remove_qlib_features: bool = True,
         remove_from_instruments: bool = True,
@@ -185,10 +195,11 @@ class QlibDataSystem(BaseDataSystem):
 
         report = manage.delete_symbol(
             symbol,
-            qlib_dir=self._source_qlib_dir(source),
-            factor_dir=self._source_factor_dir(source),
+            qlib_dir=qlib_dir or self._source_qlib_dir(source),
+            factor_dir=factor_dir or self._source_factor_dir(source),
             adjust_modes=adjust_mode,
             source=source,
+            raw_dirs={m: raw_dir for m in manage.resolve_adjust_modes(adjust_mode)} if raw_dir else None,
             remove_factor=remove_factor,
             remove_qlib_features=remove_qlib_features,
             remove_from_instruments=remove_from_instruments,
@@ -197,6 +208,7 @@ class QlibDataSystem(BaseDataSystem):
         self._warn_h5_stale(report)
         return report
 
+    @guarded("data", "write")
     def apply_adjust_symbol(
         self,
         symbol: str,
@@ -220,12 +232,16 @@ class QlibDataSystem(BaseDataSystem):
             dry_run=dry_run,
         )
 
+    @guarded("data", "write")
     def trim_symbol(
         self,
         symbol: str,
         *,
         adjust_mode: Any = None,
         source: str | None = None,
+        raw_dir: str | None = None,
+        qlib_dir: str | None = None,
+        freq: str = "day",
         start: str | None = None,
         end: str | None = None,
         drop_dates: Any = None,
@@ -239,6 +255,7 @@ class QlibDataSystem(BaseDataSystem):
             symbol,
             adjust_modes=adjust_mode,
             source=source,
+            raw_dirs={m: raw_dir for m in manage.resolve_adjust_modes(adjust_mode)} if raw_dir else None,
             start=start,
             end=end,
             drop_dates=drop_dates,
@@ -247,20 +264,25 @@ class QlibDataSystem(BaseDataSystem):
         if resync_qlib:
             report["resync"] = manage.resync_symbol_to_qlib(
                 symbol,
-                raw_dir=self._source_raw_dir(qlib_adjust_mode, source),
-                qlib_dir=self._source_qlib_dir(source),
+                raw_dir=raw_dir or self._source_raw_dir(qlib_adjust_mode, source),
+                qlib_dir=qlib_dir or self._source_qlib_dir(source),
                 op="trim",
                 dry_run=dry_run,
+                freq=freq,
             )
         self._warn_h5_stale(report)
         return report
 
+    @guarded("data", "write")
     def refresh_symbol(
         self,
         symbol: str,
         *,
         adjust_mode: Any = None,
         source: str | None = None,
+        raw_dir: str | None = None,
+        qlib_dir: str | None = None,
+        freq: str = "day",
         start_date: str = "2016-12-31",
         end_date: str | None = None,
         resync_qlib: bool = True,
@@ -278,6 +300,8 @@ class QlibDataSystem(BaseDataSystem):
                 symbols=[symbol],
                 adjust_mode=mode,
                 source=source,
+                **({"output_dir": raw_dir} if raw_dir else {}),
+                freq=freq,
                 **options,
             )
         report: dict[str, Any] = {
@@ -290,9 +314,10 @@ class QlibDataSystem(BaseDataSystem):
         if resync_qlib:
             report["resync"] = manage.resync_symbol_to_qlib(
                 symbol,
-                raw_dir=self._source_raw_dir(qlib_adjust_mode, source),
-                qlib_dir=self._source_qlib_dir(source),
+                raw_dir=raw_dir or self._source_raw_dir(qlib_adjust_mode, source),
+                qlib_dir=qlib_dir or self._source_qlib_dir(source),
                 op="refresh",
+                freq=freq,
             )
         self._warn_h5_stale(report)
         return report

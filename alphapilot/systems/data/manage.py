@@ -255,6 +255,7 @@ def delete_symbol(
     factor_dir: str | Path | None = None,
     adjust_modes: str | Iterable[str] | None = None,
     source: str | None = None,
+    raw_dirs: dict[str, str | Path] | None = None,
     remove_factor: bool = True,
     remove_qlib_features: bool = True,
     remove_from_instruments: bool = True,
@@ -280,7 +281,7 @@ def delete_symbol(
     }
 
     for mode in _resolve_adjust_modes(adjust_modes):
-        root = _raw_dir(mode, source)
+        root = Path(raw_dirs[mode]).expanduser() if raw_dirs and mode in raw_dirs else _raw_dir(mode, source)
         _safe_unlink(root / f"{stem}.csv", root, report, dry_run=dry_run)
 
     if remove_factor:
@@ -373,6 +374,7 @@ def trim_symbol(
     *,
     adjust_modes: str | Iterable[str] | None = None,
     source: str | None = None,
+    raw_dirs: dict[str, str | Path] | None = None,
     start: str | None = None,
     end: str | None = None,
     drop_dates: str | Iterable[str] | None = None,
@@ -401,7 +403,7 @@ def trim_symbol(
     }
 
     for mode in _resolve_adjust_modes(adjust_modes):
-        root = _raw_dir(mode, source)
+        root = Path(raw_dirs[mode]).expanduser() if raw_dirs and mode in raw_dirs else _raw_dir(mode, source)
         csv = root / f"{stem}.csv"
         if not csv.is_file():
             report["modes"][mode] = {"status": "missing"}
@@ -450,6 +452,7 @@ def resync_symbol_to_qlib(
     op: str = "trim",
     include_fields: str = DEFAULT_INCLUDE_FIELDS,
     dry_run: bool = False,
+    freq: str = "day",
 ) -> dict[str, Any]:
     """Re-dump a single symbol's Qlib binary from its (edited) CSV under *raw_dir*.
 
@@ -475,7 +478,7 @@ def resync_symbol_to_qlib(
         )
 
     all_txt = _instruments_dir(qlib_dir) / "all.txt"
-    day_txt = qlib_dir / "calendars" / "day.txt"
+    day_txt = qlib_dir / "calendars" / f"{freq}.txt"
     if not all_txt.is_file() or not day_txt.is_file():
         raise FileNotFoundError(
             f"缺少 {all_txt} 或 {day_txt}，无法对单只股票增量 dump。"
@@ -505,6 +508,7 @@ def resync_symbol_to_qlib(
             date_field_name="date",
             symbol_field_name="code",
             max_workers=1,
+            freq=freq,
         )
         dumper.dump()
 

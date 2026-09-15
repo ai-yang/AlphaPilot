@@ -4,6 +4,7 @@ Run backtests directly from saved strategy assets in strategy_zoo.
 """
 
 from __future__ import annotations
+from alphapilot.research.guards import guarded
 
 import json
 from typing import TYPE_CHECKING, Any, Callable
@@ -100,6 +101,7 @@ class StrategyBacktestModule(BaseModule):
         )
         return summary
 
+    @guarded("strategy", "write")
     def strategy_backtest(
         self,
         strategy_name: str,
@@ -141,6 +143,7 @@ class StrategyBacktestModule(BaseModule):
                 "saved_strategy_name": o.details.get("saved_strategy_name"),
                 "model_hash": o.details.get("model_hash"),
                 "factor_data_fingerprint": o.details.get("factor_data_fingerprint"),
+                "error": o.details.get("error"),
             }
             rows.append(row)
             print(

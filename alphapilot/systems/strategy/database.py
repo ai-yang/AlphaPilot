@@ -164,7 +164,8 @@ class FileStrategyParamDatabase(BaseStrategyParamDatabase):
                     dst_dir = sdir / "artifacts"
                     dst_dir.mkdir(parents=True, exist_ok=True)
                     dst = dst_dir / src.name
-                    shutil.copy2(src, dst)
+                    if src.resolve() != dst.resolve():
+                        shutil.copy2(src, dst)
                     model["trained_artifact_uri"] = str(dst)
 
         self._copy_qlib_template_snapshot(
@@ -173,16 +174,13 @@ class FileStrategyParamDatabase(BaseStrategyParamDatabase):
             artifact_uri_hint=original_artifact_uri if isinstance(original_artifact_uri, str) else None,
         )
 
-        with (sdir / "factors.json").open("w", encoding="utf-8") as f:
-            json.dump({"factor_formulas": record_dict.get("factor_formulas", [])}, f, ensure_ascii=False, indent=2)
-        with (sdir / "model.json").open("w", encoding="utf-8") as f:
-            json.dump({"model": record_dict.get("model")}, f, ensure_ascii=False, indent=2)
-        with (sdir / "metrics.json").open("w", encoding="utf-8") as f:
-            json.dump({"metrics": record_dict.get("metrics")}, f, ensure_ascii=False, indent=2)
-        with (sdir / "metadata.json").open("w", encoding="utf-8") as f:
-            json.dump({"metadata": record_dict.get("metadata", {})}, f, ensure_ascii=False, indent=2)
-        with self._record_path(record.strategy_name).open("w", encoding="utf-8") as f:
-            json.dump(record_dict, f, ensure_ascii=False, indent=2)
+        from alphapilot.research.common import atomic_json
+        for name, value in {"factors": {"factor_formulas": record_dict.get("factor_formulas", [])},
+                            "model": {"model": record_dict.get("model")}, "metrics": {"metrics": record_dict.get("metrics")},
+                            "metadata": {"metadata": record_dict.get("metadata", {})}}.items():
+            atomic_json(sdir / (name + ".json"), value)
+        # Canonical record is published last; readers never see truncated JSON.
+        atomic_json(self._record_path(record.strategy_name), record_dict)
 
     def load_record(self, strategy_name: str) -> StrategyRecord | None:
         data = self.load(strategy_name)
@@ -204,8 +202,8 @@ class FileStrategyParamDatabase(BaseStrategyParamDatabase):
         self.param_dir.mkdir(parents=True, exist_ok=True)
         sdir = self._strategy_dir(strategy_name)
         sdir.mkdir(parents=True, exist_ok=True)
-        with self._record_path(strategy_name).open("w", encoding="utf-8") as f:
-            json.dump(params, f, ensure_ascii=False, indent=2)
+        from alphapilot.research.common import atomic_json
+        atomic_json(self._record_path(strategy_name), params)
 
     def load(self, strategy_name: str) -> dict[str, Any] | None:
         path = self._record_path(strategy_name)

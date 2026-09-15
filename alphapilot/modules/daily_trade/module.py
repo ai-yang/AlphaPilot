@@ -6,6 +6,7 @@ qlib one-day rebalance) via ``systems/backtest/live``.
 """
 
 from __future__ import annotations
+from alphapilot.research.guards import guarded
 
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
@@ -110,6 +111,7 @@ class DailyTradeModule(BaseModule):
     def setup(self, context: "Context") -> None:
         self.context = context
 
+    @guarded("signal_session", "write")
     def daily_signals(
         self,
         strategy_name: str | None = None,
@@ -157,9 +159,10 @@ class DailyTradeModule(BaseModule):
             trade_unit=trade_unit,
             use_local=self.context.config.backtest.use_local,
         )
-        summary = summarize(generate_daily_signal(self.context, request))
+        result = generate_daily_signal(self.context, request, persist_state=not bool(session))
+        summary = summarize(result)
         if session:
-            live_session.append_history(session, summary)
+            summary = live_session.commit_day(session, result.new_state, summary)
         return summary
 
     # --- trade sessions (self-contained, resumable daily-trade accounts) ----------

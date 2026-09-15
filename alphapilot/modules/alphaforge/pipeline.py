@@ -7,6 +7,7 @@ downstream of here speaks alphapilot's native factor language only.
 """
 
 from __future__ import annotations
+from alphapilot.research.guards import guarded
 
 import hashlib
 import json
@@ -28,6 +29,7 @@ def _ranked(exprs: Sequence[Any], scores: Sequence[float] | None) -> list[tuple[
     return paired
 
 
+@guarded("factor", "write")
 def emit_factors(
     context: "Context",
     exprs: Sequence[Any],
@@ -45,6 +47,7 @@ def emit_factors(
     rejected/untranslatable details, and backtest metrics when requested.
     """
     factor_sys = context.factor()
+    factor_sys.database.reload()
     run_id = time.strftime("%m%d%H%M%S") + f"_{time.time_ns() % 1_000_000:06d}"
 
     accepted: list[dict[str, Any]] = []

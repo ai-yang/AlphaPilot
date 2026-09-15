@@ -5,6 +5,7 @@ Owns factor evaluation pipelines, experiment execution, and qlib workspace runs.
 """
 
 from __future__ import annotations
+from alphapilot.research.guards import guarded
 
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -38,11 +39,13 @@ class QlibBacktestSystem(BaseBacktestSystem):
             return use_local
         return self.context.config.backtest.use_local
 
+    @guarded("data", "read")
     def run_factor_evaluation(self, request: FactorBacktestRequest) -> FactorBacktestResult:
         from alphapilot.systems.backtest.pipelines.factor_evaluation import run_factor_evaluation
 
         return run_factor_evaluation(self.context, request)
 
+    @guarded("data", "read")
     def run_saved_model_evaluation(self, request: SavedModelBacktestRequest) -> FactorBacktestResult:
         from alphapilot.systems.backtest.pipelines.saved_model_evaluation import (
             run_saved_model_evaluation,
@@ -65,6 +68,7 @@ class QlibBacktestSystem(BaseBacktestSystem):
             )
         return self.run_factor_experiment(request)
 
+    @guarded("data", "read")
     def run_factor_experiment(self, request: FactorExperimentBacktestRequest) -> Any:
         from alphapilot.core.pickle_cache import pickle_cache_scope
         from alphapilot.systems.backtest.qlib_config import resolve_qlib_config_name
@@ -89,6 +93,8 @@ class QlibBacktestSystem(BaseBacktestSystem):
         ):
             exp = runner.develop(request.experiment, **develop_kwargs)
         exp.qlib_config_name = resolve_qlib_config_name(exp)
+        from alphapilot.research.artifacts import record_experiment
+        record_experiment(exp, getattr(exp, "result", None))
         return exp
 
     def test_model(
@@ -106,16 +112,20 @@ class QlibBacktestSystem(BaseBacktestSystem):
             )
         return self.run_model_experiment(request)
 
+    @guarded("data", "read")
     def run_model_experiment(self, request: ModelExperimentBacktestRequest) -> Any:
         from alphapilot.systems.backtest.runners.model_runner import QlibModelRunner
 
         scen = getattr(request.experiment, "scen", None)
         runner = QlibModelRunner(scen)
-        return runner.develop(
+        experiment = runner.develop(
             request.experiment,
             use_local=self._use_local(request.use_local),
             run_env=request.run_env,
         )
+        from alphapilot.research.artifacts import record_experiment
+        record_experiment(experiment, getattr(experiment, "result", None))
+        return experiment
 
     def run_workspace(
         self,

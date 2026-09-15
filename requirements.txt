@@ -4,6 +4,7 @@ python-multipart
 
 python-Levenshtein
 filelock
+psutil>=5.9
 loguru
 fire
 fuzzywuzzy

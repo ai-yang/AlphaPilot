@@ -90,9 +90,10 @@ class RunWorkspace:
     _manifest: dict[str, Any] = field(default_factory=dict, repr=False)
 
     def _flush(self) -> None:
-        self.manifest_path.write_text(
-            json.dumps(self._manifest, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
-        )
+        from alphapilot.research.common import atomic_json
+        from alphapilot.research.artifacts import record_run
+        atomic_json(self.manifest_path, self._manifest)
+        record_run(self.run_id, self.root, self._manifest)
 
     def record(self, **kv: Any) -> None:
         self._manifest.update(kv)
@@ -134,6 +135,9 @@ def run_workspace(
     )
     rw._manifest = {
         "run_id": run_id,
+        "job_id": os.getenv("ALPHAPILOT_PORTAL_JOB_ID"),
+        "attempt": os.getenv("ALPHAPILOT_JOB_ATTEMPT"),
+        "parent_run_id": current_run().run_id if current_run() else None,
         "command": command,
         "market": market,
         "scenario": scenario,
@@ -143,6 +147,11 @@ def run_workspace(
         "created_at": _now_iso(),
         "status": "running",
     }
+    parent = current_run()
+    if parent:
+        for field in ("normalized_input", "dataset_revision", "session_at_start"):
+            if field in parent._manifest:
+                rw._manifest[field] = parent._manifest[field]
     rw._flush()
     if factor_data_ctx is not None:
         rw.attach_factor_data(factor_data_ctx)
@@ -171,6 +180,19 @@ def run_workspace(
         if trace_path and Path(trace_path).exists():
             _safe_symlink(Path(trace_path), root / "logs", is_dir=True)
             rw._manifest["log_trace_path"] = str(trace_path)
+            if "min" in command:
+                rw._manifest["session_path"] = str(trace_path)
+                from alphapilot.research.artifacts import ArtifactService, publish_logs
+                from alphapilot.research.store import Store
+                artifacts = ArtifactService(Store())
+                def emit_log(value, kind, path=None):
+                    return artifacts.register(path, kind=kind, run_id=rw.run_id,
+                                              job_id=os.getenv("ALPHAPILOT_PORTAL_JOB_ID"),
+                                              attempt=os.getenv("ALPHAPILOT_JOB_ATTEMPT"))
+                try:
+                    publish_logs(Path(trace_path), emit_log)
+                except Exception as exc:
+                    rw._manifest["log_artifact_error"] = {"code": "LOG_ARTIFACT_UNAVAILABLE", "message": str(exc)}
         rw._manifest["status"] = status
         rw._manifest["finished_at"] = _now_iso()
         rw._flush()

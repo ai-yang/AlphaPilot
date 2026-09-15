@@ -80,6 +80,7 @@ def session_exists(name: str, *, root: Path | str | None = None) -> bool:
 # Manifest IO
 # --------------------------------------------------------------------------- #
 def _read_manifest(sdir: Path) -> dict[str, Any]:
+    recover_commit(sdir)
     return json.loads(_manifest_path(sdir).read_text(encoding="utf-8"))
 
 
@@ -93,6 +94,35 @@ def _write_manifest(sdir: Path, manifest: dict[str, Any]) -> None:
 # --------------------------------------------------------------------------- #
 # Create / resolve
 # --------------------------------------------------------------------------- #
+def _session_guard(mode):
+    """CLI and HTTP session operations share the workspace resource lock."""
+    import functools
+    import inspect
+    def decorate(fn):
+        signature = inspect.signature(fn)
+        @functools.wraps(fn)
+        def wrapped(*args, **kwargs):
+            from alphapilot.research.execution import ResourceLockService, resource_path
+            from alphapilot.research.store import Store
+            values = signature.bind_partial(*args, **kwargs).arguments
+            root = _root(values.get("root"))
+            name = values.get("name") or values.get("strategy_name")
+            directory = session_dir(name, root=root) if name else root
+            if mode == "read":
+                # Readers observe the last committed state while a task computes.
+                # Only the short multi-file publication blocks these reads.
+                from filelock import FileLock
+                if directory.exists() and name:
+                    with FileLock(str(directory / ".commit.lock"), is_singleton=True):
+                        return fn(*args, **kwargs)
+                return fn(*args, **kwargs)
+            with ResourceLockService(Store()).hold([{"resource": resource_path(directory), "mode": mode}]):
+                return fn(*args, **kwargs)
+        return wrapped
+    return decorate
+
+
+@_session_guard("write")
 def create_session(
     context: "Context",
     *,
@@ -168,6 +198,7 @@ class ResolvedSessionStrategy:
     market: str | None
 
 
+@_session_guard("read")
 def resolve_session_strategy(name: str, *, root: Path | str | None = None) -> ResolvedSessionStrategy:
     """Load the session's strategy snapshot into the inputs ``generate_daily_signal`` needs."""
     from alphapilot.systems.backtest.live.service import _write_factor_csv_from_formulas
@@ -211,6 +242,7 @@ def current_date(name: str, *, root: Path | str | None = None) -> str | None:
     return _read_manifest(sdir).get("current_date")
 
 
+@_session_guard("write")
 def append_history(name: str, summary: dict[str, Any], *, root: Path | str | None = None) -> Path:
     """Persist a day's full result + a compact log line; advance the manifest's ``current_date``."""
     sdir = session_dir(name, root=root)
@@ -268,10 +300,12 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return out
 
 
+@_session_guard("read")
 def read_log(name: str, *, root: Path | str | None = None) -> list[dict[str, Any]]:
     return _read_jsonl(session_dir(name, root=root) / "daily_log.jsonl")
 
 
+@_session_guard("read")
 def read_history_day(name: str, date: str, *, root: Path | str | None = None) -> dict[str, Any] | None:
     path = session_dir(name, root=root) / "history" / f"{date}.json"
     if not path.exists():
@@ -282,6 +316,7 @@ def read_history_day(name: str, date: str, *, root: Path | str | None = None) ->
 # --------------------------------------------------------------------------- #
 # Cash flow (simulated deposit / withdrawal)
 # --------------------------------------------------------------------------- #
+@_session_guard("write")
 def adjust_cash(
     name: str,
     delta: float,
@@ -303,9 +338,10 @@ def adjust_cash(
         delta = float(delta)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Invalid cash amount: {delta!r}") from exc
-    if delta == 0:
+    if not __import__("math").isfinite(delta) or delta == 0:
         raise ValueError("Cash adjustment amount must be non-zero")
 
+    recover_commit(sdir)
     spath = state_path_for(name, root=root)
     state = load_state(spath)
     if state is None:
@@ -319,7 +355,6 @@ def adjust_cash(
             f"现金不足,无法转出:当前 {prev_cash:.2f},转出 {abs(delta):.2f} 后将为负。"
         )
     state.cash = new_cash
-    save_state(state, spath)
 
     entry = {
         "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -328,12 +363,12 @@ def adjust_cash(
         "balance_after": new_cash,
         "note": note or "",
     }
-    with (sdir / "cashflows.jsonl").open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
-
     manifest = _read_manifest(sdir)
     manifest["updated_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
-    _write_manifest(sdir, manifest)
+    from dataclasses import asdict
+    existing = (sdir / "cashflows.jsonl").read_text() if (sdir / "cashflows.jsonl").exists() else ""
+    commit_files(sdir, {"state.json": asdict(state), "session.json": manifest,
+                        "cashflows.jsonl": existing + json.dumps(entry, ensure_ascii=False) + "\n"})
 
     logger.info(f"[trade_session] {name!r} cash {prev_cash:.2f} -> {new_cash:.2f} (delta {delta:+.2f})")
     return {"previous_cash": prev_cash, "new_cash": new_cash, "delta": delta}
@@ -343,9 +378,77 @@ def read_cashflows(name: str, *, root: Path | str | None = None) -> list[dict[st
     return _read_jsonl(session_dir(name, root=root) / "cashflows.jsonl")
 
 
+def recover_commit(sdir: Path, *, lock=None) -> None:
+    """Replay a durable session transaction after interruption (idempotent)."""
+    from filelock import FileLock
+    from alphapilot.research.common import atomic_json
+    journal = sdir / ".commit.json"
+    if not journal.is_file():
+        return
+    with lock or FileLock(str(sdir / ".commit.lock"), is_singleton=True):
+        if not journal.is_file():
+            return
+        changes = json.loads(journal.read_text())
+        for relative, content in changes.items():
+            target = (sdir / relative).resolve()
+            if sdir.resolve() not in target.parents:
+                raise ValueError("Invalid session transaction path")
+            if isinstance(content, str):
+                import uuid
+                temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                temporary.write_text(content, encoding="utf-8")
+                temporary.replace(target)
+            else:
+                atomic_json(target, content)
+        journal.unlink()
+
+
+def commit_files(sdir: Path, changes: dict) -> None:
+    from filelock import FileLock
+    from alphapilot.research.common import atomic_json
+    # Re-entrant FileLock instance: recovery runs under the same process lock.
+    lock = FileLock(str(sdir / ".commit.lock"), is_singleton=True)
+    with lock:
+        recover_commit(sdir, lock=lock)
+        atomic_json(sdir / ".commit.json", changes)
+        recover_commit(sdir, lock=lock)
+
+
+@_session_guard("write")
+def commit_day(name: str, state, summary: dict, *, root=None) -> dict:
+    from dataclasses import asdict
+    sdir = session_dir(name, root=root)
+    manifest = _read_manifest(sdir)
+    day = str(summary["date"])
+    datetime.strptime(day, "%Y-%m-%d")
+    previous = read_history_day(name, day, root=root)
+    if previous:
+        return previous
+    if manifest.get("current_date") and day <= manifest["current_date"]:
+        raise ValueError("A signal session must advance to a later trading date")
+    summary = dict(summary)
+    summary["info"] = {**summary.get("info", {}), "state_persisted": True}
+    trades = summary.get("trades", [])
+    metrics = summary.get("metrics", {})
+    log_entry = {"date": day, "n_trades": len(trades),
+                 "n_buy": sum(t.get("status_label") == "买入" for t in trades),
+                 "n_sell": sum(t.get("status_label") == "卖出" for t in trades),
+                 "cash": summary.get("new_cash"), "n_positions": summary.get("n_positions"),
+                 **{key: metrics.get(key) for key in ("nav", "ret", "cost", "turnover")}}
+    log_path = sdir / "daily_log.jsonl"
+    log = log_path.read_text() if log_path.exists() else ""
+    manifest.update(current_date=day, status="running", updated_at=datetime.now().astimezone().isoformat())
+    commit_files(sdir, {"state.json": asdict(state), f"history/{day}.json": summary,
+                        "daily_log.jsonl": log + json.dumps(log_entry, ensure_ascii=False) + "\n",
+                        "session.json": manifest})
+    return summary
+
+
 # --------------------------------------------------------------------------- #
 # List / load / delete
 # --------------------------------------------------------------------------- #
+@_session_guard("read")
 def list_sessions(*, root: Path | str | None = None) -> list[dict[str, Any]]:
     base = _root(root)
     if not base.is_dir():
@@ -362,6 +465,7 @@ def list_sessions(*, root: Path | str | None = None) -> list[dict[str, Any]]:
     return out
 
 
+@_session_guard("read")
 def load_session(name: str, *, root: Path | str | None = None, history_limit: int = 60) -> dict[str, Any]:
     """Manifest + current portfolio state + recent compact history for a session."""
     sdir = session_dir(name, root=root)
@@ -383,6 +487,7 @@ def load_session(name: str, *, root: Path | str | None = None, history_limit: in
     return {"manifest": manifest, "state": state, "history": log, "cashflows": cashflows}
 
 
+@_session_guard("write")
 def delete_session(name: str, *, root: Path | str | None = None) -> bool:
     base = _root(root)
     sdir = session_dir(name, root=root)

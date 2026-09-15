@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from alphapilot.modules.portal import jobs
+from alphapilot.research.models import JOB_ADAPTER
 from alphapilot.systems.notify import fsbrowse
 from alphapilot.systems.notify.config import (
     load_notify_config,
@@ -30,7 +30,7 @@ from alphapilot.systems.notify.inbound import (
     redeem_pair_code,
 )
 
-SAFE_JOB_KINDS = set(jobs.VALID_KINDS)
+SAFE_JOB_KINDS = {"mine", "mine_aff", "mine_gp", "mine_rl", "factor_backtest", "strategy_backtest", "data", "daily_signals", "report_factor_extract"}
 QUERY_ACTIONS = {"help", "jobs", "status", "log", "result"}
 FILE_ACTIONS = {"fs_ls", "fs_cat", "fs_tree", "fs_get"}
 PENDING_TTL_MINUTES = 30
@@ -374,42 +374,17 @@ def _execute_fs(action: PlannedAction, message: InboundMessage) -> InboundReply:
     raise CommandError(f"不支持的文件动作：{action.action}")
 
 
-def execute_action(action: PlannedAction, message: InboundMessage) -> InboundReply:
+def execute_action(action: PlannedAction, message: InboundMessage, actor=None) -> InboundReply:
     if action.action == "help":
         return InboundReply(text=help_text())
+    if actor is not None and (action.action == "pair" or action.action in FILE_ACTIONS):
+        raise CommandError("Research credentials cannot perform filesystem or pairing operations")
     if action.action == "pair":
         return _execute_pair(action, message)
     if action.action in FILE_ACTIONS:
         return _execute_fs(action, message)
-    if action.action == "jobs":
-        rows = jobs.list_jobs()[:8]
-        text = "\n".join(_format_job(row) for row in rows) if rows else "暂无任务"
-        return InboundReply(text=text)
-    if action.action == "status":
-        if action.job_id:
-            return InboundReply(text=json.dumps(jobs.get_job(action.job_id), ensure_ascii=False, indent=2)[:3500])
-        rows = jobs.list_jobs()[:5]
-        text = "\n".join(_format_job(row) for row in rows) if rows else "暂无任务"
-        return InboundReply(text=text)
-    if action.action == "log":
-        assert action.job_id
-        return InboundReply(text=jobs.read_log_tail(action.job_id, max_chars=3500) or "日志为空")
-    if action.action == "result":
-        assert action.job_id
-        result = jobs.read_result(action.job_id)
-        return InboundReply(text=json.dumps(result or {"result": None}, ensure_ascii=False, indent=2)[:3500])
-    if action.action == "cancel":
-        assert action.job_id
-        job = jobs.cancel_job(action.job_id)
-        return InboundReply(text=f"已取消：{_format_job(job)}")
-    if action.action == "start_job":
-        if not action.job_kind:
-            raise CommandError("缺少 job kind")
-        if action.job_kind not in SAFE_JOB_KINDS:
-            raise CommandError(f"不支持的 job kind：{action.job_kind}")
-        job = jobs.start_job(action.job_kind, action.kwargs or {})
-        return InboundReply(text=f"已启动 job：{_format_job(job)}", data={"job": job})
-    raise CommandError(f"不支持的动作：{action.action}")
+    from alphapilot.research.channels import execute_action as execute_research_action
+    return execute_research_action(action, message, actor)
 
 
 def _history_preamble(history: list[dict[str, Any]] | None) -> str:
@@ -434,12 +409,19 @@ def plan_natural_language(
     *,
     history: list[dict[str, Any]] | None = None,
     llm_factory: Callable[[], Any] | None = None,
+    actor: Any = None,
 ) -> PlannedAction:
     system_prompt = (
         "You convert a user request into one AlphaPilot portal action. "
         "Return JSON only with keys: action, job_kind, kwargs, job_id, summary, risk_level, requires_confirmation. "
         "Allowed actions: start_job, jobs, status, log, result, cancel. "
         f"Allowed job_kind values: {sorted(SAFE_JOB_KINDS)}. "
+        "Job kwargs use the v1 envelope: {input: {...}, budget: {timeout_seconds: 3600}}. "
+        "Use registered dataset_id, stock_pool_id, template_id and strategy_id; never generate local paths. "
+        "mine input requires max_steps, mine_aff requires max_loops; all budgets are finite. "
+        "factor_backtest input requires factor_source: {type: library, factor_ids: [...]} or "
+        "{type: inline, factors: [{name: ..., expression: ...}]}, and mode single_ic, multi_combined or multi_sequential. "
+        "daily_signals requires date and explicit preview or advance; advance requires session_id. "
         "Use the recent conversation only to resolve references in the current request. "
         "Do not invent required parameters. If insufficient info, use action=status and summary describing missing fields. "
         "Natural language actions that start/cancel tasks must set requires_confirmation=true."
@@ -501,6 +483,7 @@ def dispatch_text(
     raw: dict[str, Any] | None = None,
     enforce_auth: bool = False,
     llm_factory: Callable[[], Any] | None = None,
+    actor: Any = None,
 ) -> dict[str, Any]:
     cfg = load_notify_config()
     message = InboundMessage(
@@ -556,7 +539,7 @@ def dispatch_text(
                 data={"pending": pending},
             )
         else:
-            reply = execute_action(action, message)
+            reply = execute_action(action, message, actor)
         event.update({"action": action.to_dict(), "reply": reply.text, "ok": True, "data": reply.data})
         append_event(event)
         append_turn(channel, chat_id, {"text": text, "reply": reply.text, "action": action.to_dict(), "ok": True})
@@ -565,6 +548,11 @@ def dispatch_text(
         event.update({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
         append_event(event)
         append_turn(channel, chat_id, {"text": text, "reply": f"错误：{exc}", "ok": False})
+        if actor is not None:
+            from alphapilot.research.common import ResearchError
+            if isinstance(exc, ResearchError):
+                raise
+            raise ResearchError("COMMAND_REJECTED", str(exc), 422) from exc
         return {"ok": False, "reply": f"错误：{exc}", "error": f"{type(exc).__name__}: {exc}"}
 
 

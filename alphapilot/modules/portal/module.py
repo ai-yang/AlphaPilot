@@ -77,30 +77,26 @@ class PortalModule(BaseModule):
 
     @staticmethod
     def _autostart_scheduler() -> None:
-        """Start the scheduler daemon on portal launch so saved schedules fire.
-
-        Without this the daemon only ran when a user manually pressed *Start*, so
-        schedules silently never triggered after a restart. Best-effort and only
-        when at least one schedule is enabled; ``start_daemon`` itself no-ops if a
-        healthy daemon is already running.
-        """
+        """Recover durable jobs and schedules independently of the HTTP process."""
         try:
-            from alphapilot.modules.portal.schedules import list_schedules, start_daemon
-
-            if any(s.get("enabled", True) for s in list_schedules()):
-                status = start_daemon()
-                state = "running" if status.get("running") else "not running"
-                print(f"[portal] scheduler daemon auto-start: {state} (pid={status.get('pid')})")
+            from alphapilot.research.runtime import ensure_running
+            from alphapilot.research.store import Store
+            if os.getenv("ALPHAPILOT_RESEARCH_AUTOSTART", "1") != "0":
+                ensure_running(Store())
         except Exception as exc:  # noqa: BLE001 - never let the daemon block the portal
             print(f"[portal] scheduler daemon auto-start skipped: {type(exc).__name__}: {exc}")
 
     def scheduler(self, interval: int = 30) -> None:
-        """Run the daily task scheduler daemon (auto-fires saved data/mine/backtest schedules)."""
-        from alphapilot.modules.portal.schedules import run_scheduler_loop
-        from alphapilot.modules.portal.settings import apply_timezone
+        """Run the unified research queue and schedule dispatcher in the foreground."""
+        from alphapilot.research.runtime import main
+        main([])
 
-        apply_timezone()  # daily firing depends on local time
-        run_scheduler_loop(interval=interval)
+    def research_migrate(self, execute: bool = False):
+        """Inspect or perform the stopped-workspace research v1 migration."""
+        from alphapilot.research.migration import migrate
+        from alphapilot.research.store import Store
+        from alphapilot.kernel import build_engine
+        return migrate(Store(), build_engine(discover=True), execute=execute)
 
     def timezone(self, tz: str | None = None) -> dict[str, Any]:
         """Show or set the AlphaPilot timezone (default Asia/Shanghai).
@@ -294,7 +290,11 @@ class PortalModule(BaseModule):
         run_daemon(channel=channel, poll_interval=poll_interval)
 
     def commands(self) -> dict[str, Callable[..., Any]]:
+        from alphapilot.research.cli import research_token, task_runtime
         return {
+            "research_token": research_token,
+            "task_runtime": task_runtime,
+            "research_migrate": self.research_migrate,
             "portal": self.portal,
             "portal_operator_auth": self.portal_operator_auth,
             "portal_restart": self.portal_restart,

@@ -5,6 +5,7 @@ existing JSON import loaders behind a single ``import_factors`` API.
 """
 
 from __future__ import annotations
+from alphapilot.research.guards import guarded
 
 from typing import TYPE_CHECKING, Any
 
@@ -54,6 +55,7 @@ class FactorSystem(BaseFactorSystem):
     def validate_expression(self, expression: str) -> FactorValidationResult:
         return self._database.validate(expression)
 
+    @guarded("factor", "write")
     def add_factor(
         self,
         factor_name: str,
@@ -136,6 +138,7 @@ class FactorSystem(BaseFactorSystem):
     def list_factors(self) -> list[dict[str, Any]]:
         return self._database.list_factors()
 
+    @guarded("factor", "write")
     def delete_factor(self, factor_name: str, *, save: bool = True) -> bool:
         removed = self._database.delete(factor_name.strip())
         if removed and save:
@@ -143,6 +146,7 @@ class FactorSystem(BaseFactorSystem):
             self._database.reload()
         return removed
 
+    @guarded("factor", "write")
     def delete_factors(
         self, factor_names: list[str], *, save: bool = True
     ) -> dict[str, list[str]]:
@@ -308,6 +312,7 @@ class FactorSystem(BaseFactorSystem):
             "similarity_threshold": similarity_threshold,
         }
 
+    @guarded("factor", "write")
     def rename_factor(
         self, factor_name: str, new_name: str, *, save: bool = True
     ) -> FactorValidationResult:

@@ -8,6 +8,7 @@ store, demonstrating cross-system orchestration via the context.
 """
 
 from __future__ import annotations
+from alphapilot.research.guards import guarded
 
 import shutil
 from pathlib import Path
@@ -35,6 +36,7 @@ class AlphaMiningModule(BaseModule):
 
     # ---- Workflows ----
 
+    @guarded("data", "read")
     def run_mining(
         self,
         path: str | None = None,
@@ -238,6 +240,7 @@ class AlphaMiningModule(BaseModule):
             return json.loads(content)
         return json.loads(text)
 
+    @guarded("data", "read")
     def run_backtest(
         self,
         path: str | None = None,
@@ -250,7 +253,7 @@ class AlphaMiningModule(BaseModule):
         yaml_params: str | None = None,
         market: str | None = None,
         freq: str = "day",
-    ) -> None:
+    ) -> Any:
         """Run a single-shot factor backtest from a factor CSV.
 
         ``mode``: ``multi_combined`` (default) | ``single_ic`` | ``multi_sequential``.
@@ -287,7 +290,7 @@ class AlphaMiningModule(BaseModule):
             qlib_config_name=qlib_config_name,
             qlib_template_dir=qlib_template_dir,
         ):
-            self.run_factor_backtest_request(
+            return self.run_factor_backtest_request(
                 FactorBacktestRequest(
                     factor_path=factor_path,
                     scenario=scenario,

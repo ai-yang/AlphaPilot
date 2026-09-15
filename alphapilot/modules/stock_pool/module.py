@@ -7,6 +7,7 @@ they are reused as-is by the portal via ``/api/modules/run``.
 """
 
 from __future__ import annotations
+from alphapilot.research.guards import guarded
 
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -41,6 +42,7 @@ class StockPoolModule(BaseModule):
         return codes
 
     # ------------------------------------------------------------------ CRUD
+    @guarded("stock_pool", "write")
     def pool_create(
         self,
         name: str,
@@ -56,6 +58,7 @@ class StockPoolModule(BaseModule):
         codes = self._collect(symbols, stock_csv)
         return self._repo().save_pool(name, codes, description, replace=False)
 
+    @guarded("stock_pool", "write")
     def pool_save(
         self,
         name: str,
@@ -75,6 +78,7 @@ class StockPoolModule(BaseModule):
         """Show a single pool's metadata and full member list."""
         return self._repo().get_pool(name)
 
+    @guarded("stock_pool", "write")
     def pool_add(
         self,
         name: str,
@@ -85,18 +89,22 @@ class StockPoolModule(BaseModule):
         codes = self._collect(symbols, stock_csv)
         return self._repo().add_symbols(name, codes)
 
+    @guarded("stock_pool", "write")
     def pool_remove(self, name: str, symbols: Any) -> dict[str, Any]:
         """Remove one or more stocks from a pool."""
         return self._repo().remove_symbols(name, symbols)
 
+    @guarded("stock_pool", "write")
     def pool_rename(self, name: str, new_name: str) -> dict[str, Any]:
         """Rename a pool (moves both the JSON and the Qlib instruments file)."""
         return self._repo().rename_pool(name, new_name)
 
+    @guarded("stock_pool", "write")
     def pool_set_description(self, name: str, description: str) -> dict[str, Any]:
         """Update a pool's description without touching its members."""
         return self._repo().update_description(name, description)
 
+    @guarded("stock_pool", "write")
     def pool_delete(self, name: str, dry_run: bool = False) -> dict[str, Any]:
         """Delete a pool (JSON + Qlib instruments). Use ``dry_run`` to preview."""
         return self._repo().delete_pool(name, dry_run=dry_run)
