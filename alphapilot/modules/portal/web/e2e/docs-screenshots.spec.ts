@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { connectResearch } from "./research";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -37,6 +38,7 @@ test.describe("documentation screenshots", () => {
     fs.mkdirSync(outputDir, { recursive: true });
     for (const [route, filename] of pages) {
       await page.goto(route);
+      await connectResearch(page);
       await expect(page.locator(".shell")).toBeVisible();
       await expect(page.locator(".route-skeleton")).toHaveCount(0);
       await page.evaluate(() => document.fonts.ready);

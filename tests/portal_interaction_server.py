@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 import time
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 RUN_ID = os.getenv("ALPHAPILOT_PORTAL_INTERACTION_RUN_ID") or time.strftime("%Y%m%d_%H%M%S")
 QA_ROOT = Path(
     os.getenv(
@@ -58,6 +60,7 @@ def configure_environment() -> None:
             # into Playwright traces, videos, or documentation screenshots.
             "ALPHAPILOT_OPERATOR_AUTH_REQUIRED": "false",
             "ALPHAPILOT_PICKLE_CACHE_ENABLED": "false",
+            "ALPHAPILOT_RESEARCH_AUTOSTART": "0",
             "ALPHAPILOT_TIMEZONE": "Asia/Shanghai",
             "USE_LOCAL": "True",
         }
@@ -103,6 +106,32 @@ def main() -> None:
 
     static_dir = REPO_ROOT / "alphapilot" / "modules" / "portal" / "web" / "dist"
     app = create_app(static_dir=static_dir)
+    from alphapilot.modules.portal.api import _engine
+    from alphapilot.research.auth import AuthService
+    from alphapilot.research.catalog import Catalog
+    from alphapilot.research.common import SCOPES, atomic_json
+    from alphapilot.research.migration import migrate
+    from alphapilot.research.store import Store
+    engine = _engine(app)
+    # Bootstrap the disposable PAPER journal before concurrent page queries.
+    # The legacy live fixture initializes its SQLite schema lazily.
+    engine.get_module("live").live_risk_status(mode="paper", broker="paper", trade_broker="paper", quote_provider="paper")
+    store = Store()
+    migrate(store, engine, execute=True)
+    dataset = Catalog(engine).dataset("baostock_cn:day:backward")
+    provider = Path(dataset["qlib_dir"])
+    if os.getenv("ALPHAPILOT_RUN_REAL_LLM") != "1":
+        for name in ("features", "calendars", "instruments"):
+            (provider / name).mkdir(parents=True, exist_ok=True)
+        (provider / "calendars/day.txt").write_text("2026-01-05\n2026-01-06\n")
+        (provider / "instruments/all.txt").write_text("SH600000\t2026-01-05\t2026-01-06\n")
+        atomic_json(provider / ".research-revision.json", {"source": dataset["source"], "adjust_mode": dataset["adjust_mode"]})
+    credentials = {name: AuthService(store).create("browser-test-" + name, sorted(SCOPES))["token"]
+                   for name in ("gui", "external")}
+    # This endpoint exists only in the isolated test server. It issues access
+    # to disposable fixtures, never to the developer's research workspace.
+    app.add_api_route("/__test__/credentials", lambda: credentials, methods=["GET"])
+    app.router.routes.insert(0, app.router.routes.pop())
     try:
         uvicorn.run(app, host="127.0.0.1", port=int(os.getenv("ALPHAPILOT_PLAYWRIGHT_PORT", "19911")), log_level="warning")
     finally:

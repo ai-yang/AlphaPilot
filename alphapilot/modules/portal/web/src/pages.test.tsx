@@ -1,8 +1,11 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { I18nProvider } from "./i18n";
 import { klineAxisType, klineCategoryTicks, klineIsIntraday, klineTimeLabel, LibraryPage, TimingPage } from "./pages";
 import { ToastProvider } from "./toast";
+import { setResearchToken } from "./researchClient";
+import { fixtureAsset, mockResearchFetch } from "./testResearch";
+beforeEach(() => setResearchToken("apr_fixture"));
 
 vi.mock("react-plotly.js", () => ({ default: () => null }));
 
@@ -204,165 +207,67 @@ function postedJson(fetchMock: ReturnType<typeof mockTimingFetch>, path: string)
 
 afterEach(() => {
   cleanup();
+  setResearchToken("");
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
-describe("LibraryPage factor add", () => {
-  it("keeps the form and shows an error when the API rejects a duplicate factor", async () => {
-    const fetchMock = mockPortalFetch();
-    renderLibraryPage();
-
-    const nameInput = await screen.findByPlaceholderText("factor_name");
-    const expressionInput = screen.getByPlaceholderText("factor_expression");
-
-    fireEvent.change(nameInput, { target: { value: "new_factor" } });
-    fireEvent.change(expressionInput, { target: { value: "$close / $open" } });
-
-    const addPanel = nameInput.closest("aside");
-    expect(addPanel).not.toBeNull();
-    fireEvent.click(within(addPanel as HTMLElement).getByRole("button", { name: "保存" }));
-
-    await waitFor(() => {
-      expect(screen.getByText("An identical factor expression already exists in the zoo.")).toBeInTheDocument();
+describe("LibraryPage v1 assets", () => {
+  it("keeps the form when expression admission rejects a duplicate", async () => {
+    const fetch = mockResearchFetch((path, init) => {
+      if (path === "/api/v1/factors" && init?.method === "POST") return Response.json({ code: "duplicate_expression", message: "Expression already exists" }, { status: 422 });
     });
-    expect(nameInput).toHaveValue("new_factor");
-    expect(expressionInput).toHaveValue("$close / $open");
-    expect(fetchMock.mock.calls.filter(([path, init]) => String(path) === "/api/factors" && init?.method === "POST")).toHaveLength(1);
+    renderLibraryPage();
+    const aside = screen.getByRole("heading", { name: "创建资产" }).closest("aside")!;
+    const name = within(aside).getByLabelText("名称");
+    const expression = within(aside).getByLabelText("表达式");
+    fireEvent.change(name, { target: { value: "new_factor" } });
+    fireEvent.change(expression, { target: { value: "$close/$open" } });
+    fireEvent.submit(name.closest("form")!);
+    expect(await screen.findByText(/Expression already exists/)).toBeInTheDocument();
+    expect(name).toHaveValue("new_factor"); expect(expression).toHaveValue("$close/$open");
+    expect(fetch.mock.calls.filter(([p, init]) => p === "/api/v1/factors" && init?.method === "POST")).toHaveLength(1);
   });
 
-  it("reviews extracted PDF factors before explicitly committing them", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const path = String(input);
-      if (path === "/api/factors" && (!init || init.method === undefined)) {
-        return Response.json({ factors: [], categories: [], supports_categories: true });
-      }
-      if (path === "/api/strategies") return Response.json({ strategies: [], names: [] });
-      if (path === "/api/data/instrument-sets") return Response.json({ sets: [] });
-      if (path === "/api/report-factors/ocr-providers") {
-        return Response.json({
-          default_provider: "azure",
-          modes: ["auto", "local", "azure", "vendor"],
-          providers: [{ provider_id: "vendor", display_name: "Vendor OCR", source: "entry_point" }],
-        });
-      }
-      if (path === "/api/report-factors/extract" && init?.method === "POST") {
-        return Response.json({ job_id: "report-job", kind: "report_factor_extract", status: "running" });
-      }
-      if (path === "/api/jobs/report-job/progress") {
-        return Response.json({ job_id: "report-job", status: "succeeded", percent: 100, stage: "done" });
-      }
-      if (path === "/api/jobs/report-job/result") {
-        return Response.json({ result: {
-          schema_version: "1.0",
-          report: { file_name: "research.pdf", sha256: "abc", page_count: 2, parser: "pypdf", ocr_used: false, classification: { relevant: true, label: "quant_factor_research", reason: "factor study" } },
-          summary: "Momentum report",
-          warnings: [],
-          factors: [{
-            draft_id: "draft-1", factor_name: "momentum_5d", description: "five-day momentum",
-            formulation: "P_t/P_{t-5}-1", variables: { P: "close" }, factor_expression: "$close/Ref($close,5)-1",
-            source_pages: [2], evidence: ["five-day momentum"], viability: { status: "viable", reason: "daily close exists" },
-            validation: { acceptable: true, code: "ok", message: "valid" }, warnings: [],
-          }],
-        } });
-      }
-      if (path === "/api/factors/validate" && init?.method === "POST") {
-        return Response.json({ acceptable: true, code: "ok", message: "valid" });
-      }
-      if (path === "/api/report-factors/commit" && init?.method === "POST") {
-        return Response.json({ n_requested: 1, n_committed: 1, n_rejected: 0, committed: [], rejected: [] });
-      }
-      return Response.json({}, { status: 404 });
+  it("reviews extracted drafts before explicitly committing them", async () => {
+    const draft = { draft_id: "draft-1", factor_name: "momentum", factor_expression: "$close/$open", categories: [] };
+    const fetch = mockResearchFetch((path, init) => {
+      if (path === "/api/v1/jobs/report-job/result") return Response.json({ availability: "complete", summary: { factors: [draft] } });
+      if (path === "/api/v1/jobs/report-job") return Response.json({ status: "succeeded", progress: {}, run_ids: [] });
+      if (path.startsWith("/api/v1/jobs/report-job/logs")) return Response.json({ text: "", next_cursor: 0, complete: true });
+      if (path === "/api/v1/report-factors/commit") return Response.json({ imported: 1 });
     });
-    vi.stubGlobal("fetch", fetchMock);
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     renderLibraryPage();
-
-    const ocrMode = await screen.findByLabelText("OCR 模式");
-    await screen.findByRole("option", { name: "vendor" });
-    fireEvent.change(ocrMode, { target: { value: "vendor" } });
-    fireEvent.change(await screen.findByLabelText("服务器 PDF 路径"), { target: { value: "important_data/research.pdf" } });
-    fireEvent.click(screen.getByRole("button", { name: "开始提取" }));
-    const factorName = await screen.findByDisplayValue("momentum_5d");
-    const card = factorName.closest(".dup-group") as HTMLElement;
-    fireEvent.click(within(card).getByRole("checkbox"));
-    fireEvent.click(within(card).getByRole("button", { name: "校验" }));
-    await waitFor(() => expect(fetchMock.mock.calls.some(([path]) => String(path) === "/api/factors/validate")).toBe(true));
-    fireEvent.click(screen.getByRole("button", { name: "确认选中项入库" }));
-    await waitFor(() => expect(fetchMock.mock.calls.some(([path]) => String(path) === "/api/report-factors/commit")).toBe(true));
-    const commitCall = fetchMock.mock.calls.find(([path]) => String(path) === "/api/report-factors/commit");
-    expect(JSON.parse(String(commitCall?.[1]?.body))).toMatchObject({
-      job_id: "report-job",
-      factors: [{ draft_id: "draft-1", factor_name: "momentum_5d" }],
-    });
-    const extractCall = fetchMock.mock.calls.find(([path]) => String(path) === "/api/report-factors/extract");
-    expect(JSON.parse(String(extractCall?.[1]?.body))).toMatchObject({ ocr_mode: "vendor" });
-  });
-});
-
-describe("LibraryPage delete confirmations", () => {
-  it("does not delete a factor when the confirmation is cancelled", async () => {
-    const fetchMock = mockPortalFetch({
-      factors: [{ factor_name: "factor_to_delete", factor_expression: "$close" }],
-    });
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
-    renderLibraryPage();
-
-    const row = (await screen.findByText("factor_to_delete")).closest("tr");
-    expect(row).not.toBeNull();
-    fireEvent.click(within(row as HTMLElement).getByRole("button", { name: "删除" }));
-
-    expect(confirmSpy).toHaveBeenCalledWith("删除 factor_to_delete?");
-    expect(hasDeleteCall(fetchMock, "/api/factors/factor_to_delete")).toBe(false);
+    fireEvent.change(screen.getByLabelText("提取任务 ID"), { target: { value: "report-job" } });
+    fireEvent.click(screen.getByText("读取提取结果"));
+    await screen.findByDisplayValue("momentum");
+    expect(fetch.mock.calls.some(([p]) => p === "/api/v1/report-factors/commit")).toBe(false);
+    fireEvent.change(screen.getByLabelText("因子名称"), { target: { value: "reviewed" } });
+    fireEvent.click(screen.getByLabelText("选择入库"));
+    fireEvent.click(screen.getByText("保存选中因子"));
+    await waitFor(() => expect(fetch.mock.calls.some(([p]) => p === "/api/v1/report-factors/commit")).toBe(true));
+    const call = fetch.mock.calls.find(([p]) => p === "/api/v1/report-factors/commit")!;
+    expect(JSON.parse(String(call[1]?.body))).toEqual({ job_id: "report-job", factors: [{ ...draft, factor_name: "reviewed" }] });
   });
 
-  it("deletes a factor only after confirmation", async () => {
-    const fetchMock = mockPortalFetch({
-      factors: [{ factor_name: "confirmed_factor", factor_expression: "$open" }],
+  it.each(["factor", "strategy"] as const)("requires confirmation and an observed version to delete a %s", async kind => {
+    const row = fixtureAsset("confirmed_asset", kind);
+    const collection = kind === "factor" ? "factors" : "strategies";
+    const fetch = mockResearchFetch((path, init) => {
+      if (path.startsWith(`/api/v1/${collection}?`)) return Response.json({ items: [row], next_cursor: null });
+      if (init?.method === "DELETE") return Response.json({ deleted: true });
     });
-    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     renderLibraryPage();
-
-    const row = (await screen.findByText("confirmed_factor")).closest("tr");
-    expect(row).not.toBeNull();
-    fireEvent.click(within(row as HTMLElement).getByRole("button", { name: "删除" }));
-
-    await waitFor(() => {
-      expect(hasDeleteCall(fetchMock, "/api/factors/confirmed_factor")).toBe(true);
-    });
-  });
-
-  it("does not delete a strategy when the confirmation is cancelled", async () => {
-    const fetchMock = mockPortalFetch({
-      strategies: [{ strategy_name: "strategy_to_delete", metrics: {} }],
-    });
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
-    renderLibraryPage();
-
-    fireEvent.click(await screen.findByRole("button", { name: "策略" }));
-    const row = (await screen.findByText("strategy_to_delete")).closest("tr");
-    expect(row).not.toBeNull();
-    fireEvent.click(within(row as HTMLElement).getByRole("button", { name: "删除" }));
-
-    expect(confirmSpy).toHaveBeenCalledWith("删除 strategy_to_delete?");
-    expect(hasDeleteCall(fetchMock, "/api/strategies/strategy_to_delete")).toBe(false);
-  });
-
-  it("deletes a strategy only after confirmation", async () => {
-    const fetchMock = mockPortalFetch({
-      strategies: [{ strategy_name: "confirmed_strategy", metrics: {} }],
-    });
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-    renderLibraryPage();
-
-    fireEvent.click(await screen.findByRole("button", { name: "策略" }));
-    const row = (await screen.findByText("confirmed_strategy")).closest("tr");
-    expect(row).not.toBeNull();
-    fireEvent.click(within(row as HTMLElement).getByRole("button", { name: "删除" }));
-
-    await waitFor(() => {
-      expect(hasDeleteCall(fetchMock, "/api/strategies/confirmed_strategy")).toBe(true);
-    });
+    if (kind === "strategy") fireEvent.click(screen.getByText("策略库"));
+    const element = (await screen.findByText("confirmed_asset")).closest("tr")!;
+    fireEvent.click(within(element).getByText("删除"));
+    expect(fetch.mock.calls.some(([,init]) => init?.method === "DELETE")).toBe(false);
+    confirm.mockReturnValue(true); fireEvent.click(within(element).getByText("删除"));
+    await waitFor(() => expect(fetch.mock.calls.some(([,init]) => init?.method === "DELETE")).toBe(true));
+    const call = fetch.mock.calls.find(([,init]) => init?.method === "DELETE")!;
+    expect(call[0]).toBe(`/api/v1/${collection}/${row.id}`);
+    expect(new Headers(call[1]?.headers).get("If-Match")).toBe("2");
   });
 });
 

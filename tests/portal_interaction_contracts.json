@@ -1,30 +1,1088 @@
 [
-  {"id":"mining.llm.start","page":"/mining","action":"run LLM mining","method":"POST","path":"/api/jobs","request_keys":["kind","kwargs"],"states":["success","error"]},
-  {"id":"mining.session.open","page":"/mining","action":"open session","method":"GET","path":"/api/mining/sessions/{session_name}","request_keys":[],"states":["success","404","error"]},
-  {"id":"backtest.factor.start","page":"/backtest","action":"run factor backtest","method":"POST","path":"/api/jobs","request_keys":["kind","kwargs"],"states":["success","422","error"]},
-  {"id":"backtest.detail.open","page":"/backtest","action":"open result","method":"GET","path":"/api/backtests/{workspace_id}","request_keys":[],"states":["success","404","error"]},
-  {"id":"timing.preview","page":"/timing","action":"preview signal","method":"POST","path":"/api/trading/strategy-instances/{instance_id}/preview","request_keys":["strategy_name"],"states":["success","422","error"]},
-  {"id":"timing.backtest","page":"/timing","action":"run timing backtest","method":"POST","path":"/api/trading/strategy-instances/{instance_id}/backtest-runs","request_keys":["strategy_name"],"states":["success","422","error"]},
-  {"id":"factor.create","page":"/library","action":"save factor","method":"POST","path":"/api/factors","request_keys":["factor_name","factor_expression"],"states":["success","business_rejected","422"]},
-  {"id":"factor.bulk.delete","page":"/library","action":"delete selected factors","method":"POST","path":"/api/factors/bulk-delete","request_keys":["factor_names"],"states":["success","400","error"]},
-  {"id":"strategy.from.factors","page":"/library","action":"create strategy","method":"POST","path":"/api/strategies/from-factors","request_keys":["factor_names","strategy_name"],"states":["success","400","422"]},
-  {"id":"market.data.start","page":"/market","action":"start data job","method":"POST","path":"/api/jobs","request_keys":["kind","kwargs"],"states":["success","422","error"]},
-  {"id":"market.kline","page":"/market","action":"load K line","method":"GET","path":"/api/market/kline","request_keys":[],"states":["success","empty","404"]},
-  {"id":"daily.session.create","page":"/daily-trade","action":"create session","method":"POST","path":"/api/trade-sessions","request_keys":["strategy_name","overwrite"],"states":["success","400","422"]},
-  {"id":"daily.cash","page":"/daily-trade","action":"adjust cash","method":"POST","path":"/api/trade-sessions/{name}/cash","request_keys":["delta"],"states":["success","400","404"]},
-  {"id":"daily.run","page":"/daily-trade","action":"run daily trade","method":"POST","path":"/api/daily-trade","request_keys":[],"states":["success","400","422"]},
-  {"id":"job.progress","page":"shared","action":"poll progress","method":"GET","path":"/api/jobs/{job_id}/progress","request_keys":[],"states":["running","succeeded","failed","cancelled","lost"]},
-  {"id":"job.cancel","page":"shared","action":"cancel job","method":"POST","path":"/api/jobs/{job_id}/cancel","request_keys":[],"states":["success","404","conflict"]},
-  {"id":"schedule.create","page":"/scheduler","action":"create schedule","method":"POST","path":"/api/schedules","request_keys":["name","kind","time","kwargs"],"states":["success","400","422"]},
-  {"id":"schedule.run","page":"/scheduler","action":"run now","method":"POST","path":"/api/schedules/{schedule_id}/run","request_keys":[],"states":["success","404","error"]},
-  {"id":"notify.save","page":"/notifications","action":"save masked configuration","method":"PATCH","path":"/api/notify","request_keys":[],"states":["success","400","error"]},
-  {"id":"notify.plan","page":"/notifications","action":"plan natural language command","method":"POST","path":"/api/notify/commands/plan","request_keys":["text"],"states":["success","unauthorized","error"]},
-  {"id":"live.daemon.start","page":"/live","action":"start daemon","method":"POST","path":"/api/live/daemon/start","request_keys":["mode","trade_broker","quote_provider"],"states":["success","blocked","error"]},
-  {"id":"live.daemon.subscribe","page":"/live","action":"add standalone observer symbols","method":"POST","path":"/api/live/daemon/subscribe","request_keys":["symbols","wait","timeout"],"states":["accepted","awaiting_first_tick","partial_failure","error"]},
-  {"id":"live.deployment.subscribe","page":"/live","action":"add deployment observer symbols","method":"POST","path":"/api/trading/deployments/{instance_id}/observer-subscriptions","request_keys":["symbols"],"states":["accepted","awaiting_first_tick","partial_failure","error"]},
-  {"id":"live.order","page":"/live","action":"submit manual order","method":"POST","path":"/api/live/daemon/order","request_keys":["symbol","side","volume","confirm_live"],"states":["accepted","rejected","halted"]},
-  {"id":"live.target","page":"/live","action":"submit target plan","method":"POST","path":"/api/live/daemon/submit-target","request_keys":["holdings","route","confirm_live"],"states":["accepted","planned","rejected"]},
-  {"id":"live.cancel","page":"/live","action":"cancel active order","method":"POST","path":"/api/live/daemon/cancel","request_keys":["order_id"],"states":["accepted","not_found","terminal"]},
-  {"id":"advanced.cleanup","page":"/advanced","action":"preview or execute log cleanup","method":"POST","path":"/api/logs/cleanup","request_keys":["execute"],"states":["preview","executed","blocked"]},
-  {"id":"advanced.module.run","page":"/advanced","action":"run module command","method":"POST","path":"/api/modules/run","request_keys":["module","command","kwargs"],"states":["success","blocked","error"]}
+  {
+    "id": "timing.preview",
+    "page": "/timing",
+    "action": "preview signal",
+    "method": "POST",
+    "path": "/api/trading/strategy-instances/{instance_id}/preview",
+    "request_keys": [
+      "strategy_name"
+    ],
+    "states": [
+      "success",
+      "422",
+      "error"
+    ]
+  },
+  {
+    "id": "timing.backtest",
+    "page": "/timing",
+    "action": "run timing backtest",
+    "method": "POST",
+    "path": "/api/trading/strategy-instances/{instance_id}/backtest-runs",
+    "request_keys": [
+      "strategy_name"
+    ],
+    "states": [
+      "success",
+      "422",
+      "error"
+    ]
+  },
+  {
+    "id": "notify.save",
+    "page": "/notifications",
+    "action": "save masked configuration",
+    "method": "PATCH",
+    "path": "/api/notify",
+    "request_keys": [],
+    "states": [
+      "success",
+      "400",
+      "error"
+    ]
+  },
+  {
+    "id": "live.daemon.start",
+    "page": "/live",
+    "action": "start daemon",
+    "method": "POST",
+    "path": "/api/live/daemon/start",
+    "request_keys": [
+      "mode",
+      "trade_broker",
+      "quote_provider"
+    ],
+    "states": [
+      "success",
+      "blocked",
+      "error"
+    ]
+  },
+  {
+    "id": "live.daemon.subscribe",
+    "page": "/live",
+    "action": "add standalone observer symbols",
+    "method": "POST",
+    "path": "/api/live/daemon/subscribe",
+    "request_keys": [
+      "symbols",
+      "wait",
+      "timeout"
+    ],
+    "states": [
+      "accepted",
+      "awaiting_first_tick",
+      "partial_failure",
+      "error"
+    ]
+  },
+  {
+    "id": "live.deployment.subscribe",
+    "page": "/live",
+    "action": "add deployment observer symbols",
+    "method": "POST",
+    "path": "/api/trading/deployments/{instance_id}/observer-subscriptions",
+    "request_keys": [
+      "symbols"
+    ],
+    "states": [
+      "accepted",
+      "awaiting_first_tick",
+      "partial_failure",
+      "error"
+    ]
+  },
+  {
+    "id": "live.order",
+    "page": "/live",
+    "action": "submit manual order",
+    "method": "POST",
+    "path": "/api/live/daemon/order",
+    "request_keys": [
+      "symbol",
+      "side",
+      "volume",
+      "confirm_live"
+    ],
+    "states": [
+      "accepted",
+      "rejected",
+      "halted"
+    ]
+  },
+  {
+    "id": "live.target",
+    "page": "/live",
+    "action": "submit target plan",
+    "method": "POST",
+    "path": "/api/live/daemon/submit-target",
+    "request_keys": [
+      "holdings",
+      "route",
+      "confirm_live"
+    ],
+    "states": [
+      "accepted",
+      "planned",
+      "rejected"
+    ]
+  },
+  {
+    "id": "live.cancel",
+    "page": "/live",
+    "action": "cancel active order",
+    "method": "POST",
+    "path": "/api/live/daemon/cancel",
+    "request_keys": [
+      "order_id"
+    ],
+    "states": [
+      "accepted",
+      "not_found",
+      "terminal"
+    ]
+  },
+  {
+    "id": "advanced.cleanup",
+    "page": "/advanced",
+    "action": "preview or execute log cleanup",
+    "method": "POST",
+    "path": "/api/logs/cleanup",
+    "request_keys": [
+      "execute"
+    ],
+    "states": [
+      "preview",
+      "executed",
+      "blocked"
+    ]
+  },
+  {
+    "id": "advanced.module.run",
+    "page": "/advanced",
+    "action": "run module command",
+    "method": "POST",
+    "path": "/api/modules/run",
+    "request_keys": [
+      "module",
+      "command",
+      "kwargs"
+    ],
+    "states": [
+      "success",
+      "blocked",
+      "error"
+    ]
+  },
+  {
+    "id": "research_capabilities",
+    "page": "research",
+    "action": "Capabilities",
+    "method": "GET",
+    "path": "/api/v1/capabilities",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_status",
+    "page": "research",
+    "action": "Research Status",
+    "method": "GET",
+    "path": "/api/v1/status",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_datasets",
+    "page": "research",
+    "action": "Datasets",
+    "method": "GET",
+    "path": "/api/v1/datasets",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_templates",
+    "page": "research",
+    "action": "Templates",
+    "method": "GET",
+    "path": "/api/v1/templates",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_models",
+    "page": "research",
+    "action": "Models",
+    "method": "GET",
+    "path": "/api/v1/models",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_factor_dsl",
+    "page": "research",
+    "action": "Factor Dsl",
+    "method": "GET",
+    "path": "/api/v1/factor-dsl",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_submit_job",
+    "page": "research",
+    "action": "Submit Job",
+    "method": "POST",
+    "path": "/api/v1/jobs",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_list_jobs",
+    "page": "research",
+    "action": "List Jobs",
+    "method": "GET",
+    "path": "/api/v1/jobs",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_get_job",
+    "page": "research",
+    "action": "Get Job",
+    "method": "GET",
+    "path": "/api/v1/jobs/{job_id}",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_delete_job",
+    "page": "research",
+    "action": "Delete Job",
+    "method": "DELETE",
+    "path": "/api/v1/jobs/{job_id}",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_cancel_job",
+    "page": "research",
+    "action": "Cancel Job",
+    "method": "POST",
+    "path": "/api/v1/jobs/{job_id}/cancel",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_job_result",
+    "page": "research",
+    "action": "Job Result",
+    "method": "GET",
+    "path": "/api/v1/jobs/{job_id}/result",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_job_logs",
+    "page": "research",
+    "action": "Job Logs",
+    "method": "GET",
+    "path": "/api/v1/jobs/{job_id}/logs",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_validate_factors",
+    "page": "research",
+    "action": "Validate Factors",
+    "method": "POST",
+    "path": "/api/v1/factors/validate",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_factor_categories",
+    "page": "research",
+    "action": "Categories",
+    "method": "GET",
+    "path": "/api/v1/factors/categories",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_create_category",
+    "page": "research",
+    "action": "Category Create",
+    "method": "POST",
+    "path": "/api/v1/factors/categories",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_rename_category",
+    "page": "research",
+    "action": "Category Rename",
+    "method": "PATCH",
+    "path": "/api/v1/factors/categories/{name}",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_delete_category",
+    "page": "research",
+    "action": "Category Delete",
+    "method": "DELETE",
+    "path": "/api/v1/factors/categories/{name}",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_category_members",
+    "page": "research",
+    "action": "Category Members",
+    "method": "POST",
+    "path": "/api/v1/factors/categories/members",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_factor_duplicates",
+    "page": "research",
+    "action": "Duplicates",
+    "method": "GET",
+    "path": "/api/v1/factors/duplicates",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_create_factor",
+    "page": "research",
+    "action": "Create Factor",
+    "method": "POST",
+    "path": "/api/v1/factors",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_list_factors",
+    "page": "research",
+    "action": "Asset List",
+    "method": "GET",
+    "path": "/api/v1/factors",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_update_factor",
+    "page": "research",
+    "action": "Update Factor",
+    "method": "PATCH",
+    "path": "/api/v1/factors/{key}",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_get_factor",
+    "page": "research",
+    "action": "Asset Get",
+    "method": "GET",
+    "path": "/api/v1/factors/{key}",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_delete_factor",
+    "page": "research",
+    "action": "Asset Delete",
+    "method": "DELETE",
+    "path": "/api/v1/factors/{key}",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_create_strategy",
+    "page": "research",
+    "action": "Create Strategy",
+    "method": "POST",
+    "path": "/api/v1/strategies",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_list_strategies",
+    "page": "research",
+    "action": "Asset List",
+    "method": "GET",
+    "path": "/api/v1/strategies",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_update_strategy",
+    "page": "research",
+    "action": "Update Strategy",
+    "method": "PUT",
+    "path": "/api/v1/strategies/{key}",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_get_strategy",
+    "page": "research",
+    "action": "Asset Get",
+    "method": "GET",
+    "path": "/api/v1/strategies/{key}",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_delete_strategy",
+    "page": "research",
+    "action": "Asset Delete",
+    "method": "DELETE",
+    "path": "/api/v1/strategies/{key}",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_create_stock_pool",
+    "page": "research",
+    "action": "Create Pool",
+    "method": "POST",
+    "path": "/api/v1/stock-pools",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_list_stock_pools",
+    "page": "research",
+    "action": "Asset List",
+    "method": "GET",
+    "path": "/api/v1/stock-pools",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_update_stock_pool",
+    "page": "research",
+    "action": "Update Pool",
+    "method": "PATCH",
+    "path": "/api/v1/stock-pools/{key}",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_get_stock_pool",
+    "page": "research",
+    "action": "Asset Get",
+    "method": "GET",
+    "path": "/api/v1/stock-pools/{key}",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_delete_stock_pool",
+    "page": "research",
+    "action": "Asset Delete",
+    "method": "DELETE",
+    "path": "/api/v1/stock-pools/{key}",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_export_factor",
+    "page": "research",
+    "action": "Export Rows",
+    "method": "POST",
+    "path": "/api/v1/factors/export",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_import_factor",
+    "page": "research",
+    "action": "Import Rows",
+    "method": "POST",
+    "path": "/api/v1/factors/import",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_export_strategy",
+    "page": "research",
+    "action": "Export Rows",
+    "method": "POST",
+    "path": "/api/v1/strategies/export",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_import_strategy",
+    "page": "research",
+    "action": "Import Rows",
+    "method": "POST",
+    "path": "/api/v1/strategies/import",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_export_stock_pool",
+    "page": "research",
+    "action": "Export Rows",
+    "method": "POST",
+    "path": "/api/v1/stock-pools/export",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_import_stock_pool",
+    "page": "research",
+    "action": "Import Rows",
+    "method": "POST",
+    "path": "/api/v1/stock-pools/import",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_list_signal_sessions",
+    "page": "research",
+    "action": "Asset List",
+    "method": "GET",
+    "path": "/api/v1/signal-sessions",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_create_signal_session",
+    "page": "research",
+    "action": "Create Session",
+    "method": "POST",
+    "path": "/api/v1/signal-sessions",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_get_signal_session",
+    "page": "research",
+    "action": "Asset Get",
+    "method": "GET",
+    "path": "/api/v1/signal-sessions/{key}",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_delete_signal_session",
+    "page": "research",
+    "action": "Asset Delete",
+    "method": "DELETE",
+    "path": "/api/v1/signal-sessions/{key}",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_signal_cash",
+    "page": "research",
+    "action": "Cash Change",
+    "method": "POST",
+    "path": "/api/v1/signal-sessions/{key}/cash",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_signal_history",
+    "page": "research",
+    "action": "Session History",
+    "method": "GET",
+    "path": "/api/v1/signal-sessions/{key}/history",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_signal_cashflows",
+    "page": "research",
+    "action": "Session Cashflows",
+    "method": "GET",
+    "path": "/api/v1/signal-sessions/{key}/cashflows",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_list_runs",
+    "page": "research",
+    "action": "Runs",
+    "method": "GET",
+    "path": "/api/v1/runs",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_delete_run",
+    "page": "research",
+    "action": "Delete Run",
+    "method": "DELETE",
+    "path": "/api/v1/runs/{run_id}",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_get_run",
+    "page": "research",
+    "action": "Get Run",
+    "method": "GET",
+    "path": "/api/v1/runs/{run_id}",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_get_artifact",
+    "page": "research",
+    "action": "Get Artifact",
+    "method": "GET",
+    "path": "/api/v1/artifacts/{artifact_id}",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_artifact_content",
+    "page": "research",
+    "action": "Artifact Content",
+    "method": "GET",
+    "path": "/api/v1/artifacts/{artifact_id}/content",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_artifact_table",
+    "page": "research",
+    "action": "Artifact Table",
+    "method": "GET",
+    "path": "/api/v1/artifacts/{artifact_id}/table",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_artifact_series",
+    "page": "research",
+    "action": "Artifact Series",
+    "method": "GET",
+    "path": "/api/v1/artifacts/{artifact_id}/series",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_upload",
+    "page": "research",
+    "action": "Upload",
+    "method": "POST",
+    "path": "/api/v1/uploads",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_delete_upload",
+    "page": "research",
+    "action": "Delete Upload",
+    "method": "DELETE",
+    "path": "/api/v1/uploads/{key}",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_ocr_providers",
+    "page": "research",
+    "action": "Ocr Providers",
+    "method": "GET",
+    "path": "/api/v1/report-factors/ocr-providers",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_commit_report_factors",
+    "page": "research",
+    "action": "Report Commit",
+    "method": "POST",
+    "path": "/api/v1/report-factors/commit",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_list_schedules",
+    "page": "research",
+    "action": "Schedules",
+    "method": "GET",
+    "path": "/api/v1/schedules",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_create_schedule",
+    "page": "research",
+    "action": "Create Schedule",
+    "method": "POST",
+    "path": "/api/v1/schedules",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_update_schedule",
+    "page": "research",
+    "action": "Update Schedule",
+    "method": "PUT",
+    "path": "/api/v1/schedules/{key}",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_delete_schedule",
+    "page": "research",
+    "action": "Delete Schedule",
+    "method": "DELETE",
+    "path": "/api/v1/schedules/{key}",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_run_schedule",
+    "page": "research",
+    "action": "Run Schedule",
+    "method": "POST",
+    "path": "/api/v1/schedules/{key}/run",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_schedule_status",
+    "page": "research",
+    "action": "Schedule Status",
+    "method": "GET",
+    "path": "/api/v1/schedules/runtime/status",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_schedule_control",
+    "page": "research",
+    "action": "Schedule Control",
+    "method": "POST",
+    "path": "/api/v1/schedules/runtime/{action}",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_dataset_symbols",
+    "page": "research",
+    "action": "Dataset Symbols",
+    "method": "GET",
+    "path": "/api/v1/datasets/{dataset_id}/symbols",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_dataset_bars",
+    "page": "research",
+    "action": "Dataset Bars",
+    "method": "GET",
+    "path": "/api/v1/datasets/{dataset_id}/bars",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_plan_command",
+    "page": "research",
+    "action": "Command Plan",
+    "method": "POST",
+    "path": "/api/v1/commands/plan",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  },
+  {
+    "id": "research_dispatch_command",
+    "page": "research",
+    "action": "Command Dispatch",
+    "method": "POST",
+    "path": "/api/v1/commands/dispatch",
+    "request_keys": [],
+    "states": [
+      "success",
+      "validation_error",
+      "permission_denied"
+    ]
+  }
 ]

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { connectResearch } from "./research";
 
 const routes = ["/", "/mining", "/backtest", "/timing", "/library", "/market", "/daily-trade", "/live", "/scheduler", "/notifications", "/advanced"];
 
@@ -12,6 +13,7 @@ test.describe("Portal interaction contract", () => {
     });
     for (const route of routes) {
       await page.goto(route);
+      await connectResearch(page);
       await expect(page.locator(".shell")).toBeVisible();
       await expect(page.locator(".route-skeleton")).toHaveCount(0);
       await expect(page.locator("body")).toContainText("AlphaPilot");
@@ -35,8 +37,29 @@ test.describe("Portal interaction contract", () => {
 
   test("backtest artifact opens a real chart", async ({ page }) => {
     await page.goto("/backtest");
-    await page.getByRole("button", { name: /打开|Open/ }).first().click();
+    await connectResearch(page);
+    await page.getByRole("button", { name: /^legacy_backtest-/ }).first().click();
+    await page.getByRole("button", { name: /^cumulative ·/ }).click();
     await expect(page.locator(".js-plotly-plot").first()).toBeVisible({ timeout: 20_000 });
+  });
+
+  test("external client and GUI share one durable inline backtest and cancellation", async ({ page }) => {
+    await page.goto("/backtest");
+    const credentials = await connectResearch(page);
+    const headers = { Authorization: `Bearer ${credentials.external}`, "Idempotency-Key": "browser-inline-intent" };
+    const data = { kind: "factor_backtest", input: { dataset_id: "baostock_cn:day:backward", mode: "single_ic", factor_source: { type: "inline", factors: [{ name: "price", expression: "$close" }] } } };
+    const response = await page.request.post("/api/v1/jobs", { headers, data });
+    expect(response.status()).toBe(202);
+    const job = await response.json();
+    const repeated = await page.request.post("/api/v1/jobs", { headers, data });
+    expect((await repeated.json()).job_id).toBe(job.job_id);
+    const panel = page.locator("section", { has: page.getByRole("heading", { name: "共享任务队列", exact: true }) }).first();
+    const row = panel.locator("tbody tr", { hasText: job.job_id });
+    await expect(row).toContainText("排队中");
+    await row.getByRole("button", { name: "取消", exact: true }).click();
+    await expect(row).toContainText("已取消");
+    const result = await page.request.get(`/api/v1/jobs/${job.job_id}`, { headers });
+    expect((await result.json()).status).toBe("cancelled");
   });
 
   test("Paper daemon follows the browser safety workflow", async ({ page }) => {
@@ -107,7 +130,8 @@ test.describe("Portal interaction contract", () => {
 
   test("@cross-browser core navigation and factor form are operable", async ({ page }) => {
     await page.goto("/library");
-    await expect(page.getByRole("heading", { name: /因子.*策略库|Factor/ }).first()).toBeVisible();
+    await connectResearch(page);
+    await expect(page.getByRole("heading", { name: /研究资产库|因子.*策略库|Factor/ }).first()).toBeVisible();
     await page.goto("/live");
     await expect(page.getByRole("tab", { name: /Paper/i })).toBeVisible();
   });

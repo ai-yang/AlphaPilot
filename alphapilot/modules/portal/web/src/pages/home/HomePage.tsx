@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
-import { api, Job } from "../../api";
+import { Job } from "../../api";
+import { research } from "../../researchClient";
 import { Alert, InfoDot, JobsPanel, PageTitle } from "../../components";
 import { useAsync } from "../../hooks";
 import { useI18n } from "../../i18n";
@@ -15,7 +16,7 @@ type Status = {
 
 export function HomePage() {
   const { t } = useI18n();
-  const state = useAsync(() => api.get<Status>("/api/status"), []);
+  const state = useAsync(() => research.get<Status>("/status"), []);
   const metrics = state.data?.metrics || {};
   return (
     <>

@@ -1,12 +1,15 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { AsyncButton, ConfirmProvider, JobsPanel, PanelHelp, useConfirm } from "./components";
 import { I18nProvider } from "./i18n";
 import { ToastProvider } from "./toast";
+import { setResearchToken } from "./researchClient";
+beforeEach(() => setResearchToken("apr_fixture"));
 
 afterEach(() => {
   cleanup();
+  setResearchToken("");
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   vi.useRealTimers();
@@ -18,14 +21,15 @@ describe("JobsPanel", () => {
     let resolveOldResult: ((response: Response) => void) | undefined;
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const path = String(input);
-      if (path === "/api/jobs") return Promise.resolve(Response.json([
-        { job_id: "old-job", kind: "mine", status: "running" },
-        { job_id: "new-job", kind: "data", status: "succeeded" },
-      ]));
-      if (path === "/api/jobs/old-job/log") return new Promise<Response>((resolve) => { resolveOldLog = resolve; });
-      if (path === "/api/jobs/old-job/result") return new Promise<Response>((resolve) => { resolveOldResult = resolve; });
-      if (path === "/api/jobs/new-job/log") return Promise.resolve(Response.json({ log: "new-log" }));
-      if (path === "/api/jobs/new-job/result") return Promise.resolve(Response.json({ value: "new-result" }));
+      if (path.startsWith("/api/v1/jobs?")) return Promise.resolve(Response.json({ items: [
+        { job_id: "old-job", kind: "mine", status: "running", progress: {}, run_ids: [] },
+        { job_id: "new-job", kind: "data", status: "succeeded", progress: {}, run_ids: [] },
+      ], next_cursor: null }));
+      if (path === "/api/v1/jobs/old-job/logs?cursor=0") return new Promise<Response>((resolve) => { resolveOldLog = resolve; });
+      if (path === "/api/v1/jobs/old-job/result") return new Promise<Response>((resolve) => { resolveOldResult = resolve; });
+      if (path === "/api/v1/jobs/new-job/logs?cursor=0") return Promise.resolve(Response.json({ text: "new-log", next_cursor: 7, complete: true }));
+      if (path === "/api/v1/jobs/new-job/result") return Promise.resolve(Response.json({ value: "new-result" }));
+      if (path === "/api/v1/jobs/old-job" || path === "/api/v1/jobs/new-job") return Promise.resolve(Response.json({ job_id: path.split("/").pop(), status: "succeeded", progress: {}, run_ids: [] }));
       return Promise.resolve(Response.json({}, { status: 404 }));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -34,11 +38,11 @@ describe("JobsPanel", () => {
 
     const oldRow = (await screen.findByText("mine")).closest("tr") as HTMLElement;
     const newRow = screen.getByText("data").closest("tr") as HTMLElement;
-    await user.click(within(oldRow).getByRole("button", { name: "打开" }));
-    await user.click(within(newRow).getByRole("button", { name: "打开" }));
+    await user.click(within(oldRow).getByRole("button", { name: "old-job" }));
+    await user.click(within(newRow).getByRole("button", { name: "new-job" }));
     expect(await screen.findByText("new-log")).toBeInTheDocument();
     await act(async () => {
-      resolveOldLog?.(Response.json({ log: "old-log" }));
+      resolveOldLog?.(Response.json({ text: "old-log", next_cursor: 7, complete: true }));
       resolveOldResult?.(Response.json({ value: "old-result" }));
       await Promise.resolve();
     });
@@ -50,7 +54,7 @@ describe("JobsPanel", () => {
     vi.useFakeTimers();
     const resolvers: Array<(response: Response) => void> = [];
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
-      if (String(input) === "/api/jobs") return new Promise<Response>((resolve) => resolvers.push(resolve));
+      if (String(input).startsWith("/api/v1/jobs?")) return new Promise<Response>((resolve) => resolvers.push(resolve));
       return Promise.resolve(Response.json({}, { status: 404 }));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -59,7 +63,7 @@ describe("JobsPanel", () => {
     await act(async () => { vi.advanceTimersByTime(15000); });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     await act(async () => {
-      resolvers[0](Response.json([]));
+      resolvers[0](Response.json({ items: [], next_cursor: null }));
       await Promise.resolve();
     });
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });

@@ -16,6 +16,9 @@ CALL_RE = re.compile(
     r"api\.(get|post|patch|delete)(?:<[^;\n()]*>)?\(\s*([`\"])(/api/.*?)(?<!\\)\2",
     re.DOTALL,
 )
+RESEARCH_CALL_RE = re.compile(
+    r'research\.(get|post|delete|all)(?:<[^;\n()]*>)?\(\s*([`"])(/.*?)(?<!\\)\2', re.DOTALL,
+)
 
 
 def _segments(path: str) -> list[str]:
@@ -63,6 +66,8 @@ def test_every_literal_frontend_api_call_resolves_to_an_openapi_operation() -> N
             continue
         text = source.read_text(encoding="utf-8")
         calls.update((match.group(1).upper(), match.group(3)) for match in CALL_RE.finditer(text))
+        calls.update(("GET" if match.group(1) == "all" else match.group(1).upper(), "/api/v1" + match.group(3))
+                     for match in RESEARCH_CALL_RE.finditer(text))
     assert len(calls) >= 65, "API extraction unexpectedly missed a large part of the Portal surface"
     missing = [
         (method, path)

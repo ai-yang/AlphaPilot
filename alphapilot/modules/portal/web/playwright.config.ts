@@ -22,11 +22,11 @@ export default defineConfig({
     baseURL,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
-    video: "retain-on-failure",
+    video: process.env.ALPHAPILOT_PLAYWRIGHT_VIDEO === "off" ? "off" : "retain-on-failure",
   },
   webServer: {
     command: `"${python}" ../../../../tests/portal_interaction_server.py`,
-    url: `${baseURL}/api/status`,
+    url: `${baseURL}/__test__/credentials`,
     timeout: 120_000,
     reuseExistingServer: false,
     env: {

@@ -1,3 +1,6 @@
+import { ResearchConnection, ResearchGate } from "./ResearchConnection";
+import { ResearchJobs } from "./ResearchJobs";
+import { research } from "./researchClient";
 import { AlertTriangle, HelpCircle, Info, Loader2, Moon, RefreshCw, Sun, Trash2, XCircle } from "lucide-react";
 import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
@@ -66,7 +69,7 @@ export function Layout() {
             <strong>{t(current)}</strong>
             <span className="muted">AlphaPilot Portal</span>
           </div>
-          <div className="topbar-actions">
+          <div className="topbar-actions"><ResearchConnection />
             <span className="daemon-chip" title={daemon ? t("daemonTipOn") : t("daemonTipOff")}>
               <span className={`dot ${daemon ? "on" : "off"}`} />
               {daemon ? t("daemonOn") : t("daemonOff")}
@@ -85,7 +88,7 @@ export function Layout() {
           </div>
         </header>
         <section className="content">
-          <Outlet />
+          {["home", "mining", "backtest", "library", "market", "daily", "scheduler"].includes(current) ? <ResearchGate><Outlet /></ResearchGate> : <Outlet />}
         </section>
       </main>
     </div>
@@ -99,7 +102,7 @@ function useDaemonStatus(): boolean {
     let timer: number | undefined;
     const poll = async () => {
       try {
-        const data = await api.get<{ running?: boolean }>("/api/schedules/daemon");
+        const data = await research.get<{ running?: boolean }>("/schedules/runtime/status");
         if (alive) setRunning(Boolean(data.running));
       } catch {
         /* ignore */
@@ -708,174 +711,9 @@ export function DataTable<T extends Record<string, unknown>>({
 }
 
 export function JobsPanel({ compact = false }: { compact?: boolean }) {
-  const { t } = useI18n();
-  const toast = useToast();
-  const confirm = useConfirm();
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [selected, setSelected] = useState<Job | null>(null);
-  const [log, setLog] = useState("");
-  const [result, setResult] = useState<unknown>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const selectedRef = useRef<Job | null>(null);
-  const refreshInFlight = useRef(false);
-  const detailSequence = useRef(0);
-
-  useEffect(() => {
-    selectedRef.current = selected;
-  }, [selected]);
-
-  const refresh = useCallback(async () => {
-    if (refreshInFlight.current) return;
-    refreshInFlight.current = true;
-    setSyncing(true);
-    try {
-      const data = await api.get<Job[]>("/api/jobs");
-      setJobs(data);
-      setError(null);
-      if (selectedRef.current) {
-        const next = data.find((j) => j.job_id === selectedRef.current?.job_id) || null;
-        selectedRef.current = next;
-        setSelected(next);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      refreshInFlight.current = false;
-      setLoading(false);
-      setSyncing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    let timer: number | undefined;
-    const poll = async () => {
-      await refresh();
-      if (active) timer = window.setTimeout(poll, 5000);
-    };
-    void poll();
-    return () => {
-      active = false;
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
-  }, [refresh]);
-
-  async function loadJob(job: Job) {
-    const request = ++detailSequence.current;
-    selectedRef.current = job;
-    setSelected(job);
-    setLog("");
-    setResult(null);
-    const [logRes, resultRes] = await Promise.allSettled([
-      api.get<{ log: string }>(`/api/jobs/${job.job_id}/log`),
-      api.get<unknown>(`/api/jobs/${job.job_id}/result`)
-    ]);
-    if (request !== detailSequence.current || selectedRef.current?.job_id !== job.job_id) return;
-    if (logRes.status === "fulfilled") setLog(logRes.value.log);
-    if (resultRes.status === "fulfilled") setResult(resultRes.value);
-    if (logRes.status === "rejected" && resultRes.status === "rejected") {
-      setError(logRes.reason instanceof Error ? logRes.reason.message : String(logRes.reason));
-    }
-  }
-
-  async function cancel(job: Job) {
-    try {
-      await api.post(`/api/jobs/${job.job_id}/cancel`);
-      await refresh();
-      toast.info(`${t("cancel")} ${job.job_id}`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  async function remove(job: Job) {
-    if (!(await confirm({ message: `${t("delete")} ${job.job_id}?`, danger: true }))) return;
-    try {
-      await api.delete(`/api/jobs/${job.job_id}`);
-      detailSequence.current += 1;
-      selectedRef.current = null;
-      setSelected(null);
-      await refresh();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  async function clearFinished() {
-    if (!(await confirm({ message: t("clearFinishedConfirm"), danger: true }))) return;
-    try {
-      const res = await api.post<{ deleted: number }>("/api/jobs/clear");
-      detailSequence.current += 1;
-      selectedRef.current = null;
-      setSelected(null);
-      await refresh();
-      toast.success(`${t("clearFinished")}: ${res.deleted}`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  const visible = compact ? jobs.slice(0, 5) : jobs;
-  const hasFinished = jobs.some((j) => j.status !== "running");
-  return (
-    <section className="panel">
-      <div className="panel-head">
-        <h2>
-          {t("jobs")}
-          <span className={`live-dot${syncing ? " on" : ""}`} title={t("autoRefreshing")} />
-        </h2>
-        <div className="row-actions">
-          {!compact && hasFinished ? (
-            <button className="button small ghost" onClick={() => void clearFinished()}>{t("clearFinished")}</button>
-          ) : null}
-          <RefreshButton iconOnly onClick={refresh} />
-        </div>
-      </div>
-      {error ? <Alert tone="error">{error}</Alert> : null}
-      <DataTable
-        rows={visible as unknown as Record<string, unknown>[]}
-        empty={t("empty")}
-        loading={loading}
-        columns={[
-          { key: "kind", label: t("colKind") },
-          { key: "status", label: t("status"), render: (row) => <StatusPill status={String(row.status)} /> },
-          {
-            key: "progress",
-            label: t("progress"),
-            render: (row) => {
-              const progress = row.progress as { percent?: number; stage?: string; message?: string } | undefined;
-              return progress ? <ProgressBar percent={progress.percent || 0} label={progress.message || progress.stage} /> : "";
-            }
-          },
-          { key: "result_summary", label: t("colSummary"), ellipsis: true },
-          {
-            key: "job_id",
-            label: t("colActions"),
-            align: "right",
-            render: (row) => {
-              const job = row as unknown as Job;
-              return (
-                <div className="row-actions">
-                  <button className="button small" onClick={() => void loadJob(job)}>{t("open")}</button>
-                  {job.status === "running" ? <button className="icon-button" onClick={() => void cancel(job)} title={t("cancel")}><XCircle size={15} /></button> : null}
-                  {job.status !== "running" ? <button className="icon-button danger" onClick={() => void remove(job)} title={t("delete")}><Trash2 size={15} /></button> : null}
-                </div>
-              );
-            }
-          }
-        ]}
-      />
-      {selected ? (
-        <div className="split">
-          <pre className="log">{log || t("noLog")}</pre>
-          <pre className="json">{JSON.stringify(result ?? selected, null, 2)}</pre>
-        </div>
-      ) : null}
-    </section>
-  );
+  return <ResearchGate><ResearchJobs compact={compact} /></ResearchGate>;
 }
+
 
 type ConfirmOptions = {
   message: string;
