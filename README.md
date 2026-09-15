@@ -534,6 +534,10 @@ XTP Pro / EMT 的 SDK 绑定和 broker 插件属于可选、可能受许可约�
 
 如果有疑问或者开发问题也可以发送邮件咨询：ruiwong@zju.edu.cn
 
+## 研究 API 与 MCP 接入
+
+GUI 与外部模型客户端可以通过同一套版本化研究服务共享任务和结果。参见 [Research API v1、独立 MCP 插件接口与示例](docs/research/README.md)；已有工作区升级请先阅读 [停机迁移说明](docs/research/migration.md)。
+
 ## 开发日志
 
 > 下表按提交时的实现状态记录。旧记录中的 `timing_*`、stage/parity/qualification、LIVE approval 等接口或门禁已在后续 0.2.0 重构中删除；当前用法以[文档中心](docs/index.md)和[自动生成 CLI 参考](docs/reference/cli.md)为准。

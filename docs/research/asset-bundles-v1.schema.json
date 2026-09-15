@@ -1,0 +1,713 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "BacktestOptions": {
+      "additionalProperties": false,
+      "properties": {
+        "benchmark": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Benchmark"
+        },
+        "start_time": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Time"
+        },
+        "end_time": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Time"
+        },
+        "train_start": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Train Start"
+        },
+        "train_end": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Train End"
+        },
+        "valid_start": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valid Start"
+        },
+        "valid_end": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valid End"
+        },
+        "test_start": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Test Start"
+        },
+        "test_end": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Test End"
+        },
+        "backtest_start": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Backtest Start"
+        },
+        "backtest_end": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Backtest End"
+        },
+        "topk": {
+          "anyOf": [
+            {
+              "maximum": 10000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Topk"
+        },
+        "n_drop": {
+          "anyOf": [
+            {
+              "maximum": 10000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "N Drop"
+        },
+        "hold_thresh": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hold Thresh"
+        },
+        "risk_degree": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Risk Degree"
+        },
+        "account": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Account"
+        },
+        "open_cost": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Open Cost"
+        },
+        "close_cost": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Close Cost"
+        },
+        "min_cost": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Cost"
+        },
+        "trade_unit": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trade Unit"
+        },
+        "limit_threshold": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit Threshold"
+        },
+        "learning_rate": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Learning Rate"
+        },
+        "max_depth": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": -1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Depth"
+        },
+        "num_leaves": {
+          "anyOf": [
+            {
+              "maximum": 10000,
+              "minimum": 2,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Num Leaves"
+        },
+        "num_threads": {
+          "anyOf": [
+            {
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Num Threads"
+        },
+        "colsample_bytree": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Colsample Bytree"
+        },
+        "subsample": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Subsample"
+        },
+        "lambda_l1": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lambda L1"
+        },
+        "lambda_l2": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lambda L2"
+        },
+        "ann_scaler": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ann Scaler"
+        },
+        "ana_long_short": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ana Long Short"
+        },
+        "enable_signal_record": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Enable Signal Record"
+        },
+        "enable_sig_ana_record": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Enable Sig Ana Record"
+        },
+        "enable_port_ana_record": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Enable Port Ana Record"
+        }
+      },
+      "title": "BacktestOptions",
+      "type": "object"
+    },
+    "FactorBundle": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "1",
+          "default": "1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "kind": {
+          "const": "factor",
+          "default": "factor",
+          "title": "Kind",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/FactorCreate"
+          },
+          "maxItems": 1000,
+          "minItems": 1,
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "title": "FactorBundle",
+      "type": "object"
+    },
+    "FactorCreate": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[\\w-]+$",
+          "title": "Name",
+          "type": "string"
+        },
+        "expression": {
+          "maxLength": 20000,
+          "minLength": 1,
+          "title": "Expression",
+          "type": "string"
+        },
+        "categories": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Categories",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "expression"
+      ],
+      "title": "FactorCreate",
+      "type": "object"
+    },
+    "PortablePool": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[\\w-]+$",
+          "title": "Name",
+          "type": "string"
+        },
+        "symbols": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20000,
+          "minItems": 1,
+          "title": "Symbols",
+          "type": "array"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "symbols"
+      ],
+      "title": "PortablePool",
+      "type": "object"
+    },
+    "PortableStrategy": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[\\w-]+$",
+          "title": "Name",
+          "type": "string"
+        },
+        "factor_expressions": {
+          "items": {
+            "maxLength": 20000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 1000,
+          "minItems": 1,
+          "title": "Factor Expressions",
+          "type": "array"
+        },
+        "dataset_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^[^/\\\\\\x00]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dataset Id"
+        },
+        "stock_pool_name": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "minLength": 1,
+              "pattern": "^[\\w-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stock Pool Name"
+        },
+        "template_id": {
+          "default": "combined",
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[^/\\\\\\x00]+$",
+          "title": "Template Id",
+          "type": "string"
+        },
+        "model_id": {
+          "const": "lgbm",
+          "default": "lgbm",
+          "title": "Model Id",
+          "type": "string"
+        },
+        "parameters": {
+          "$ref": "#/$defs/BacktestOptions"
+        }
+      },
+      "required": [
+        "name",
+        "factor_expressions"
+      ],
+      "title": "PortableStrategy",
+      "type": "object"
+    },
+    "StockPoolBundle": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "1",
+          "default": "1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "kind": {
+          "const": "stock_pool",
+          "default": "stock_pool",
+          "title": "Kind",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/PortablePool"
+          },
+          "maxItems": 1000,
+          "minItems": 1,
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "title": "StockPoolBundle",
+      "type": "object"
+    },
+    "StrategyBundle": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "1",
+          "default": "1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "kind": {
+          "const": "strategy",
+          "default": "strategy",
+          "title": "Kind",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/PortableStrategy"
+          },
+          "maxItems": 1000,
+          "minItems": 1,
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "title": "StrategyBundle",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "factor": "#/$defs/FactorBundle",
+      "stock_pool": "#/$defs/StockPoolBundle",
+      "strategy": "#/$defs/StrategyBundle"
+    },
+    "propertyName": "kind"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/FactorBundle"
+    },
+    {
+      "$ref": "#/$defs/StrategyBundle"
+    },
+    {
+      "$ref": "#/$defs/StockPoolBundle"
+    }
+  ]
+}
