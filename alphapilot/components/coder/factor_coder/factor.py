@@ -114,16 +114,27 @@ def _factor_subprocess_env(
 
     This reduces accidental credential inheritance; it is not a filesystem or
     network sandbox.  Only Python/runtime paths, numerical-library tuning, and
-    factor-data variables are passed through.
+    factor-data variables are passed through.  Generated programs always use
+    this AlphaPilot installation's parser and operators, even when their working
+    directory or Python interpreter differs from the parent process.
     """
 
     source = os.environ if environ is None else environ
-    return {
+    environment = {
         key: value
         for key, value in source.items()
         if key.upper() in _FACTOR_ENV_ALLOWLIST
         or key.upper().startswith(_FACTOR_ENV_PREFIX_ALLOWLIST)
     }
+    package_root = str(Path(__file__).resolve().parents[4])
+    python_paths = [package_root]
+    if "PYTHONPATH" in environment:
+        # Resolve relative entries before execute() changes the working directory.
+        python_paths.extend(
+            os.path.abspath(entry) for entry in environment["PYTHONPATH"].split(os.pathsep)
+        )
+    environment["PYTHONPATH"] = os.pathsep.join(dict.fromkeys(python_paths))
+    return environment
 
 
 def _factor_runtime_fingerprint(python_bin: str) -> str | None:

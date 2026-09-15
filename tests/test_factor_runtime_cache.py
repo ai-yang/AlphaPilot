@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import sys
+from pathlib import Path
 from unittest.mock import Mock
 
 
@@ -34,10 +37,49 @@ def test_factor_subprocess_environment_is_an_explicit_allowlist() -> None:
 
     assert child_env == {
         "PATH": "/runtime/bin",
-        "PYTHONPATH": "/project",
+        "PYTHONPATH": os.pathsep.join([str(Path(__file__).resolve().parents[1]), "/project"]),
         "OMP_NUM_THREADS": "2",
         "ALPHAPILOT_FACTOR_DATA_DIR": "/safe/data",
     }
+
+
+def test_factor_subprocess_imports_active_checkout_from_another_directory(
+    tmp_path, monkeypatch,
+) -> None:
+    from alphapilot.components.coder.factor_coder import factor as factor_module
+
+    monkeypatch.chdir(tmp_path)
+    stale_path = tmp_path / "old installation"
+    stale_package = stale_path / "alphapilot"
+    stale_package.mkdir(parents=True)
+    (stale_package / "__init__.py").write_text('raise RuntimeError("stale installation")')
+    child_dir = tmp_path / "factor workspace"
+    child_dir.mkdir()
+    child_env = factor_module._factor_subprocess_env({"PYTHONPATH": "old installation"})
+    script = child_dir / "factor.py"
+    script.write_text(
+        "import json\n"
+        "from alphapilot.components.coder.factor_coder import expr_parser, function_lib\n"
+        "print(json.dumps([expr_parser.__file__, function_lib.__file__]))\n"
+    )
+
+    output = subprocess.check_output(
+        [sys.executable, str(script)], cwd=child_dir, env=child_env, text=True, timeout=30,
+    )
+    source_files = json.loads(output)
+    active_dir = Path(factor_module.__file__).resolve().parent
+    assert [Path(name).resolve() for name in source_files] == [
+        active_dir / "expr_parser.py", active_dir / "function_lib.py",
+    ]
+    assert child_env["PYTHONPATH"].split(os.pathsep)[-1] == str(stale_path)
+
+    # The cache probe must resolve the same sources as the workspace execution.
+    probe_output = subprocess.check_output(
+        [sys.executable, "-c", factor_module._RUNTIME_PROBE],
+        cwd=child_dir, env=child_env, text=True, timeout=30,
+    )
+    payload = json.loads(probe_output.split(factor_module._RUNTIME_PROBE_PREFIX)[-1])
+    assert sorted(item["path"] for item in payload["sources"].values()) == sorted(source_files)
 
 
 def test_runtime_fingerprint_probes_the_execution_interpreter(monkeypatch) -> None:
