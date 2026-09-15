@@ -422,6 +422,11 @@ class FactorParsingStrategy(MultiProcessEvolvingStrategy):
                 else:
                     error_summary_critics = None
                     
+                successful_reference = (
+                    queried_similar_successful_knowledge_to_render[-1]
+                    if queried_similar_successful_knowledge_to_render
+                    else None
+                )
                 # 构建用户提示
                 user_prompt = (
                     Environment(undefined=StrictUndefined)
@@ -434,8 +439,14 @@ class FactorParsingStrategy(MultiProcessEvolvingStrategy):
                         former_expression=self.extract_expr(queried_former_failed_knowledge_to_render[-1].implementation.code),
                         former_feedback=queried_former_failed_knowledge_to_render[-1].feedback,
                         error_summary_critics=error_summary_critics,
-                        similar_successful_factor_description=queried_similar_successful_knowledge_to_render[-1].target_task.get_task_description(),
-                        similar_successful_expression=self.extract_expr(queried_similar_successful_knowledge_to_render[-1].implementation.code),
+                        similar_successful_factor_description=(
+                            successful_reference.target_task.get_task_description()
+                            if successful_reference is not None else None
+                        ),
+                        similar_successful_expression=(
+                            self.extract_expr(successful_reference.implementation.code)
+                            if successful_reference is not None else None
+                        ),
                         latest_attempt_to_latest_successful_execution=latest_attempt_to_latest_successful_execution,
                     )
                     .strip("\n")

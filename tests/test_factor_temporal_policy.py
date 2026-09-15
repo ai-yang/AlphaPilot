@@ -317,8 +317,9 @@ def _task(name: str, expression: str) -> FactorTask:
     )
 
 
+@pytest.mark.parametrize("reference_mode", ["present", "empty", "trimmed"])
 def test_repair_retries_invalid_json_schema_and_noncausal_expressions(
-    monkeypatch,
+    monkeypatch, reference_mode,
 ) -> None:
     from alphapilot.components.coder.factor_coder import evolving_strategy
 
@@ -335,7 +336,9 @@ def test_repair_retries_invalid_json_schema_and_noncausal_expressions(
     )
     knowledge = SimpleNamespace(
         task_to_former_failed_traces={task_key: ([failed], None)},
-        task_to_similar_task_successful_knowledge={task_key: [successful]},
+        task_to_similar_task_successful_knowledge={
+            task_key: [] if reference_mode == "empty" else [successful]
+        },
     )
 
     class FakeLLM:
@@ -349,8 +352,12 @@ def test_repair_retries_invalid_json_schema_and_noncausal_expressions(
                 ]
             )
             self.prompts: list[str] = []
+            self.token_checks = 0
 
         def count_tokens(self, **_kwargs) -> int:
+            self.token_checks += 1
+            if reference_mode == "trimmed" and self.token_checks == 1:
+                return evolving_strategy.LLM_SETTINGS.chat_token_limit + 1
             return 1
 
         def chat_completion(self, *, user_prompt: str, **_kwargs) -> str:
@@ -371,6 +378,14 @@ def test_repair_retries_invalid_json_schema_and_noncausal_expressions(
     )
     assert len(fake_llm.prompts) == 4
     assert "rejected by the local validator" in fake_llm.prompts[1]
+    assert "TS_MEAN($close, 20)" in fake_llm.prompts[0]
+    assert "runtime failure" in fake_llm.prompts[0]
+    assert ("TS_STD($close, 20)" in fake_llm.prompts[0]) == (reference_mode == "present")
+    if reference_mode != "present":
+        assert "Correct code to similar factors" not in fake_llm.prompts[0]
+    if reference_mode == "trimmed":
+        assert fake_llm.token_checks == 2
+        assert knowledge.task_to_similar_task_successful_knowledge[task_key] == [successful]
 
 
 def test_assignment_persists_semantically_valid_repaired_expression() -> None:
