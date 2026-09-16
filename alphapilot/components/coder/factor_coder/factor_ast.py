@@ -140,6 +140,18 @@ def create_var_node(tokens):
 def create_number_node(tokens):
     return NumberNode(float(tokens[0]))
 
+def create_unary_op_node(tokens):
+    # Lower signs into existing nodes so temporal analysis and duplicate
+    # detection keep using the same AST. Signed numeric literals must remain
+    # NumberNode instances for window/lag argument validation.
+    parts = tokens[0]
+    value = parts[-1]
+    for sign in reversed(parts[:-1]):
+        if sign == "-":
+            value = (NumberNode(-value.value) if isinstance(value, NumberNode)
+                     else BinaryOpNode("-", NumberNode(0), value))
+    return value
+
 def create_function_node(tokens):
     name = tokens[0]  # function name
     args = tokens[2:-1]  # skip parentheses
@@ -206,6 +218,7 @@ operand = function_call | var | number | ("(" + expr + ")").set_parse_action(lam
 expr <<= infix_notation(
     operand,
     [
+        (add_sub, 1, OpAssoc.RIGHT, create_unary_op_node),
         (mul_div, 2, OpAssoc.LEFT, create_binary_op_node),
         (add_sub, 2, OpAssoc.LEFT, create_binary_op_node),
         (comparison, 2, OpAssoc.LEFT, create_binary_op_node),

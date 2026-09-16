@@ -16,7 +16,6 @@ from pyparsing import (
     one_of,
 )
 import sys
-import re
 import numpy as np
 
 # 引入pyparsing自带的cache功能
@@ -261,15 +260,10 @@ def parse_entire_expression(s, loc, tokens):
 
 
 def check_for_invalid_operators(expression):
-    valid_operators = {"(", ")", ",", "+", "-", "*", "/", "&&", "||", "&", "|", ">", "<", ">=", "<=", "==", "!=", "?", ":", "."}
-    # 使用正则表达式查找所有的运算符
-    pattern = r'([+\-*/,><?:.]{2,})|([><=!&|^`~@#%\\;{}[\]"\'\\]+)' # ([|&=]{3,})|
-    found_operators_tuples = re.findall(pattern, expression)
-    found_operators = [operator for tup in found_operators_tuples for operator in tup if operator]
-    invalid_operators = set(found_operators) - valid_operators
-    
-    if invalid_operators:
-        raise Exception(f"无效的运算符: \"{''.join(invalid_operators)}\"")
+    # Use the public grammar instead of rejecting adjacent punctuation. Signs
+    # such as 2*-$close and a signed function argument are valid DSL syntax.
+    from alphapilot.components.coder.factor_coder.factor_ast import parse_expression as parse_ast
+    parse_ast(expression)
 
 
 # 现在更新 expr 的定义
@@ -297,7 +291,7 @@ def parse_expression(factor_expression):
     check_for_invalid_operators(factor_expression)
     print("factor_expression: ", factor_expression)
     
-    parsed_data_function = expr.parse_string(factor_expression)[0]
+    parsed_data_function = expr.parse_string(factor_expression, parse_all=True)[0]
     return parsed_data_function
 
 
