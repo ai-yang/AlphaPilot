@@ -200,14 +200,15 @@ class LoopBase:
                     
                 
     def dump(self, path: str | Path):
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("wb") as f:
-            pickle.dump(self, f)
+        from alphapilot.research.checkpoints import save
+        save(self, path)
 
     @classmethod
     def load(cls, path: str | Path):
         path = Path(path)
+        if (path.parent / "resume.json").is_file():
+            from alphapilot.research.checkpoints import load
+            return load(path)
         with path.open("rb") as f:
             session = pickle.load(f)
         logger.set_trace_path(session.session_folder.parent)

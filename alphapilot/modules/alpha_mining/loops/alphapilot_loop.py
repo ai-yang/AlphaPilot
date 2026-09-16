@@ -49,7 +49,8 @@ from functools import wraps
 def stop_event_check(func):
     @wraps(func)
     def wrapper(self, *args, **kwargs):
-        if STOP_EVENT is not None and STOP_EVENT.is_set():
+        stop_event = getattr(self, "_stop_event", None)
+        if stop_event is not None and stop_event.is_set():
             # 当收到停止信号时，可以直接抛出异常或返回特定值，这里示例抛出异常
             raise Exception("Operation stopped due to stop_event flag.")
         return func(self, *args, **kwargs)
@@ -69,6 +70,7 @@ class AlphaPilotLoop(LoopBase, metaclass=LoopMeta):
         """
         state = self.__dict__.copy()
         state["context"] = None
+        state["_stop_event"] = None
         return state
     
     @measure_time
@@ -123,8 +125,7 @@ class AlphaPilotLoop(LoopBase, metaclass=LoopMeta):
             logger.log_object(self.summarizer, tag="summarizer")
             self.trace = Trace(scen=scen)
             
-            global STOP_EVENT
-            STOP_EVENT = stop_event
+            self._stop_event = stop_event
             super().__init__()
 
     @classmethod
@@ -132,6 +133,7 @@ class AlphaPilotLoop(LoopBase, metaclass=LoopMeta):
         """加载现有会话"""
         instance = super().load(path)
         instance.use_local = use_local
+        instance._stop_event = None
         logger.info(f"加载AlphaPilotLoop，使用{'本地环境' if use_local else 'Docker容器'}回测")
         return instance
 

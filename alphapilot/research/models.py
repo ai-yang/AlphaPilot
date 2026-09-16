@@ -535,6 +535,7 @@ class Limits(StrictModel):
 
 class Capabilities(StrictModel):
     api_version: str
+    features: dict[str, bool] = Field(default_factory=dict)
     scopes: list[str]
     algorithms: list[Algorithm]
     runtime: RuntimeStatus

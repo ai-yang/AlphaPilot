@@ -45,6 +45,9 @@ CREATE TABLE IF NOT EXISTS runs (
 CREATE TABLE IF NOT EXISTS artifacts (
  id TEXT PRIMARY KEY, job_id TEXT, run_id TEXT, attempt TEXT,
  path TEXT NOT NULL, payload TEXT NOT NULL, published INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS runs_by_job ON runs(job_id, id);
+CREATE INDEX IF NOT EXISTS artifacts_by_job ON artifacts(job_id, published, id);
+CREATE INDEX IF NOT EXISTS artifacts_by_run ON artifacts(run_id, published, id);
 CREATE TABLE IF NOT EXISTS uploads (
  id TEXT PRIMARY KEY, path TEXT NOT NULL, payload TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS schedules (

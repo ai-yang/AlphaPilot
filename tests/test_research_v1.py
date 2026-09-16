@@ -414,3 +414,59 @@ def test_invalid_asset_bundle_returns_structured_field_errors(research):
     assert result.status_code == 422, result.text
     assert result.json()["code"] == "VALIDATION_ERROR"
     assert result.json()["details"][0]["loc"][-2:] == ["items", 0]
+
+
+def test_mcp_run_and_artifact_pagination(research):
+    client, store, _ = research
+    with store.connect(write=True) as db:
+        for run_id, job_id in [('run-a', 'job-a'), ('run-b', 'job-a'), ('run-c', 'job-b')]:
+            db.execute('INSERT INTO runs VALUES (?,?,?,?,?)', (run_id, job_id, None, '/private', encode({'command': 'mine'})))
+            for index in range(3):
+                artifact_id = f'{run_id}-{index}'
+                payload = {'artifact_id': artifact_id, 'run_id': run_id, 'job_id': job_id, 'kind': 'test',
+                           'schema_version': '1', 'media_type': 'text/plain', 'size': 0, 'sha256': '0' * 64,
+                           'name': 'test.txt', 'created_at': now(), 'content_url': f'/api/v1/artifacts/{artifact_id}/content'}
+                db.execute('INSERT INTO artifacts VALUES (?,?,?,?,?,?,?)', (artifact_id, job_id, run_id, None, '/private', encode(payload), 1))
+    first = client.get('/api/v1/runs', params={'job_id': 'job-a', 'limit': 1, 'include_artifacts': False}).json()
+    assert first['total'] == 2 and first['items'][0]['artifacts'] == []
+    second = client.get('/api/v1/runs', params={'job_id': 'job-a', 'limit': 1, 'cursor': first['next_cursor']}).json()
+    assert second['items'][0]['run_id'] != first['items'][0]['run_id']
+    assert len(second['items'][0]['artifacts']) == 3
+    assert client.get('/api/v1/runs', params={'job_id': 'job-b', 'cursor': first['next_cursor']}).status_code == 422
+    items = []
+    cursor = None
+    while True:
+        response = client.get('/api/v1/artifacts', params={k: v for k, v in {'job_id': 'job-a', 'run_id': 'run-a', 'limit': 2, 'cursor': cursor}.items() if v is not None})
+        assert response.status_code == 200, response.text
+        page = response.json()
+        items.extend(page['items'])
+        cursor = page['next_cursor']
+        if cursor is None:
+            break
+    assert len({row['artifact_id'] for row in items}) == 3
+    assert client.get('/api/v1/artifacts', params={'limit': 201}).status_code == 422
+    assert client.get('/api/v1/capabilities').json()['features']['mining_checkpoint_resume']
+
+
+def test_incremental_chinese_log_cursor_preserves_characters(research, monkeypatch):
+    from alphapilot.research.tasks import TaskService
+    client, store, _ = research
+    key = 'unicode-log'
+    folder = store.root / key
+    folder.mkdir()
+    original = '开始挖掘🚀\n第一轮完成\n'
+    (folder / 'run.log').write_text(original)
+    monkeypatch.setattr(TaskService, 'get', lambda *args, **kwargs: {'status': 'succeeded'})
+    for limit in (1, 4, 8, 13):
+        cursor, output = 0, ''
+        for _ in range(100):
+            response = client.get(f'/api/v1/jobs/{key}/logs', params={'cursor': cursor, 'limit': limit})
+            assert response.status_code == 200, response.text
+            row = response.json()
+            output += row['text']
+            assert row['next_cursor'] > cursor or row['complete']
+            cursor = row['next_cursor']
+            if row['complete']:
+                break
+        assert output == original
+        assert cursor == len(original.encode())

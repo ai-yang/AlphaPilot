@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import codecs
 import json
 import os
 import shutil
@@ -204,9 +205,22 @@ class TaskService:
             return {"text": "", "next_cursor": 0, "complete": job["status"] in TERMINAL}
         with path.open("rb") as stream:
             stream.seek(min(cursor, path.stat().st_size))
-            content = stream.read(limit)
-            next_cursor = stream.tell()
-        return {"text": content.decode("utf-8", errors="replace"), "next_cursor": next_cursor,
+            # Never consume half a UTF-8 character across polling cursors. A
+            # limit smaller than one character may read up to four bytes.
+            decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+            text = decoder.decode(stream.read(limit), final=False)
+            if not text and decoder.getstate()[0]:
+                for _ in range(3):
+                    byte = stream.read(1)
+                    if not byte:
+                        break
+                    text += decoder.decode(byte, final=False)
+                    if text:
+                        break
+            if job["status"] in TERMINAL and stream.tell() >= path.stat().st_size:
+                text += decoder.decode(b"", final=True)
+            next_cursor = stream.tell() - len(decoder.getstate()[0])
+        return {"text": text, "next_cursor": next_cursor,
                 "complete": job["status"] in TERMINAL and next_cursor >= path.stat().st_size}
 
     def delete(self, job_id: str, actor: Actor) -> dict:

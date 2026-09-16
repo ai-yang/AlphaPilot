@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import base64
 import json
 import mimetypes
 import os
@@ -81,17 +82,52 @@ class ArtifactService:
             return path
         return json.loads(row["payload"])
 
-    def runs(self, actor: Actor, *, cursor=None, limit=50) -> dict:
-        actor.require("research:read")
+    def _list(self, table, *, cursor=None, limit=50, job_id=None, run_id=None):
+        if not 1 <= limit <= 200:
+            raise ResearchError("INVALID_PAGE", "limit must be between 1 and 200", 422)
+        filters = {k: opaque(v) for k, v in {"job_id": job_id, "run_id": run_id}.items() if v is not None}
+        scope = {"table": table, **filters}
+        after = None
+        if cursor:
+            try:
+                value = json.loads(base64.urlsafe_b64decode(cursor))
+                if value["scope"] != scope or not isinstance(value["after"], str):
+                    raise ValueError()
+                after = value["after"]
+            except (ValueError, KeyError, TypeError):
+                raise ResearchError("INVALID_CURSOR", "Cursor does not match this query", 422) from None
+        clauses = [f"{k}=?" for k in filters]
+        values = list(filters.values())
+        if table == "artifacts":
+            clauses.append("published=1")
+        where = " AND ".join(clauses) or "1=1"
         with self.store.connect() as db:
-            rows = db.execute("SELECT id FROM runs ORDER BY id DESC").fetchall()
-        return page([self.run(row[0], actor) for row in rows], cursor, limit)
+            total = db.execute(f"SELECT count(*) FROM {table} WHERE {where}", values).fetchone()[0]
+            if after is not None:
+                where += " AND id<?"
+                values.append(after)
+            rows = db.execute(f"SELECT * FROM {table} WHERE {where} ORDER BY id DESC LIMIT ?", [*values, limit + 1]).fetchall()
+        more = len(rows) > limit
+        rows = rows[:limit]
+        next_cursor = base64.urlsafe_b64encode(encode({"scope": scope, "after": rows[-1]["id"]}).encode()).decode() if more else None
+        return rows, next_cursor, total
 
-    def run(self, run_id: str, actor: Actor) -> dict:
+    def list(self, actor: Actor, *, cursor=None, limit=50, job_id=None, run_id=None) -> dict:
+        actor.require("research:read")
+        rows, next_cursor, total = self._list("artifacts", cursor=cursor, limit=limit, job_id=job_id, run_id=run_id)
+        return {"items": [json.loads(row["payload"]) for row in rows], "next_cursor": next_cursor, "total": total}
+
+    def runs(self, actor: Actor, *, cursor=None, limit=50, job_id=None, include_artifacts=True) -> dict:
+        actor.require("research:read")
+        rows, next_cursor, total = self._list("runs", cursor=cursor, limit=limit, job_id=job_id)
+        return {"items": [self.run(row["id"], actor, include_artifacts=include_artifacts) for row in rows],
+                "next_cursor": next_cursor, "total": total}
+
+    def run(self, run_id: str, actor: Actor, *, include_artifacts=True) -> dict:
         actor.require("research:read")
         with self.store.connect() as db:
             row = db.execute("SELECT * FROM runs WHERE id=?", (opaque(run_id),)).fetchone()
-            artifacts = db.execute("SELECT payload FROM artifacts WHERE run_id=? AND published=1 ORDER BY id", (run_id,)).fetchall()
+            artifacts = db.execute("SELECT payload FROM artifacts WHERE run_id=? AND published=1 ORDER BY id", (run_id,)).fetchall() if include_artifacts else []
         if not row:
             raise ResearchError("NOT_FOUND", "Research run not found", 404)
         return {**public_value(json.loads(row["payload"])), "run_id": run_id, "job_id": row["job_id"],

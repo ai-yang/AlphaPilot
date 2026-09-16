@@ -188,7 +188,8 @@ def install(app, engine_factory) -> None:
                 "max_running": int(os.getenv("ALPHAPILOT_RESEARCH_MAX_RUNNING", "1")),
                 "max_timeout_seconds": int(os.getenv("ALPHAPILOT_RESEARCH_MAX_TIMEOUT", "86400"))},
                 "budgets": Budget.model_json_schema(), "job_schema": "/api/v1/openapi.json",
-                "dataset_policy": "latest_at_start", "workspace_mode": "single_owner"}
+                "dataset_policy": "latest_at_start", "workspace_mode": "single_owner",
+                "features": {"run_job_filter": True, "artifact_pagination": True, "mining_checkpoint_resume": True, "schedule_detail": True}}
 
     @router.get("/status", operation_id="research_status")
     def research_status(a: Actor = Depends(actor)) -> dict[str, JsonValue]:
@@ -401,8 +402,9 @@ def install(app, engine_factory) -> None:
         return page(session.read_cashflows(row["name"]), cursor, limit)
 
     @router.get("/runs", response_model=Page[Run], operation_id="research_list_runs")
-    def runs(cursor: str | None = None, limit: int = Query(50, ge=1, le=200), a: Actor = Depends(actor)):
-        result = artifacts().runs(a, cursor=cursor, limit=limit)
+    def runs(cursor: str | None = None, limit: int = Query(50, ge=1, le=200), job_id: str | None = None,
+             include_artifacts: bool = True, a: Actor = Depends(actor)):
+        result = artifacts().runs(a, cursor=cursor, limit=limit, job_id=job_id, include_artifacts=include_artifacts)
         return {**result, "items": [run_view(r) for r in result["items"]]}
 
     @router.delete("/runs/{run_id}", operation_id="research_delete_run")
@@ -418,8 +420,13 @@ def install(app, engine_factory) -> None:
         return {"run_id": run_id, "deleted": True}
 
     @router.get("/runs/{run_id}", response_model=Run, operation_id="research_get_run")
-    def get_run(run_id: str, a: Actor = Depends(actor)) -> dict[str, JsonValue]:
-        return run_view(artifacts().run(run_id, a))
+    def get_run(run_id: str, include_artifacts: bool = True, a: Actor = Depends(actor)) -> dict[str, JsonValue]:
+        return run_view(artifacts().run(run_id, a, include_artifacts=include_artifacts))
+
+    @router.get("/artifacts", response_model=Page[Artifact], operation_id="research_list_artifacts")
+    def list_artifacts(cursor: str | None = None, limit: int = Query(50, ge=1, le=200),
+                       job_id: str | None = None, run_id: str | None = None, a: Actor = Depends(actor)):
+        return artifacts().list(a, cursor=cursor, limit=limit, job_id=job_id, run_id=run_id)
 
     @router.get("/artifacts/{artifact_id}", response_model=Artifact, operation_id="research_get_artifact")
     def get_artifact(artifact_id: str, a: Actor = Depends(actor)) -> dict[str, JsonValue]:
@@ -481,6 +488,15 @@ def install(app, engine_factory) -> None:
     @router.post("/schedules", status_code=201, operation_id="research_create_schedule", response_model=Schedule)
     def create_schedule(payload: ScheduleCreate, a: Actor = Depends(actor)) -> dict[str, JsonValue]:
         return ScheduleService(tasks()).save(payload, a)
+
+    @router.get("/schedules/{key}", operation_id="research_get_schedule", response_model=Schedule)
+    def get_schedule(key: str, a: Actor = Depends(actor)) -> dict[str, JsonValue]:
+        a.require("research:read")
+        with store().connect() as db:
+            row = db.execute("SELECT payload,revision FROM schedules WHERE id=?", (opaque(key),)).fetchone()
+        if not row:
+            raise ResearchError("NOT_FOUND", "Schedule not found", 404)
+        return {k: v for k, v in {**json.loads(row[0]), "revision": row[1]}.items() if k != "actor"}
 
     @router.put("/schedules/{key}", operation_id="research_update_schedule", response_model=Schedule)
     def update_schedule(key: str, payload: ScheduleCreate, if_match: str | None = Header(None), a: Actor = Depends(actor)) -> dict[str, JsonValue]:

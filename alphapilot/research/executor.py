@@ -100,14 +100,9 @@ def prepare(engine, store: Store, spec, folder: Path, actor: Actor) -> tuple[dic
         if getattr(data, "save_as", None):
             execution["resources"].append({"resource": assets.resource("strategy", data.save_as), "mode": "write"})
         if getattr(data, "resume_run_id", None):
-            with store.connect() as db:
-                run = db.execute("SELECT path,payload FROM runs WHERE id=?", (data.resume_run_id,)).fetchone()
-            payload = json.loads(run["payload"]) if run else {}
-            session_path = payload.get("session_path")
-            if not session_path or not Path(session_path).exists():
-                raise ResearchError("RESUME_UNAVAILABLE", "This run has no resumable mining session", 409)
-            shutil.copytree(session_path, input_dir / "mining_session")
-            execution["resume_path"] = str(input_dir / "mining_session")
+            from .checkpoints import prepare as prepare_resume
+            execution["resume_path"], execution["resume_dataset_revision"] = prepare_resume(
+                store, data.resume_run_id, normalized, input_dir / "mining_session")
     atomic_json(input_dir / "request.json", normalized)
     return execution, normalized
 
@@ -147,6 +142,8 @@ def bind_dataset(execution: dict) -> dict:
         (instruments / f"{market}.txt").write_text("\n".join(selected) + "\n")
     atomic_json(view / ".research-source.json", {"source": str(source.resolve())})
     revision = Catalog.revision(dataset)
+    if execution.get("resume_dataset_revision") and execution["resume_dataset_revision"] != revision:
+        raise ResearchError("RESUME_DATA_CHANGED", "Dataset changed since the checkpoint; start a new mining run", 409)
     atomic_json(Path(execution["folder"]) / "inputs" / "dataset_revision.json",
                 {"dataset_id": dataset["dataset_id"], "revision": revision, "policy": "latest_at_start"})
     return {"provider_uri": str(view), "freq": dataset["freq"], "market": market, "dataset_revision": revision}

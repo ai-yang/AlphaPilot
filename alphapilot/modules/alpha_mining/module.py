@@ -175,6 +175,7 @@ class AlphaMiningModule(BaseModule):
                 )
             else:
                 loop = loop_cls.load(path, use_local=use_local)
+                loop._stop_event = stop_event
                 setattr(loop, "context", self.context)
                 if resolved_qlib_config:
                     loop.qlib_config_name = resolved_qlib_config

@@ -872,6 +872,13 @@
         "type": "string",
         "title": "Api Version"
       },
+      "features": {
+        "additionalProperties": {
+          "type": "boolean"
+        },
+        "type": "object",
+        "title": "Features"
+      },
       "scopes": {
         "items": {
           "type": "string"
@@ -2590,6 +2597,45 @@
       "input"
     ],
     "title": "MiningJob"
+  },
+  "Page_Artifact_": {
+    "properties": {
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/Artifact"
+        },
+        "type": "array",
+        "title": "Items"
+      },
+      "next_cursor": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Next Cursor"
+      },
+      "total": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Total"
+      }
+    },
+    "additionalProperties": false,
+    "type": "object",
+    "required": [
+      "items"
+    ],
+    "title": "Page[Artifact]"
   },
   "Page_Asset_": {
     "properties": {
