@@ -1,6 +1,6 @@
 # AlphaPilot Research API v1
 
-本接口供 GUI、独立 MCP 插件和其他 HTTP 客户端连接同一个 AlphaPilot 工作区。MCP 插件可单独建仓库，只依赖 HTTP、凭据和这里发布的 OpenAPI，无须导入 AlphaPilot、Qlib 或 Torch。
+本接口供 GUI、独立 MCP 插件和其他 HTTP 客户端连接同一个 AlphaPilot 工作区。独立 `alphapilot-mcp` 仓库只依赖 HTTP、凭据和这里发布的 OpenAPI，无须导入 AlphaPilot、Qlib 或 Torch。
 
 ## 运行结构
 
@@ -147,7 +147,7 @@ Content-Type: application/json
 
 ## 独立客户端和 MCP 仓库
 
-[http_client.py](../../examples/research/http_client.py) 仅使用 Python 标准库和 HTTP，演示能力发现、提交、查询结果、下载校验。未来 MCP 仓库可复用同一调用顺序：
+[http_client.py](../../examples/research/http_client.py) 仅使用 Python 标准库和 HTTP，演示能力发现、提交、查询结果、下载校验。独立 MCP 服务复用同一调用顺序，后端扩展和检查点恢复约定见 [MCP 支持说明](mcp-support.md)：
 
 1. 检查 capabilities 的 API 主版本和授权能力。
 2. 工具 `validate_factors` 调用验证接口；`start_mining`、`submit_factor_backtest` 提交后立即返回 job_id。
