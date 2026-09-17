@@ -6,7 +6,7 @@
 
 [中文](README.md)&nbsp;|&nbsp;[English](README_en.md)
 
-`多 Agent 因子挖掘`&nbsp;·&nbsp;`Qlib 回测`&nbsp;·&nbsp;`量化择时`&nbsp;·&nbsp;`模拟盘 / 实盘`&nbsp;·&nbsp;`Web 门户`&nbsp;·&nbsp;`Telegram / 飞书 通讯`
+`多 Agent 因子挖掘`&nbsp;·&nbsp;`Qlib 回测`&nbsp;·&nbsp;`MCP Agent 接入`&nbsp;·&nbsp;`量化择时`&nbsp;·&nbsp;`模拟盘 / 实盘`&nbsp;·&nbsp;`Web 门户`&nbsp;·&nbsp;`Telegram / 飞书 通讯`
 
 <p>
   <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white">
@@ -15,7 +15,7 @@
   <img alt="Notify" src="https://img.shields.io/badge/Notify-Telegram%20%7C%20Feishu-26A5E4?logo=telegram&logoColor=white">
 </p>
 
-[快速开始](#-快速开始)&nbsp;·&nbsp;[自定义策略](#-自定义策略教程)&nbsp;·&nbsp;[核心功能](#核心功能)&nbsp;·&nbsp;[典型工作流](#-典型工作流)&nbsp;·&nbsp;[文档](#-更多文档)&nbsp;·&nbsp;[Docker 部署](docs/DOCKER.md)
+[快速开始](#-快速开始)&nbsp;·&nbsp;[MCP 接入](#研究-api-与-mcp-接入)&nbsp;·&nbsp;[自定义策略](#-自定义策略教程)&nbsp;·&nbsp;[核心功能](#核心功能)&nbsp;·&nbsp;[典型工作流](#-典型工作流)&nbsp;·&nbsp;[文档](#-更多文档)&nbsp;·&nbsp;[Docker 部署](docs/DOCKER.md)
 
 </div>
 
@@ -24,6 +24,8 @@
 ## 项目简介
 
 AlphaPilot 是一个面向股票的量化研究与交易平台，覆盖数据准备、因子生成、回测评估、策略沉淀、日频信号、模拟盘和实盘执行。项目使用 LLM 驱动多 Agent 因子研究流程，使用 Qlib 完成回测与信号验证，并通过统一的 Live Runtime 将研究信号接入风控、订单管理、券商网关和审计账本。Web 门户用于集中管理数据、任务、研究资产、通知和交易运行状态。
+
+独立的 [alphapilot-mcp](https://github.com/ai-yang/alphapilot-mcp) 服务支持 Codex、Claude Code、DeepSeek Harness 等 MCP 客户端，通过研究 API 与 GUI 共享同一工作区、后台任务和研究结果。安装与配置见 [MCP 接入](#研究-api-与-mcp-接入)。
 
 ## 核心功能
 
@@ -39,6 +41,7 @@ AlphaPilot 是一个面向股票的量化研究与交易平台，覆盖数据准
 | 量化择时 | `alphapilot trading_instance_create` / `trading_backtest` | 通过正式策略实例完成技术指标信号预览、统一回放和受控部署；0.2.0 已移除旧 `timing_*` 入口 |
 | 模拟盘 / 实盘 | `alphapilot live_*` | `dry_run` / `paper` / `simulation` / `shadow` / `live` 运行模式、统一风控与 OMS、守护进程、恢复对账和审计账本；XTP Pro / EMT 实盘与 OpenCTP TTS 柜台仿真通过可选插件接入 |
 | 统一门户 | `alphapilot portal` | 数据、因子、回测、择时、任务、通知和实盘控制集中到同一界面 |
+| MCP 研究接入 | 独立 `alphapilot-mcp` 服务 | 支持 stdio / Streamable HTTP；Agent 可验证表达式、挖掘、回测、管理研究资产并查询或取消共享任务 |
 | 数据准备 | `alphapilot prepare_data` | baostock / tushare → Qlib 数据链路 |
 | 通知与远程 | `alphapilot notify_commands` | 任务完成推送（Telegram / 飞书 / 邮件）+ 聊天命令远程发起与查询任务 |
 
@@ -118,7 +121,8 @@ alphapilot live_daemon_stop --mode paper
 AlphaPilot 提供统一 Web 门户作为日常研究与运行入口，将数据、因子、回测、择时、任务、通知和实盘控制集中到同一个界面，避免在多个独立脚本和页面之间切换。
 
 - 统一访问因子挖掘、回测、择时、策略库、市场数据、通知配置和实盘运行状态
-- 支持后台任务、定时任务和结果查看
+- GUI 与 MCP 共用持久研究队列，支持后台任务、定时任务和结果查看；关闭浏览器或断开 MCP 不会取消计算
+- 研究功能通过顶栏「研究服务」连接，使用独立研究 Token，与交易操作员凭据分别管理
 - 「回测」页内置完整可视化：累计收益 / 超额 / 账户 / 换手率图表、日期范围筛选、每日明细、因子排行榜与对比基准
 - 「实盘交易」页区分实盘 / 柜台仿真 / 本地 Paper 工作区，并提供预检、daemon、策略、风险与审计控制面
 - Portal 交易写接口默认要求操作员令牌；可由本机 CLI 切换为高风险的 optional 模式，页面只读展示当前安全状态
@@ -227,11 +231,18 @@ alphapilot prepare_data convert \
 
 ### 5. 启动门户
 
+在 AlphaPilot 的 Python 环境中，为 GUI 创建研究凭据，再启动门户：
+
 ```bash
+alphapilot research_token create --client_id=gui --scopes=research:read,research:write,jobs:submit,jobs:cancel,data:write,signals:write,schedules:write
 alphapilot portal
 ```
 
 默认访问地址：`http://127.0.0.1:19901`
+
+将创建命令返回的 `token` 输入顶栏「研究服务」，连接后即可使用研究页面。Token 仅保存在页面内存中，刷新后需要重新输入；明文 Token 只在创建时显示一次。已有有效凭据可直接复用，GUI 与各 Agent 应分别创建凭据。研究鉴权始终生效，与交易操作员鉴权设置独立。
+
+已有工作区升级前先阅读 [研究 API 停机迁移说明](docs/research/migration.md)；旧研究 API 已停用，客户端应使用 `/api/v1`。
 
 > 时区默认 **Asia/Shanghai**（影响定时任务触发与时间戳显示）。可在门户「高级」页「门户设置」修改，或用 `alphapilot timezone Asia/Shanghai` 设置。
 
@@ -288,6 +299,103 @@ alphapilot live_connect --mode live --broker xtp --timeout 30
 ```
 
 券商 SDK 和适配器不随核心仓库同步，请从授权的私有索引或本地 wheelhouse 安装。真实连接所需凭证只应放在本地 `.env` 或部署环境中；完整步骤见 [实盘接入文档](docs/live-xtp.md)。
+
+## 研究 API 与 MCP 接入
+
+[alphapilot-mcp](https://github.com/ai-yang/alphapilot-mcp) 是独立维护的 TypeScript 服务，要求 **Node.js 22+**。它只通过 HTTP 调用 AlphaPilot `/api/v1`，MCP 所在环境无需安装 Python、Qlib 或 Torch；AlphaPilot 后端仍需独立运行并准备好数据和模型配置。
+
+```mermaid
+flowchart LR
+    Agent[Codex / Claude Code / DeepSeek Harness] --> MCP[alphapilot-mcp]
+    MCP --> API[Portal /api/v1]
+    GUI[Web GUI] --> API
+    API --> Service[研究服务与持久任务队列]
+    Channels[飞书 / Telegram / 调度器] --> Service
+    Service --> Worker[研究 worker]
+```
+
+GUI 与各 Agent 可以查看、操作同一工作区的任务和结果。飞书、Telegram 的聊天命令继续通过内部研究服务接入，各自保留渠道认证。MCP 本身不需要模型 API Key；使用自主挖掘时，仍由 AlphaPilot 后端调用已配置的模型。
+
+### 工具范围与调用方式
+
+当前实现 **87 个具名工具，默认启用 `core` 组的 44 个**。实际可见工具取部署启用组、后端能力和当前凭据权限的交集。
+
+| 工具组 | 主要能力 | 默认 |
+|--------|----------|------|
+| `core` | 资源目录与行情查询、表达式验证、因子/策略/股票池、自主/AFF/GP/RL 挖掘、因子回测与策略复测、任务控制、运行和产物读取 | 启用 |
+| `data` | 行情下载、更新、转换、复权与单股票维护 | 关闭 |
+| `files` | 资产导入导出、报告因子提取与审核入库 | 关闭 |
+| `signals` | 日频模拟会话、历史、资金调整、信号预览与推进 | 关闭 |
+| `schedules` | 研究调度的查询、创建、修改、暂停、恢复和触发 | 关闭 |
+| `cleanup` | 研究资产、任务、运行、上传和行情记录的删除或清理 | 关闭 |
+
+扩展组由部署者通过 `ALPHAPILOT_MCP_GROUPS` 配置，并授予对应的研究权限；模型不能自行开启。MCP 研究工具不提供实盘下单、券商控制、服务器管理或任意 Shell/Python 执行。完整映射见 [MCP 工具目录](https://github.com/ai-yang/alphapilot-mcp/blob/main/docs/tools.md)。
+
+典型调用顺序是 `get_capabilities` → `list_datasets` / `list_stock_pools` / `list_templates` / `list_models` → `validate_factors` → `submit_factor_backtest` 或 `start_mining` → `get_job` / `get_job_result`。因子回测支持库内引用或内联表达式，以及 `single_ic`、`multi_combined`、`multi_sequential` 三种模式。
+
+- 提交任务必须提供 `idempotency_key`，立即返回 `job_id`；查询工具继续跟踪状态、日志和产物。提交结果未确认时，用相同输入和原键重试。
+- 挖掘使用有限步数或迭代数；任务默认执行预算为 3600 秒，受后端上限约束。可信检查点可通过 `resume_run_id` 续跑到新任务，保留原运行记录。
+- 关闭 Agent、断开 MCP 或取消一次工具调用不会停止已提交任务；停止计算需显式调用 `cancel_job`。更新版本化资产使用 `expected_revision`，避免覆盖其他客户端的修改。
+- 文件通过配套 CLI 上传/下载，工具只接收 `upload_id` / `artifact_id`；大型报告和文件内容无需经过模型上下文。
+
+### 本地安装与 Codex 配置
+
+**当前交付为源码和可安装 npm tarball，尚未发布公共 npm 包。独立 GitHub 仓库目前为私有，需要相应访问权限。** 以下使用本地构建，无需等待 npm 发布。
+
+先完成上面的数据准备和门户启动，再在 AlphaPilot 的 Python 环境中另开终端，为 Codex 创建独立凭据：
+
+```bash
+alphapilot research_token create --client_id=codex --scopes=research:read,research:write,jobs:submit,jobs:cancel
+```
+
+在 AlphaPilot 项目目录外获取并构建 MCP 服务：
+
+```bash
+git clone https://github.com/ai-yang/alphapilot-mcp.git
+cd alphapilot-mcp
+npm ci
+npm run build
+export ALPHAPILOT_BASE_URL=http://127.0.0.1:19901
+export ALPHAPILOT_RESEARCH_TOKEN='替换为刚创建的研究 Token'
+node dist/cli.js doctor
+```
+
+`doctor` 检查连接、API 版本、权限和数据可用性，不启动研究任务。MCP 不会自动读取 AlphaPilot 的 `.env`，需显式提供以上环境变量。也可运行 `npm pack`，再用 `npm install -g ./alphapilot-mcp-0.1.0.tgz` 安装 CLI。
+
+在 Codex 的 `~/.codex/config.toml` 中加入以下配置，将路径和 Token 替换为本机实际值。`command` 指向 Node.js 22+，必要时使用 Node 可执行文件的绝对路径：
+
+```toml
+[mcp_servers.alphapilot]
+command = "node"
+args = ["/absolute/path/alphapilot-mcp/dist/cli.js", "serve", "--transport", "stdio"]
+startup_timeout_sec = 60
+tool_timeout_sec = 45
+
+[mcp_servers.alphapilot.env]
+ALPHAPILOT_BASE_URL = "http://127.0.0.1:19901"
+ALPHAPILOT_RESEARCH_TOKEN = "REPLACE_WITH_CODEX_RESEARCH_TOKEN"
+ALPHAPILOT_MCP_GROUPS = "core"
+```
+
+凭据保存在本机客户端配置中，不要提交到 Git。重启 Codex 会话或应用后，在 CLI 中用 `/mcp` 检查 `alphapilot` 是否已加载。由 Codex 启动 stdio MCP 进程，AlphaPilot Portal 保持独立运行。
+
+连接后可先让 Agent「列出可用数据集和股票池，并验证 `ZSCORE(-TS_SUM($return,5))`，暂不提交任务」；确认资源后再指定数据集、日期和预算提交回测或挖掘。
+
+### 其他客户端与远程部署
+
+三个客户端使用同一套工具，均提供 stdio 和 Streamable HTTP 配置：
+
+| 客户端 | 配置位置 | 示例 |
+|--------|----------|------|
+| Codex | `config.toml` 的 `mcp_servers.alphapilot` | [stdio](https://github.com/ai-yang/alphapilot-mcp/blob/main/examples/codex-stdio.toml) / [HTTP](https://github.com/ai-yang/alphapilot-mcp/blob/main/examples/codex-http.toml) |
+| Claude Code | `.mcp.json` 的 `mcpServers.alphapilot` | [stdio](https://github.com/ai-yang/alphapilot-mcp/blob/main/examples/claude-stdio.mcp.json) / [HTTP](https://github.com/ai-yang/alphapilot-mcp/blob/main/examples/claude-http.mcp.json) |
+| DeepSeek Harness | `@deepseek-ai/dsh-mcp-client` 的 Cordis YAML；显式传入环境变量和 Token | [stdio](https://github.com/ai-yang/alphapilot-mcp/blob/main/examples/harness-stdio.yaml) / [HTTP](https://github.com/ai-yang/alphapilot-mcp/blob/main/examples/harness-http.yaml) |
+
+例如，`node dist/cli.js config --client claude-code --transport stdio` 可输出 Claude Code 配置模板；`--client` 还支持 `codex`、`deepseek-harness`，远程配置使用 `--transport http`。stdio 模板中的 `npx alphapilot-mcp@0.1.0` 面向后续 npm 发布；发布前请替换为上面的本地 `node …/dist/cli.js` 或已安装的 `alphapilot-mcp` 命令。每个客户端分别创建后端研究凭据。
+
+私有 HTTP 服务默认监听 `127.0.0.1:19902/mcp`，远程通过 HTTPS 网关连接。HTTP 客户端使用独立的 **MCP Bearer**，服务端将其映射到相应的 AlphaPilot 研究凭据；两种 Token 不通用。当前采用私有静态 Bearer 鉴权。凭据映射、文件传输 CLI 和 Docker 部署见 [MCP 仓库说明](https://github.com/ai-yang/alphapilot-mcp#readme)。
+
+研究 API 契约见 [接口说明](docs/research/README.md) 和 [OpenAPI v1](docs/research/openapi-v1.json)，恢复与分页约定见 [后端 MCP 支持说明](docs/research/mcp-support.md)。已完成一轮真实挖掘、检查点续跑、内联表达式回测及产物下载验证，详见 [真实数据验收记录](docs/research/mcp-live-acceptance.md)；三客户端协议测试的版本和范围见 [MCP 验收记录](https://github.com/ai-yang/alphapilot-mcp/blob/main/docs/acceptance.md)。
 
 ## 🧩 自定义策略教程
 
@@ -490,6 +598,9 @@ alphapilot portal_operator_auth \
 
 - [中文文档中心：用户手册、开发文档与完整参考](docs/index.md)
 - [完整 CLI 命令参考](docs/alphapilot-cli.md)
+- [Research API v1、鉴权与共享任务](docs/research/README.md)
+- [独立 MCP 服务、客户端配置与安装](https://github.com/ai-yang/alphapilot-mcp)
+- [MCP 真实数据验收与复现](docs/research/mcp-live-acceptance.md)
 - [策略实例、预览和统一回测](docs/user/strategy-instances.md)
 - [自定义策略、PortfolioPolicy 与 artifact](docs/developer/strategy-extension.md)
 - [项目目录与架构说明](docs/alphapilot-structure.md)
@@ -534,16 +645,13 @@ XTP Pro / EMT 的 SDK 绑定和 broker 插件属于可选、可能受许可约�
 
 如果有疑问或者开发问题也可以发送邮件咨询：ruiwong@zju.edu.cn
 
-## 研究 API 与 MCP 接入
-
-GUI 与外部模型客户端可以通过同一套版本化研究服务共享任务和结果。参见 [Research API v1、独立 MCP 插件接口与示例](docs/research/README.md)；已有工作区升级请先阅读 [停机迁移说明](docs/research/migration.md)。
-
 ## 开发日志
 
 > 下表按提交时的实现状态记录。旧记录中的 `timing_*`、stage/parity/qualification、LIVE approval 等接口或门禁已在后续 0.2.0 重构中删除；当前用法以[文档中心](docs/index.md)和[自动生成 CLI 参考](docs/reference/cli.md)为准。
 
 | 日期 | 类型 | 功能/模块 | 目标 | 关键改动 | 影响入口 | 验证 | 状态/后续 |
 |------|------|-----------|------|----------|----------|------|-----------|
+| 2026-09-16 | 新增与修复 | 独立 MCP 研究服务 | 让 Codex、Claude Code、DeepSeek Harness 与 GUI 共享研究工作区 | 发布独立仓库、stdio/Streamable HTTP、87 个工具与分组权限；完善检查点续跑、产物分页及一元正负号表达式解析 | `alphapilot-mcp`、`/api/v1`、`research_token` | 一轮真实挖掘与续跑、内联 IC 回测、跨客户端查询/取消、文件校验；213 项后端与因子测试、17 项 MCP 测试 | 源码/tarball 和 Docker 构建已验收；公共 npm 尚未发布，测试范围见验收记录 |
 | 2026-07-25 | 增强 | 动态观察行情与策略实例术语 | 在不中断 daemon 的情况下扩展展示行情，并明确区分策略实例与旧择时策略名称 | 新增 strategy/observer 两类订阅、50 个动态 observer 上限、首 Tick 等待状态、重连恢复和双层 universe 过滤；Portal 中原“择时策略”字段统一为“策略实例” | `live_daemon_subscribe`、`trading_deployment_subscribe`、Portal「模拟与实盘」页 | Live engine/market data/runner、CLI/API、Portal 交互与安全闭环测试 | 当前 observer 只增不减、停止 daemon 后清空；录制行情保留且不进入策略决策 |
 | 2026-07-24 | 安全 | Portal 操作员鉴权 | 让全部交易写接口默认要求操作员身份，同时保留显式的隔离网络实验模式 | `/api/live` 与 `/api/trading` 写操作统一使用 `required`/`optional` 模式；新增本机安全设置、只读安全状态、transport 审计和高风险网络提示 | `portal_operator_auth`、`GET /api/portal/security`、Portal 策略实例/模拟与实盘页 | Portal security、OpenAPI、CLI、前端交互和审计测试 | 默认保持 `required`；`optional` 不会关闭账户绑定、对账、Kill Switch 或 RiskGate |
 | 2026-07-24 | 破坏性重构 | 独立部署与中性诊断 | 将实例校验、部署配置和研究验收解耦，避免诊断事实隐式授予 LIVE 权限 | 引入 schema v10 `DeploymentSpec`、独立 PAPER/SIMULATION/SHADOW/LIVE 配置、运行诊断和通用 decision comparison；删除 promote/stage/parity/qualification/LIVE approval 状态机 | `trading_deploy`、`trading_diagnostics`、`trading_decision_compare`、`/api/trading/deployments/*` | schema v10、部署安全闭环、回放/实盘一致性、CLI/OpenAPI/Portal 回归 | 当前部署只要求已验证且绑定新鲜的实例；真实路由仍受环境开关、账户/Provider、对账、心跳和逐单风控约束 |

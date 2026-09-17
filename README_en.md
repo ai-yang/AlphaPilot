@@ -6,7 +6,7 @@
 
 [中文](README.md)&nbsp;|&nbsp;[English](README_en.md)
 
-`Multi-agent factor mining`&nbsp;·&nbsp;`Qlib backtesting`&nbsp;·&nbsp;`Quant timing`&nbsp;·&nbsp;`Paper / live trading`&nbsp;·&nbsp;`Web portal`&nbsp;·&nbsp;`Telegram / Feishu notifications`
+`Multi-agent factor mining`&nbsp;·&nbsp;`Qlib backtesting`&nbsp;·&nbsp;`MCP agent integration`&nbsp;·&nbsp;`Quant timing`&nbsp;·&nbsp;`Paper / live trading`&nbsp;·&nbsp;`Web portal`&nbsp;·&nbsp;`Telegram / Feishu notifications`
 
 <p>
   <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white">
@@ -15,7 +15,7 @@
   <img alt="Notify" src="https://img.shields.io/badge/Notify-Telegram%20%7C%20Feishu-26A5E4?logo=telegram&logoColor=white">
 </p>
 
-[Quick Start](#-quick-start)&nbsp;·&nbsp;[Custom Strategy](#-custom-strategy-tutorial)&nbsp;·&nbsp;[Core Features](#core-features)&nbsp;·&nbsp;[Typical Workflow](#-typical-workflow)&nbsp;·&nbsp;[Docs](#-more-documentation)&nbsp;·&nbsp;[Docker Deployment](docs/DOCKER.md)
+[Quick Start](#-quick-start)&nbsp;·&nbsp;[MCP Setup](#research-api-and-mcp-integration)&nbsp;·&nbsp;[Custom Strategy](#-custom-strategy-tutorial)&nbsp;·&nbsp;[Core Features](#core-features)&nbsp;·&nbsp;[Typical Workflow](#-typical-workflow)&nbsp;·&nbsp;[Docs](#-more-documentation)&nbsp;·&nbsp;[Docker Deployment](docs/DOCKER.md)
 
 </div>
 
@@ -24,6 +24,8 @@
 ## Project Overview
 
 AlphaPilot is a stock-focused quantitative research and trading platform covering data preparation, factor generation, backtest evaluation, strategy assets, daily signals, paper trading, and live execution. It uses an LLM-driven multi-agent pipeline for factor research, Qlib for backtesting and signal validation, and a unified Live Runtime that connects research signals to risk controls, order management, broker gateways, and an audit ledger. The Web portal centralizes data, tasks, research assets, notifications, and trading runtime status.
+
+The independent [alphapilot-mcp](https://github.com/ai-yang/alphapilot-mcp) service connects MCP clients such as Codex, Claude Code, and DeepSeek Harness to the same workspace, background jobs, and research results as the GUI. See [MCP setup](#research-api-and-mcp-integration) for installation and configuration.
 
 ## Core Features
 
@@ -39,6 +41,7 @@ AlphaPilot is a stock-focused quantitative research and trading platform coverin
 | Quant timing | `alphapilot trading_instance_create` / `trading_backtest` | Formal strategy instances, unified replay, and controlled deployment; legacy `timing_*` commands were removed in 0.2.0 |
 | Paper / live trading | `alphapilot live_*` | `dry_run` / `paper` / `simulation` / `shadow` / `live` modes, unified risk and OMS, daemon control, recovery reconciliation, and an audit ledger; XTP Pro, EMT, and OpenCTP TTS connect through optional plugins |
 | Unified portal | `alphapilot portal` | Central UI for data, factors, backtests, timing, tasks, notifications, and live controls |
+| MCP research integration | Independent `alphapilot-mcp` service | stdio / Streamable HTTP access for expression validation, mining, backtesting, research assets, and shared job queries or cancellation |
 | Data preparation | `alphapilot prepare_data` | baostock / tushare to Qlib data pipeline |
 | Notifications and remote control | `alphapilot notify_commands` | Task completion notifications through Telegram / Feishu / email plus remote chat commands |
 
@@ -118,7 +121,8 @@ See [XTP Pro / EMT live setup](docs/live-xtp.md), [OpenCTP TTS broker-simulation
 AlphaPilot provides a unified Web portal for daily research and runtime operations. It brings data, factors, backtests, timing, tasks, notifications, and live controls into one interface, reducing context switching across scripts and standalone pages.
 
 - Unified access to factor mining, backtesting, timing, strategy libraries, market data, notification settings, and live runtime status
-- Supports background tasks, scheduled tasks, and result review
+- GUI and MCP share a persistent research queue, scheduled tasks, and results; closing the browser or disconnecting MCP does not cancel computation
+- Connect through the top-bar research service control using a research Token, managed separately from trading operator credentials
 - Built-in backtest visualizations: cumulative returns, excess returns, account composition, turnover charts, date-range filters, daily details, factor leaderboards, and benchmark comparisons
 - The Live page separates paper, broker-simulation, SHADOW, and LIVE workspaces and exposes preflight, daemon, deployment, diagnostics, risk, and audit controls
 - Portal trading writes require an operator token by default; a local CLI can select a high-risk optional mode, while the Portal exposes security status as read-only
@@ -227,11 +231,18 @@ alphapilot prepare_data convert \
 
 ### 5. Start the Portal
 
+In AlphaPilot's Python environment, create a research credential for the GUI, then start the Portal:
+
 ```bash
+alphapilot research_token create --client_id=gui --scopes=research:read,research:write,jobs:submit,jobs:cancel,data:write,signals:write,schedules:write
 alphapilot portal
 ```
 
 Default URL: `http://127.0.0.1:19901`
+
+Enter the returned `token` in the top-bar research service control (研究服务) to use the research pages. The Token is kept only in page memory and must be entered again after a refresh; its plaintext value is shown only when created. Reuse an existing valid credential if available, and create separate credentials for the GUI and each agent. Research authentication is always enforced independently of trading operator settings.
+
+Before upgrading an existing workspace, read the [research API migration guide](docs/research/migration.md). Legacy research APIs have been retired; clients should use `/api/v1`.
 
 > The default timezone is **Asia/Shanghai**, which affects scheduled tasks and timestamp display. You can change it in the portal's Advanced page under Portal Settings, or run `alphapilot timezone Asia/Shanghai`.
 
@@ -288,6 +299,103 @@ alphapilot live_connect --mode live --broker xtp --timeout 30
 ```
 
 Broker SDK bindings and adapters are not synchronized with the core repository; install them from an authorized private index or local wheelhouse. Keep real credentials only in a local `.env` or the deployment environment. See the [live setup guide](docs/live-xtp.md) for the complete procedure.
+
+## Research API and MCP Integration
+
+[alphapilot-mcp](https://github.com/ai-yang/alphapilot-mcp) is an independently maintained TypeScript service requiring **Node.js 22+**. It accesses AlphaPilot `/api/v1` exclusively over HTTP, so its environment does not need Python, Qlib, or Torch. The AlphaPilot backend must run separately with its data and model configuration ready.
+
+```mermaid
+flowchart LR
+    Agent[Codex / Claude Code / DeepSeek Harness] --> MCP[alphapilot-mcp]
+    MCP --> API[Portal /api/v1]
+    GUI[Web GUI] --> API
+    API --> Service[Research services and persistent job queue]
+    Channels[Feishu / Telegram / Scheduler] --> Service
+    Service --> Worker[Research worker]
+```
+
+The GUI and agents can access jobs and results in the same workspace. Feishu and Telegram chat commands continue to use the internal research services with their own channel authentication. MCP itself does not require a model API key; autonomous mining still calls the model configured on the AlphaPilot backend.
+
+### Tools and Research Workflow
+
+The service implements **87 named tools, with the 44 `core` tools enabled by default**. Actual tool visibility is the intersection of deployment-enabled groups, backend capabilities, and credential permissions.
+
+| Group | Main capabilities | Default |
+|-------|-------------------|---------|
+| `core` | Resource catalogs and market queries, expression validation, factors/strategies/stock pools, autonomous/AFF/GP/RL mining, factor and strategy backtests, job control, runs and artifacts | Enabled |
+| `data` | Market data downloads, updates, conversion, price adjustment, and symbol maintenance | Disabled |
+| `files` | Asset import/export, report factor extraction, and reviewed factor persistence | Disabled |
+| `signals` | Daily simulation sessions, history, cash adjustments, signal previews and advancement | Disabled |
+| `schedules` | Research schedule queries, creation, updates, pause, resume, and triggering | Disabled |
+| `cleanup` | Deleting or trimming research assets, jobs, runs, uploads, and market records | Disabled |
+
+The deployer enables additional groups through `ALPHAPILOT_MCP_GROUPS` and grants the corresponding research permissions; models cannot enable groups themselves. MCP research tools do not expose live orders, broker controls, server administration, or arbitrary Shell/Python execution. See the [MCP tool reference](https://github.com/ai-yang/alphapilot-mcp/blob/main/docs/tools.md) for the complete mapping.
+
+A typical sequence is `get_capabilities` → `list_datasets` / `list_stock_pools` / `list_templates` / `list_models` → `validate_factors` → `submit_factor_backtest` or `start_mining` → `get_job` / `get_job_result`. Factor backtests accept library references or inline expressions and support `single_ic`, `multi_combined`, and `multi_sequential` modes.
+
+- Job submissions require an `idempotency_key` and return a `job_id` immediately. Query tools track status, logs, and artifacts. If submission is unconfirmed, retry with the same input and key.
+- Mining uses finite steps or iterations. The default task budget is 3600 seconds, subject to backend limits. Use `resume_run_id` to resume a trusted checkpoint into a new job while preserving the source run.
+- Exiting an agent, disconnecting MCP, or cancelling a tool call does not stop a submitted job; explicitly call `cancel_job` to stop computation. Versioned asset updates use `expected_revision` to avoid overwriting another client's changes.
+- The companion CLI transfers files; tools accept `upload_id` / `artifact_id`, keeping large reports and file contents out of the model context.
+
+### Local Installation and Codex Configuration
+
+**Current delivery includes source and an installable npm tarball; the package has not been published to the public npm registry. The independent GitHub repository is currently private and requires access.** The following setup uses a local build.
+
+Complete data preparation and Portal startup above, then open another terminal in AlphaPilot's Python environment to create a separate Codex credential:
+
+```bash
+alphapilot research_token create --client_id=codex --scopes=research:read,research:write,jobs:submit,jobs:cancel
+```
+
+Clone and build the MCP service outside the AlphaPilot project directory:
+
+```bash
+git clone https://github.com/ai-yang/alphapilot-mcp.git
+cd alphapilot-mcp
+npm ci
+npm run build
+export ALPHAPILOT_BASE_URL=http://127.0.0.1:19901
+export ALPHAPILOT_RESEARCH_TOKEN='REPLACE_WITH_YOUR_RESEARCH_TOKEN'
+node dist/cli.js doctor
+```
+
+`doctor` checks connectivity, API version, permissions, and data availability without starting research jobs. MCP does not automatically load AlphaPilot's `.env`; provide these environment variables explicitly. Alternatively, run `npm pack` and install the CLI with `npm install -g ./alphapilot-mcp-0.1.0.tgz`.
+
+Add the following to Codex's `~/.codex/config.toml`, replacing the path and Token with local values. `command` must resolve to Node.js 22+; use an absolute Node executable path if necessary:
+
+```toml
+[mcp_servers.alphapilot]
+command = "node"
+args = ["/absolute/path/alphapilot-mcp/dist/cli.js", "serve", "--transport", "stdio"]
+startup_timeout_sec = 60
+tool_timeout_sec = 45
+
+[mcp_servers.alphapilot.env]
+ALPHAPILOT_BASE_URL = "http://127.0.0.1:19901"
+ALPHAPILOT_RESEARCH_TOKEN = "REPLACE_WITH_CODEX_RESEARCH_TOKEN"
+ALPHAPILOT_MCP_GROUPS = "core"
+```
+
+Keep credentials in local client configuration and out of Git. Restart the Codex session or application, then use `/mcp` in the CLI to check that `alphapilot` loaded. Codex starts the stdio MCP process; AlphaPilot Portal continues to run independently.
+
+For an initial check, ask the agent: “List available datasets and stock pools, and validate `ZSCORE(-TS_SUM($return,5))` without submitting a job.” Then select resources, dates, and a budget before submitting a backtest or mining job.
+
+### Other Clients and Remote Deployment
+
+All three clients use the same tools, with configurations for both stdio and Streamable HTTP:
+
+| Client | Configuration | Examples |
+|--------|---------------|----------|
+| Codex | `mcp_servers.alphapilot` in `config.toml` | [stdio](https://github.com/ai-yang/alphapilot-mcp/blob/main/examples/codex-stdio.toml) / [HTTP](https://github.com/ai-yang/alphapilot-mcp/blob/main/examples/codex-http.toml) |
+| Claude Code | `mcpServers.alphapilot` in `.mcp.json` | [stdio](https://github.com/ai-yang/alphapilot-mcp/blob/main/examples/claude-stdio.mcp.json) / [HTTP](https://github.com/ai-yang/alphapilot-mcp/blob/main/examples/claude-http.mcp.json) |
+| DeepSeek Harness | Cordis YAML for `@deepseek-ai/dsh-mcp-client`; explicitly pass environment variables and Token | [stdio](https://github.com/ai-yang/alphapilot-mcp/blob/main/examples/harness-stdio.yaml) / [HTTP](https://github.com/ai-yang/alphapilot-mcp/blob/main/examples/harness-http.yaml) |
+
+For example, `node dist/cli.js config --client claude-code --transport stdio` prints a Claude Code template. `--client` also accepts `codex` and `deepseek-harness`; use `--transport http` for remote configuration. The stdio templates use `npx alphapilot-mcp@0.1.0` for future npm publication; until then, replace the launch command with the local `node …/dist/cli.js` shown above or an installed `alphapilot-mcp` executable. Create a separate backend research credential for each client.
+
+The private HTTP service listens on `127.0.0.1:19902/mcp` by default, with remote access through an HTTPS gateway. HTTP clients use a separate **MCP Bearer** mapped by the service to their AlphaPilot research credential; the two Tokens are not interchangeable. This release uses private static Bearer authentication. See the [MCP repository guide](https://github.com/ai-yang/alphapilot-mcp#readme) for credential mapping, file transfer CLI, and Docker deployment.
+
+See the [research API guide](docs/research/README.md) and [OpenAPI v1](docs/research/openapi-v1.json) for the backend contract, and [MCP backend support](docs/research/mcp-support.md) for checkpoint and pagination semantics. One real mining round, checkpoint resume, an inline expression backtest, and artifact downloads have been verified; see the [real-data acceptance record](docs/research/mcp-live-acceptance.md). Tested client versions and protocol coverage are recorded in [MCP acceptance](https://github.com/ai-yang/alphapilot-mcp/blob/main/docs/acceptance.md).
 
 ## 🧩 Custom Strategy Tutorial
 
@@ -491,6 +599,9 @@ For a more complete local example with volume confirmation, see [`strategies/dua
 The Chinese documentation center is the canonical, code-checked manual for the current `0.2.x` line. This English README remains a project overview and is not maintained as a complete translated copy of every interface.
 
 - [Chinese documentation center: user guides, developer docs, and generated CLI/API references](docs/index.md)
+- [Research API v1, authentication, and shared jobs (Chinese)](docs/research/README.md)
+- [Independent MCP service, client configuration, and installation](https://github.com/ai-yang/alphapilot-mcp)
+- [MCP real-data acceptance and reproduction (Chinese)](docs/research/mcp-live-acceptance.md)
 - [Strategy instances, previews, and unified replays (Chinese)](docs/user/strategy-instances.md)
 - [Custom strategies, PortfolioPolicy, and artifacts (Chinese)](docs/developer/strategy-extension.md)
 - [Docker run notes and troubleshooting](docs/DOCKER-RUN.md)
@@ -539,6 +650,7 @@ For questions or development discussions, you can also contact us by email: ruiw
 
 | Date | Type | Feature / Module | Goal | Key Changes | Affected Entry | Verification | Status / Follow-up |
 |------|------|------------------|------|-------------|----------------|--------------|--------------------|
+| 2026-09-16 | Feature and fixes | Independent MCP research service | Share the GUI research workspace with Codex, Claude Code, and DeepSeek Harness | Added independent repository, stdio/Streamable HTTP, 87 tools with group/permission checks; completed checkpoint resume, artifact pagination, and unary-sign expression parsing | `alphapilot-mcp`, `/api/v1`, `research_token` | One real mining round with resume, inline IC backtest, cross-client queries/cancellation, file verification; 213 backend/factor tests and 17 MCP tests | Source/tarball and Docker builds verified; public npm publication pending; see acceptance records for coverage |
 | 2026-07-25 | Enhancement | Dynamic observer quotes and strategy-instance terminology | Add display quotes without interrupting a daemon and distinguish strategy instances from the old timing-strategy label | Added strategy/observer subscription classes, a 50-observer runtime cap, first-Tick waiting state, reconnect restoration, and two-layer universe filtering; renamed the Portal field from “Timing strategy” to “Strategy instance” | `live_daemon_subscribe`, `trading_deployment_subscribe`, Portal Live page | Live engine/market-data/runner, CLI/API, Portal interaction, and trading-safety tests | Observers are additive and clear when the daemon stops; recorded data remains and never enters strategy decisions |
 | 2026-07-24 | Security | Portal operator authentication | Require an operator identity for all trading writes by default while retaining an explicit isolated-network lab mode | Unified `/api/live` and `/api/trading` writes under `required`/`optional`; added local-only security settings, read-only security status, transport audit, and network-risk warnings | `portal_operator_auth`, `GET /api/portal/security`, Portal strategy-instance and Live pages | Portal security, OpenAPI, CLI, frontend interaction, and audit tests | Keep `required` as the default; `optional` does not disable account binding, reconciliation, Kill Switch, or RiskGate |
 | 2026-07-24 | Breaking refactor | Independent deployments and neutral diagnostics | Decouple instance validation, deployment configuration, and research acceptance so diagnostic facts cannot implicitly grant LIVE authority | Added schema-v10 `DeploymentSpec`, independent PAPER/SIMULATION/SHADOW/LIVE configurations, runtime diagnostics, and generic decision comparison; removed promote/stage/parity/qualification/LIVE-approval state machines | `trading_deploy`, `trading_diagnostics`, `trading_decision_compare`, `/api/trading/deployments/*` | Schema-v10, deployment safety, replay/live comparison, CLI/OpenAPI, and Portal regressions | Deployment now requires a validated, fresh-bound instance; real routing still checks the environment switch, account/providers, reconciliation, heartbeat, and per-order risk |
