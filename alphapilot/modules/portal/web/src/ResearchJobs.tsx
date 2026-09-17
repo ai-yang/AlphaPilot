@@ -38,7 +38,7 @@ export function ArtifactViewer({ artifact }: { artifact: Artifact }) {
     <button className="button" onClick={() => research.download(artifact).catch(e => setError(String(e)))}>下载完整产物</button>
     {error && <p role="alert">{error}</p>}{value !== undefined && <JsonResult value={value} />}
     {series && <><p>{series.downsampled ? `曲线已降采样；原始 ${series.total_points} 个点。指标按完整数据计算。` : `完整曲线，共 ${series.total_points} 个点。`}</p><LazyPlot data={Object.keys(series.rows[0] || {}).filter(k => k !== "date" && typeof series.rows[0][k] === "number").map(k => ({ x: series.rows.map(r => r.date), y: series.rows.map(r => r[k]), type: "scatter", mode: "lines", name: k }))} layout={{ autosize: true, height: 360, margin: { t: 30, l: 60, r: 30, b: 50 } }} config={{ responsive: true }} style={{ width: "100%" }} /></>}
-    {!!rows.length && <><ResearchTable rows={rows} /><button className="button small" onClick={() => table()}>第一页</button><button className="button small" disabled={!cursor} onClick={() => cursor && table(cursor)}>下一页</button></>}
+    {!!rows.length && <><ResearchTable rows={rows} /><div className="action-row"><button className="button small" onClick={() => table()}>第一页</button><button className="button small" disabled={!cursor} onClick={() => cursor && table(cursor)}>下一页</button></div></>}
   </section>;
 }
 export function RunDetail({ runId, activeJob = false }: { runId: string; activeJob?: boolean }) {
@@ -94,7 +94,7 @@ export function ResearchJobs({ compact = false }: { compact?: boolean }) {
     catch (e) { setError(String(e)); }
   }
   return <section className="panel"><h2>共享任务队列</h2>{error && <p role="alert">{error}</p>}<div className="table-wrap"><table><thead><tr><th>任务</th><th>类型</th><th>状态</th><th>客户端</th><th>操作</th></tr></thead><tbody>{jobs.map(j => <tr key={j.job_id}><td><button className="button small" onClick={() => setSelected(j.job_id)}>{j.job_id}</button></td><td>{j.kind}</td><td>{statuses[j.status]}</td><td>{j.client_id}</td><td><button className="button small" disabled={j.status === "cancelling"} onClick={() => action(j, terminalJob(j.status))}>{terminalJob(j.status) ? "删除任务记录" : "取消"}</button></td></tr>)}</tbody></table></div>
-    {!compact && <><button className="button small" disabled={!cursor} onClick={() => setCursor(undefined)}>第一页</button><button className="button small" disabled={!next} onClick={() => setCursor(next || undefined)}>下一页</button></>}
+    {!compact && <div className="action-row"><button className="button small" disabled={!cursor} onClick={() => setCursor(undefined)}>第一页</button><button className="button small" disabled={!next} onClick={() => setCursor(next || undefined)}>下一页</button></div>}
     {selected && <JobDetail key={selected} jobId={selected} />}
   </section>;
 }

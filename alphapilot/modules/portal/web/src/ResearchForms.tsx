@@ -52,17 +52,17 @@ function Field({ field, schema, value, set, catalogs, required }: { field: strin
   const label = labels[field] || schema.title || field;
   const options = optionsFor(field, catalogs);
   if (schema.type === "object") return <details><summary>{label}</summary><Fields schema={schema} value={(value || {}) as Record<string, unknown>} set={set} catalogs={catalogs} /></details>;
-  return <label className="field"><span>{label}{required ? " *" : ""}</span>
+  if (schema.type === "boolean") return <label className="inline-check"><input aria-label={label} type="checkbox" checked={Boolean(value)} onChange={e => set(e.target.checked)} /><span>{label}{required ? " *" : ""}</span></label>;
+  return <label className={`field${schema.type === "array" ? " field-wide" : ""}`}><span>{label}{required ? " *" : ""}</span>
     {options ? <select aria-label={label} required={required} multiple={schema.type === "array"} value={schema.type === "array" ? (value || []) as string[] : String(value ?? "")} onChange={e => set(schema.type === "array" ? [...e.target.selectedOptions].map(o => o.value) : e.target.value || undefined)}>
       {schema.type !== "array" && <option value="">选择资源</option>}{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select> : schema.enum ? <select aria-label={label} value={String(value ?? schema.default ?? "")} required={required} onChange={e => set(e.target.value || undefined)}><option value="">选择</option>{schema.enum.map(v => <option key={String(v)} value={String(v)}>{String(v)}</option>)}</select>
-    : schema.type === "boolean" ? <input aria-label={label} type="checkbox" checked={Boolean(value)} onChange={e => set(e.target.checked)} />
     : schema.type === "array" ? <JsonField value={value} onChange={set} required={required} label={label} />
     : <input aria-label={label} type={schema.type === "number" || schema.type === "integer" ? "number" : schema.format === "date" ? "date" : "text"} value={value === undefined || value === null ? "" : String(value)} required={required} min={schema.minimum} max={schema.maximum} minLength={schema.minLength} maxLength={schema.maxLength} step={schema.type === "integer" ? 1 : "any"} onChange={e => set(e.target.value === "" ? undefined : schema.type === "number" || schema.type === "integer" ? Number(e.target.value) : e.target.value)} />}
   </label>;
 }
 function Fields({ schema, value, set, catalogs }: { schema: Schema; value: Record<string, unknown>; set: (v: Record<string, unknown>) => void; catalogs?: Catalogs }) {
-  return <div className="form-grid">{Object.entries(resolve(schema).properties || {}).map(([key, spec]) => <Field key={key} field={key} schema={spec} value={value[key]} required={Boolean(schema.required?.includes(key))} catalogs={catalogs} set={v => set({ ...value, [key]: v })} />)}</div>;
+  return <div className="form-grid schema-fields">{Object.entries(resolve(schema).properties || {}).map(([key, spec]) => <Field key={key} field={key} schema={spec} value={value[key]} required={Boolean(schema.required?.includes(key))} catalogs={catalogs} set={v => set({ ...value, [key]: v })} />)}</div>;
 }
 export function SchemaFields({ name, value, onChange, catalogs, omit = [] }: { name: string; value: Record<string, unknown>; onChange: (v: Record<string, unknown>) => void; catalogs?: Catalogs; omit?: string[] }) {
   return <Fields schema={{ ...registry[name], properties: Object.fromEntries(Object.entries(registry[name].properties || {}).filter(([key]) => !omit.includes(key))) }} value={value} set={onChange} catalogs={catalogs} />;
@@ -89,7 +89,7 @@ export function JobEditor({ kinds, catalogs, onSubmit, initial, label = "提交�
     {kind === "data" && <label>数据操作<select value={String(value.action || "")} required onChange={e => { setValue({ ...schemaDefaults(dataSchemas[e.target.value] || "DataDownload"), dataset_id: value.dataset_id, action: e.target.value }); setKey(crypto.randomUUID()); }}>{["", "download", "update", "pipeline", "convert", "apply_adjust", "delete_symbol", "refresh_symbol", "trim_symbol", "apply_adjust_symbol"].map(a => <option key={a}>{a}</option>)}</select></label>}
     {kind === "daily_signals" && <label>信号来源<select aria-label="信号来源" value={dailySource} onChange={e => { setDailySource(e.target.value); setValue(v => { const { strategy_id, session_id, init_cash, ...rest } = v; return { ...rest, mode: e.target.value === "strategy" ? "preview" : rest.mode }; }); setKey(crypto.randomUUID()); }}><option value="strategy">策略预览</option><option value="session">模拟会话</option></select></label>}
     <SchemaFields key={`${kind}:${schema}`} name={schema} omit={kind === "data" ? ["action"] : kind === "daily_signals" ? dailySource === "session" ? ["strategy_id", "init_cash"] : ["session_id"] : []} value={value} onChange={v => { setValue(v); setKey(crypto.randomUUID()); }} catalogs={catalogs} />
-    <details><summary>预算与通知</summary><SchemaFields name="Budget" value={budget} onChange={v => { setBudget(v); setKey(crypto.randomUUID()); }} /><label><input type="checkbox" checked={notify} onChange={e => { setNotify(e.target.checked); setKey(crypto.randomUUID()); }} />通过已配置渠道通知结果</label></details>
+    <details><summary>预算与通知</summary><SchemaFields name="Budget" value={budget} onChange={v => { setBudget(v); setKey(crypto.randomUUID()); }} /><label className="inline-check"><input type="checkbox" checked={notify} onChange={e => { setNotify(e.target.checked); setKey(crypto.randomUUID()); }} />通过已配置渠道通知结果</label></details>
     {error && <p role="alert" className="alert error">{error}</p>}
     <button className="button primary" disabled={busy}>{busy ? "提交中…" : label}</button>
     {result !== undefined && <pre className="json">{JSON.stringify(result, null, 2)}</pre>}

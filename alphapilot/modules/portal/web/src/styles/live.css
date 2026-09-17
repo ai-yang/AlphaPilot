@@ -52,9 +52,8 @@
 .live-simulation-switch button.active { background: var(--accent-50); color: var(--accent-700); }
 
 .live-workspace-status {
-  position: sticky;
-  top: 8px;
-  z-index: 5;
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
@@ -136,6 +135,7 @@
   align-items: start;
 }
 .live-work-card { min-width: 0; padding: 16px; }
+.live-workbench-grid > .panel { margin-bottom: 0; }
 .live-work-card .panel-head { margin-bottom: 14px; }
 .live-work-card .panel-head h2 { font-size: 17px; }
 .live-work-card .panel-head .muted { display: block; margin-top: 3px; font-size: 12px; }
@@ -147,7 +147,7 @@
 }
 .live-form-grid .field { min-width: 0; }
 .live-field-wide { grid-column: 1 / -1; }
-.live-form-grid input,
+.live-form-grid input:where(:not([type="checkbox"]):not([type="radio"])),
 .live-form-grid select { width: 100%; min-width: 0; }
 
 .live-runner-summary {
@@ -245,7 +245,7 @@
 }
 
 @media (max-width: 640px) {
-  .live-environment-tabs { display: grid; width: 100%; grid-template-columns: repeat(3, 1fr); }
+  .live-environment-tabs { display: grid; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .live-environment-tabs button { min-width: 0; }
   .live-workspace-status { grid-template-columns: minmax(0, 1fr) auto; top: 0; padding: 9px; }
   .live-status-context { grid-column: 1 / -1; grid-row: 1; }

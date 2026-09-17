@@ -89,6 +89,12 @@
 .tooltip.info-dot { cursor: help; color: var(--text-muted); outline: none; }
 .tooltip.info-dot:hover, .tooltip.info-dot:focus-visible { color: var(--accent-600); }
 .tooltip.info-dot > svg { vertical-align: middle; }
+/* Anchor metric hints to their card so they stay inside narrow grid columns. */
+.metric .tooltip { position: static; }
+.metric .tooltip > .tooltip-bubble { left: 0; max-width: min(260px, 100%); transform: translateY(4px); }
+.metric .tooltip:hover > .tooltip-bubble,
+.metric .tooltip:focus-visible > .tooltip-bubble,
+.metric .tooltip:focus-within > .tooltip-bubble { transform: translateY(0); }
 
 /* Removable pill tag (stock-pool members, etc.) — replaces ad-hoc inline styles. */
 .tag.removable { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 10px; }
@@ -144,7 +150,6 @@
   cursor: pointer;
 }
 .symbol-item:hover { background: var(--accent-50); }
-.symbol-item input { width: 15px; height: 15px; min-height: 15px; margin: 0; flex-shrink: 0; accent-color: var(--accent-600); }
 .symbol-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .symbol-item.added { color: var(--text-muted); opacity: 0.7; }
 
@@ -192,4 +197,3 @@
   from { background-position: 100% 0; }
   to { background-position: -100% 0; }
 }
-

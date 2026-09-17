@@ -76,7 +76,6 @@ test.describe("Portal interaction contract", () => {
     await expect(page.locator(".live-workspace-status .pill.running")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole("tab", { name: /Paper/i })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("tab", { name: /Live/i })).toBeEnabled();
-    await page.getByText("更多技术操作").click();
     await page.getByRole("button", { name: "停止 daemon" }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "确认" }).click();
     await expect(page.getByRole("button", { name: "启动 daemon" })).toBeVisible({ timeout: 15_000 });

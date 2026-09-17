@@ -13,7 +13,7 @@ export function useResearchConnection() {
 export function ResearchConnection() {
   const connected = useResearchConnection();
   const [value, setValue] = useState(""); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
-  return <form className="row-actions" onSubmit={async e => {
+  return <form className="research-connection" onSubmit={async e => {
     e.preventDefault(); setBusy(true); setError(""); setResearchToken(value);
     try {
       const info = await research.get<{ api_version: string }>("/capabilities");

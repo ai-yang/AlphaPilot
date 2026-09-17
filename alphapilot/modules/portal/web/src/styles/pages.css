@@ -74,7 +74,7 @@
 
 .kline-stats {
   display: grid;
-  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 120px), 1fr));
   gap: 8px;
   margin-bottom: 10px;
 }
@@ -137,7 +137,7 @@
 
 .live-observer-subscribe {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(320px, 1.35fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   align-items: end;
   gap: 12px;
   margin: 12px 0;

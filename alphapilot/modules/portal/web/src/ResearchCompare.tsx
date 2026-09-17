@@ -49,7 +49,7 @@ export function ResearchCompare({ runs }: { runs: Run[] }) {
   return <section><h3>运行比较与指标排序</h3><p>比较已选择的运行；请结合各运行的数据集、日期区间和执行参数判断结果。指标取自完整数据，曲线可能降采样。</p>
     {error && <p role="alert">{error}</p>}
     <label>排序指标<select value={selectedMetric || ""} onChange={e => setMetric(e.target.value)}>{metrics.map(key => <option key={key}>{key}</option>)}</select></label>
-    <label><input type="checkbox" checked={ascending} onChange={e => setAscending(e.target.checked)} />按指标升序</label>
+    <label className="inline-check"><input type="checkbox" checked={ascending} onChange={e => setAscending(e.target.checked)} />按指标升序</label>
     <ResearchTable rows={ranked.map(row => ({ run_id: row.run.run_id, status: row.run.metadata.status, ...row.metrics }))} />
     {!!curves.length && <><label>比较曲线<select value={selectedCurve} onChange={e => setCurve(e.target.value)}>{curves.map(key => <option key={key}>{key}</option>)}</select></label>
       <LazyPlot data={rows.filter(row => row.curve).map(row => ({ x: row.curve!.rows.map(point => point.date), y: row.curve!.rows.map(point => point[selectedCurve]), name: `${row.run.run_id}${row.curve!.downsampled ? "（降采样）" : ""}`, type: "scatter", mode: "lines" }))} layout={{ autosize: true, height: 360, margin: { t: 30, l: 60, r: 30, b: 50 } }} config={{ responsive: true }} style={{ width: "100%" }} /></>}

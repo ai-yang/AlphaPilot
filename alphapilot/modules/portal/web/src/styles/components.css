@@ -6,6 +6,7 @@
 }
 .metric-grid.compact { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
 .metric {
+  position: relative;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -84,8 +85,10 @@
   width: 34px;
   padding: 0;
 }
-.row-actions { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+.row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; justify-content: flex-end; }
 .row-actions.left { justify-content: flex-start; }
+.row-actions > .button, .action-row > .button { flex-shrink: 0; max-width: 100%; }
+.action-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
 
 .settings-summary {
   display: flex;
@@ -186,23 +189,29 @@
   margin-bottom: 12px;
 }
 .toolbar.below { margin-top: 12px; }
-.toolbar input,
+.toolbar input:where(:not([type="checkbox"]):not([type="radio"])),
 .toolbar select {
   width: auto;
   min-width: 160px;
+  max-width: 100%;
   margin-bottom: 0;
-}
-.toolbar input[type="checkbox"] {
-  width: auto;
-  min-width: 0;
 }
 
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  align-items: start;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 .form-grid label { margin-bottom: 0; }
+.form-grid > *, .dynamic-form > * { min-width: 0; }
+/* Schema forms also appear in narrow sidebars and nested parameter groups. */
+.form-grid.schema-fields { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
+.schema-fields > fieldset, .schema-fields > details, .schema-fields > .field-wide { grid-column: 1 / -1; }
+.schema-fields > fieldset, .schema-fields > details { margin-bottom: 0; }
+.schema-fields .form-grid { margin-bottom: 0; }
+.schema-fields > .inline-check { min-height: 38px; }
 .dynamic-form {
   display: grid;
   gap: 10px;
@@ -281,18 +290,9 @@
   color: var(--text-soft);
   font-size: 13px;
 }
-.inline-check input,
-.row-check {
-  width: 16px;
-  height: 16px;
-  min-height: 16px;
-  margin: 0;
-  padding: 0;
-  accent-color: var(--accent-600);
-}
-
-input, select, textarea {
+input:where(:not([type="checkbox"]):not([type="radio"])), select, textarea {
   width: 100%;
+  min-width: 0;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   min-height: 38px;
@@ -302,9 +302,24 @@ input, select, textarea {
   margin-bottom: 10px;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
+/* Native selection controls must never inherit text-field sizing or padding. */
+input[type="checkbox"], input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  min-height: 16px;
+  flex: 0 0 16px;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent-600);
+  vertical-align: middle;
+}
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent-600); box-shadow: 0 0 0 3px var(--accent-ring); }
 textarea { resize: vertical; }
-label { display: grid; gap: 6px; color: var(--text-soft); font-size: 13px; margin-bottom: 10px; }
+label { display: grid; min-width: 0; align-content: start; gap: 6px; color: var(--text-soft); font-size: 13px; margin-bottom: 10px; }
+label > input, label > select, label > textarea { margin-bottom: 0; }
+fieldset { min-inline-size: 0; margin: 0 0 12px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+legend { max-width: 100%; padding: 0 6px; color: var(--text-soft); font-size: 13px; }
 .mono, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
 .small-text { font-size: 12px; line-height: 1.35; white-space: pre-wrap; word-break: break-word; }
 .result-box {
@@ -321,7 +336,7 @@ label { display: grid; gap: 6px; color: var(--text-soft); font-size: 13px; margi
 .table-wrap { width: 100%; overflow: auto; max-height: 640px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
 table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--surface); }
 th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
-th { position: sticky; top: 0; z-index: 2; background: var(--surface-3); color: var(--text-soft); font-weight: 650; }
+th { position: sticky; top: 0; z-index: 2; background: var(--surface-3); color: var(--text-soft); font-weight: 650; white-space: nowrap; }
 th.col-right, td.col-right { text-align: right; }
 th.col-center, td.col-center { text-align: center; }
 td.cell-ellipsis { max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -361,7 +376,8 @@ td code { white-space: pre-wrap; word-break: break-word; }
 .alert.success { border-color: var(--success-border); background: var(--success-bg); color: var(--success-fg); }
 .empty { color: var(--text-muted); padding: 18px; border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); background: var(--surface-2); }
 
-.split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+.split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+.split > * { min-width: 0; }
 .pool-detail { display: grid; gap: 12px; margin-top: 14px; }
 .log, .json {
   margin: 0;
@@ -388,7 +404,7 @@ td code { white-space: pre-wrap; word-break: break-word; }
   font-size: 12px;
 }
 
-.tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .tabs button {
   border: 1px solid var(--border-strong);
   background: var(--surface);
@@ -413,6 +429,7 @@ td code { white-space: pre-wrap; word-break: break-word; }
 .plain-list { margin: 0; padding-left: 18px; color: var(--text-soft); }
 details { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px; margin-bottom: 10px; background: var(--surface); }
 summary { cursor: pointer; font-weight: 650; }
+details[open] > summary { margin-bottom: 12px; }
 
 .panel-title-inline {
   display: flex;
