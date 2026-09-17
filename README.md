@@ -395,7 +395,6 @@ ALPHAPILOT_MCP_GROUPS = "core"
 
 私有 HTTP 服务默认监听 `127.0.0.1:19902/mcp`，远程通过 HTTPS 网关连接。HTTP 客户端使用独立的 **MCP Bearer**，服务端将其映射到相应的 AlphaPilot 研究凭据；两种 Token 不通用。当前采用私有静态 Bearer 鉴权。凭据映射、文件传输 CLI 和 Docker 部署见 [MCP 仓库说明](https://github.com/ai-yang/alphapilot-mcp#readme)。
 
-研究 API 契约见 [接口说明](docs/research/README.md) 和 [OpenAPI v1](docs/research/openapi-v1.json)，恢复与分页约定见 [后端 MCP 支持说明](docs/research/mcp-support.md)。已完成一轮真实挖掘、检查点续跑、内联表达式回测及产物下载验证，详见 [真实数据验收记录](docs/research/mcp-live-acceptance.md)；三客户端协议测试的版本和范围见 [MCP 验收记录](https://github.com/ai-yang/alphapilot-mcp/blob/main/docs/acceptance.md)。
 
 ## 🧩 自定义策略教程
 

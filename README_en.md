@@ -395,8 +395,6 @@ For example, `node dist/cli.js config --client claude-code --transport stdio` pr
 
 The private HTTP service listens on `127.0.0.1:19902/mcp` by default, with remote access through an HTTPS gateway. HTTP clients use a separate **MCP Bearer** mapped by the service to their AlphaPilot research credential; the two Tokens are not interchangeable. This release uses private static Bearer authentication. See the [MCP repository guide](https://github.com/ai-yang/alphapilot-mcp#readme) for credential mapping, file transfer CLI, and Docker deployment.
 
-See the [research API guide](docs/research/README.md) and [OpenAPI v1](docs/research/openapi-v1.json) for the backend contract, and [MCP backend support](docs/research/mcp-support.md) for checkpoint and pagination semantics. One real mining round, checkpoint resume, an inline expression backtest, and artifact downloads have been verified; see the [real-data acceptance record](docs/research/mcp-live-acceptance.md). Tested client versions and protocol coverage are recorded in [MCP acceptance](https://github.com/ai-yang/alphapilot-mcp/blob/main/docs/acceptance.md).
-
 ## 🧩 Custom Strategy Tutorial
 
 AlphaPilot uses “strategy” for two related concepts. `strategy_create` produces a **research strategy asset** containing factors, a model, and backtest settings. This tutorial creates a **strategy definition** that supplies signals to the shared trading runtime. The Provider v1 interface below is the shortest route from Python code to a validated preview and replay; AlphaPilot automatically adapts it to the formal runtime.
