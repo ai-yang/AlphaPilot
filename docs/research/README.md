@@ -107,6 +107,8 @@ Content-Type: application/json
 
 参数优先级为显式参数、所选模板参数、服务器默认值。`normalized_input` 返回解析后的参数和入队时因子、策略、股票池快照。行情使用执行开始时的数据版本，并在读取期间锁定、记录指纹；排队期间切换复权模式会让不匹配的任务明确失败。注册模板为 baseline/combined 的参数预设，使用已支持的模型与参数；不接受客户端 Python 类路径、任意 YAML/Pickle 或本机路径。
 
+`single_ic` 使用解析后的 `parameters.test_start/test_end` 作为评分区间；对应边界未设置时才回退到 `start_time/end_time`。默认收益标签和显式标签都遵循这个区间，不会因为因子缓存包含更长历史而扩大评分范围。产物中的 `coverage_requested_start/end` 记录请求边界，`coverage_start/end` 记录实际有效样本范围；默认收益标签需要后续两根 bar，因此区间末尾的部分样本可能没有可用标签。
+
 `Result.availability` 为 `pending / partial / complete / unavailable`。正常完成但没有合格因子也是 complete；失败和取消可能保留已经发布的部分产物。一个 Job 可以有多个 Run，每个运行关联其输入、数据版本、配置与产物。删除任务记录不会删除运行产物或被策略引用的输入快照。
 
 资产导出返回 Artifact，可通过 content_url 下载 v1 JSON 包；格式定义见 [asset-bundles-v1.schema.json](asset-bundles-v1.schema.json)。导入先上传，再将 upload_id 提交到相应资产的 `/import`。策略包携带因子表达式、模型 ID 和回测参数，不携带模型执行状态；导入后标记 requires_retrain，需复测训练后才能建立模拟会话。历史策略缺少数据集标识时，通过 `?dataset_id=目标ID` 选择目标；股票池导入同样要求该参数。逐项导入返回成功数量及各项结构化错误，已有同名资产不会被覆盖。

@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import math
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 import pytest
 
 from alphapilot.systems.backtest.engines.qlib_signal import (
+    CLOSE_TASK_NAME,
+    QlibSignalEngine,
     _single_ic_options_from_params,
     compute_factor_ic_table,
 )
@@ -162,3 +165,48 @@ def test_single_ic_accepts_unnamed_panel_indexes_and_inclusive_intraday_end() ->
     assert table.loc[0, "coverage_rows"] == 4
     assert table.loc[0, "coverage_days_eligible"] == 1
     assert table.loc[0, "n_periods"] == 2
+
+
+@pytest.mark.parametrize("parameter_format", ["dict", "typed", "fallback", "unbounded"])
+def test_default_label_engine_scores_only_requested_dates(tmp_path, monkeypatch, parameter_format):
+    """A broad factor cache must not leak other dates into a requested IC test."""
+    from alphapilot.systems.backtest.runners.factor_runner import QlibFactorRunner
+
+    dates = pd.date_range("2024-01-01", periods=10)
+    index = pd.MultiIndex.from_product([dates, ["A", "B", "C"]], names=["datetime", "instrument"])
+    returns = np.array([0.01, 0.02, 0.03])
+    frame = pd.DataFrame({
+        CLOSE_TASK_NAME: np.concatenate([100 * (1 + returns) ** day for day in range(10)]),
+        # Only the requested interval has a positive IC; other dates oppose it.
+        "factor": np.concatenate([returns if 2 <= day <= 6 else -returns for day in range(10)]),
+    }, index=index)
+    monkeypatch.setattr(QlibFactorRunner, "process_factor_data", lambda self, exp: frame)
+    params = {"start_time": "2024-01-01", "end_time": "2024-01-10",
+              "test_start": "2024-01-03", "test_end": "2024-01-07"}
+    if parameter_format == "typed":
+        params = QlibYamlParams(**params, train_start="2024-01-01", train_end="2024-01-01",
+                               valid_start="2024-01-02", valid_end="2024-01-02",
+                               backtest_start="2024-01-03", backtest_end="2024-01-07")
+    elif parameter_format == "fallback":
+        params = {"test_start": None, "test_end": None,
+                  "start_time": "2024-01-03", "end_time": "2024-01-07"}
+    elif parameter_format == "unbounded":
+        params = None
+    exp = SimpleNamespace(yaml_params=params, experiment_workspace=SimpleNamespace(workspace_path=tmp_path))
+
+    outcome = QlibSignalEngine().run(exp)
+
+    row = outcome.per_factor[0]
+    if parameter_format == "unbounded":
+        assert row["coverage_requested_start"] == ""
+        assert row["coverage_requested_end"] == ""
+        assert row["n_days"] == 8
+        assert row["IC"] < 0.5
+    else:
+        assert row["coverage_requested_start"] == "2024-01-03T00:00:00"
+        assert row["coverage_requested_end"] == "2024-01-07T00:00:00"
+        assert row["coverage_index_rows"] == 15
+        assert row["coverage_start"] == "2024-01-03T00:00:00"
+        assert row["coverage_end"] == "2024-01-05T00:00:00"
+        assert row["n_days"] == 3  # The forward label consumes two later bars.
+        assert row["IC"] == pytest.approx(1.0)

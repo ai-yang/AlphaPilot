@@ -353,9 +353,15 @@ def _single_ic_options_from_params(params: Any) -> SingleICCoverageOptions:
     return SingleICCoverageOptions()
 
 
+def _evaluation_bounds(params: Any) -> tuple[Any, Any]:
+    """Score the test segment for either label; fall back to data boundaries."""
+    start = _yaml_value(params, "test_start") or _yaml_value(params, "start_time")
+    end = _yaml_value(params, "test_end") or _yaml_value(params, "end_time")
+    return start, end
+
+
 def _configured_label_bounds(params: Any) -> tuple[Any, Any]:
-    start = _yaml_value(params, "test_start", _yaml_value(params, "start_time"))
-    end = _yaml_value(params, "test_end", _yaml_value(params, "end_time"))
+    start, end = _evaluation_bounds(params)
     if start is None or end is None:
         raise ValueError(
             "single_ic with single_ic_label_expression requires explicit "
@@ -443,7 +449,7 @@ class QlibSignalEngine:
         if configured:
             start, end = _configured_label_bounds(params)
         else:
-            start = end = None
+            start, end = _evaluation_bounds(params)
         if single_ic_options is None:
             single_ic_options = _single_ic_options_from_params(params)
         elif not isinstance(single_ic_options, SingleICCoverageOptions):
