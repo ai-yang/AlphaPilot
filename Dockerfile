@@ -90,6 +90,7 @@ RUN pip install --no-cache-dir gym stable-baselines3 sb3-contrib shimmy
 COPY pyproject.toml README.md ./
 COPY alphapilot/ ./alphapilot/
 COPY important_data/ ./important_data/
+COPY strategies/ ./strategies/
 COPY docs/ ./docs/
 RUN pip install --no-cache-dir --no-deps -e .
 
@@ -101,5 +102,5 @@ EXPOSE 19901
 # tini as PID 1: reaps non-daemon spawned job workers and forwards signals so the
 # portal's SIGUSR1 self-restart (os.execv) and SIGTERM shutdown behave correctly.
 ENTRYPOINT ["tini", "--"]
-# Default command; docker-compose overrides per service (portal / scheduler / notify).
+# Portal starts its research runtime; compose can also run the optional notify service.
 CMD ["alphapilot", "portal", "--host", "0.0.0.0", "--port", "19901"]

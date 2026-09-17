@@ -7,8 +7,12 @@
 
 # Runtime state / large caches & data (these are volumes, ~1.9GB locally)
 git_ignore_folder/
+docker-data/
 pickle_cache/
 log/
+important_data/factor_zoo/
+important_data/strategy_zoo/
+important_data/stock_pools/
 *.h5
 **/mlruns/
 
@@ -16,6 +20,8 @@ log/
 .git/
 **/.git/
 .gitignore
+.codex/
+.agents/
 
 # Vendored broker SDK originals: their headers/libs are copied into the
 # alphapilot_xtpx / alphapilot_emt packages, so the raw SDK folders never enter the image.
