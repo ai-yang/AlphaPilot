@@ -318,7 +318,7 @@ GUI 与各 Agent 可以查看、操作同一工作区的任务和结果。飞书
 
 ### 工具范围与调用方式
 
-当前实现 **87 个具名工具，默认启用 `core` 组的 44 个**。实际可见工具取部署启用组、后端能力和当前凭据权限的交集。
+当前实现 **87 个具名工具，默认启用包含 44 个工具的 `core` 组**。实际可见工具取部署启用组、后端能力和当前凭据权限的交集。
 
 | 工具组 | 主要能力 | 默认 |
 |--------|----------|------|
@@ -340,13 +340,15 @@ GUI 与各 Agent 可以查看、操作同一工作区的任务和结果。飞书
 
 ### 本地安装与 Codex 配置
 
-**当前交付为源码和可安装 npm tarball，尚未发布公共 npm 包。独立 GitHub 仓库目前为私有，需要相应访问权限。** 以下使用本地构建，无需等待 npm 发布。
+**独立 [alphapilot-mcp 仓库](https://github.com/ai-yang/alphapilot-mcp)已公开，可直接克隆。当前通过源码构建或自行生成的 npm tarball 安装，尚未发布公共 npm 包。** 以下使用本地构建，无需等待 npm 发布。
 
 先完成上面的数据准备和门户启动，再在 AlphaPilot 的 Python 环境中另开终端，为 Codex 创建独立凭据：
 
 ```bash
 alphapilot research_token create --client_id=codex --scopes=research:read,research:write,jobs:submit,jobs:cancel
 ```
+
+上面的权限支持因子研究、使用已有股票池回测及任务管理。若需要创建、修改、导入或删除股票池，创建凭据时还需添加 `data:write`，因为这些操作会更新数据集的 instruments；缺少权限时相应工具不会展示。
 
 在 AlphaPilot 项目目录外获取并构建 MCP 服务：
 
@@ -381,6 +383,8 @@ ALPHAPILOT_MCP_GROUPS = "core"
 
 连接后可先让 Agent「列出可用数据集和股票池，并验证 `ZSCORE(-TS_SUM($return,5))`，暂不提交任务」；确认资源后再指定数据集、日期和预算提交回测或挖掘。
 
+2026-10-13 已使用 Codex CLI `0.162.0-alpha.17.2` 验证 stdio / Streamable HTTP 的工具发现、表达式验证、任务提交、查询及取消，并通过真实 AlphaPilot 后端完成因子/股票池管理和一次本地行情 `single_ic` 回测。测试范围与复现方式见 [MCP 验收记录](https://github.com/ai-yang/alphapilot-mcp/blob/main/docs/acceptance.md)。
+
 ### 其他客户端与远程部署
 
 三个客户端使用同一套工具，均提供 stdio 和 Streamable HTTP 配置：
@@ -391,7 +395,7 @@ ALPHAPILOT_MCP_GROUPS = "core"
 | Claude Code | `.mcp.json` 的 `mcpServers.alphapilot` | [stdio](https://github.com/ai-yang/alphapilot-mcp/blob/main/examples/claude-stdio.mcp.json) / [HTTP](https://github.com/ai-yang/alphapilot-mcp/blob/main/examples/claude-http.mcp.json) |
 | DeepSeek Harness | `@deepseek-ai/dsh-mcp-client` 的 Cordis YAML；显式传入环境变量和 Token | [stdio](https://github.com/ai-yang/alphapilot-mcp/blob/main/examples/harness-stdio.yaml) / [HTTP](https://github.com/ai-yang/alphapilot-mcp/blob/main/examples/harness-http.yaml) |
 
-例如，`node dist/cli.js config --client claude-code --transport stdio` 可输出 Claude Code 配置模板；`--client` 还支持 `codex`、`deepseek-harness`，远程配置使用 `--transport http`。stdio 模板中的 `npx alphapilot-mcp@0.1.0` 面向后续 npm 发布；发布前请替换为上面的本地 `node …/dist/cli.js` 或已安装的 `alphapilot-mcp` 命令。每个客户端分别创建后端研究凭据。
+例如，`node dist/cli.js config --client claude-code --transport stdio` 可输出 Claude Code 配置模板；`--client` 还支持 `codex`、`deepseek-harness`，远程配置使用 `--transport http`。stdio 配置生成器使用当前 Node 和已构建 CLI 的绝对路径，无需公共 npm 包；也可运行 `node dist/cli.js config --client codex --transport stdio` 生成 Codex 配置，并在启动 Codex 的环境中设置 `ALPHAPILOT_BASE_URL` 和 `ALPHAPILOT_RESEARCH_TOKEN`。仓库示例中的绝对路径占位符需要替换为本机路径。每个客户端分别创建后端研究凭据。
 
 私有 HTTP 服务默认监听 `127.0.0.1:19902/mcp`，远程通过 HTTPS 网关连接。HTTP 客户端使用独立的 **MCP Bearer**，服务端将其映射到相应的 AlphaPilot 研究凭据；两种 Token 不通用。当前采用私有静态 Bearer 鉴权。凭据映射、文件传输 CLI 和 Docker 部署见 [MCP 仓库说明](https://github.com/ai-yang/alphapilot-mcp#readme)。
 
