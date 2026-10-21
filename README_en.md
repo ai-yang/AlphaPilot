@@ -318,7 +318,7 @@ The GUI and agents can access jobs and results in the same workspace. Feishu and
 
 ### Tools and Research Workflow
 
-The service implements **87 named tools, with the 44 `core` tools enabled by default**. Actual tool visibility is the intersection of deployment-enabled groups, backend capabilities, and credential permissions.
+The service implements **87 named tools, with the `core` group (44 tools) enabled by default**. Actual tool visibility is the intersection of deployment-enabled groups, backend capabilities, and credential permissions.
 
 | Group | Main capabilities | Default |
 |-------|-------------------|---------|
@@ -340,13 +340,15 @@ A typical sequence is `get_capabilities` → `list_datasets` / `list_stock_pools
 
 ### Local Installation and Codex Configuration
 
-**Current delivery includes source and an installable npm tarball; the package has not been published to the public npm registry. The independent GitHub repository is currently private and requires access.** The following setup uses a local build.
+**The independent [alphapilot-mcp repository](https://github.com/ai-yang/alphapilot-mcp) is public and can be cloned directly. Install from source or a locally generated npm tarball; the package has not been published to the public npm registry.** The following setup uses a local build.
 
 Complete data preparation and Portal startup above, then open another terminal in AlphaPilot's Python environment to create a separate Codex credential:
 
 ```bash
 alphapilot research_token create --client_id=codex --scopes=research:read,research:write,jobs:submit,jobs:cancel
 ```
+
+The scopes above support factor research, backtesting with existing stock pools, and job management. To create, update, import, or delete stock pools, also grant `data:write` when creating the credential: these operations update the dataset instruments. Tools requiring missing permissions are hidden.
 
 Clone and build the MCP service outside the AlphaPilot project directory:
 
@@ -381,6 +383,8 @@ Keep credentials in local client configuration and out of Git. Restart the Codex
 
 For an initial check, ask the agent: “List available datasets and stock pools, and validate `ZSCORE(-TS_SUM($return,5))` without submitting a job.” Then select resources, dates, and a budget before submitting a backtest or mining job.
 
+On 2026-10-13, Codex CLI `0.162.0-alpha.17.2` passed stdio / Streamable HTTP discovery, expression validation, job submission, query, and cancellation checks. The real AlphaPilot backend also passed factor/stock-pool management and a `single_ic` backtest on local market data. See [MCP acceptance records](https://github.com/ai-yang/alphapilot-mcp/blob/main/docs/acceptance.md) for scope and reproduction details.
+
 ### Other Clients and Remote Deployment
 
 All three clients use the same tools, with configurations for both stdio and Streamable HTTP:
@@ -391,7 +395,7 @@ All three clients use the same tools, with configurations for both stdio and Str
 | Claude Code | `mcpServers.alphapilot` in `.mcp.json` | [stdio](https://github.com/ai-yang/alphapilot-mcp/blob/main/examples/claude-stdio.mcp.json) / [HTTP](https://github.com/ai-yang/alphapilot-mcp/blob/main/examples/claude-http.mcp.json) |
 | DeepSeek Harness | Cordis YAML for `@deepseek-ai/dsh-mcp-client`; explicitly pass environment variables and Token | [stdio](https://github.com/ai-yang/alphapilot-mcp/blob/main/examples/harness-stdio.yaml) / [HTTP](https://github.com/ai-yang/alphapilot-mcp/blob/main/examples/harness-http.yaml) |
 
-For example, `node dist/cli.js config --client claude-code --transport stdio` prints a Claude Code template. `--client` also accepts `codex` and `deepseek-harness`; use `--transport http` for remote configuration. The stdio templates use `npx alphapilot-mcp@0.1.0` for future npm publication; until then, replace the launch command with the local `node …/dist/cli.js` shown above or an installed `alphapilot-mcp` executable. Create a separate backend research credential for each client.
+For example, `node dist/cli.js config --client claude-code --transport stdio` prints a Claude Code template. `--client` also accepts `codex` and `deepseek-harness`; use `--transport http` for remote configuration. The stdio configuration generator uses absolute paths to the current Node executable and built CLI, so no public npm package is required. Run `node dist/cli.js config --client codex --transport stdio` for Codex, and set `ALPHAPILOT_BASE_URL` and `ALPHAPILOT_RESEARCH_TOKEN` in the environment that launches Codex. Replace the absolute-path placeholders in repository examples with local paths. Create a separate backend research credential for each client.
 
 The private HTTP service listens on `127.0.0.1:19902/mcp` by default, with remote access through an HTTPS gateway. HTTP clients use a separate **MCP Bearer** mapped by the service to their AlphaPilot research credential; the two Tokens are not interchangeable. This release uses private static Bearer authentication. See the [MCP repository guide](https://github.com/ai-yang/alphapilot-mcp#readme) for credential mapping, file transfer CLI, and Docker deployment.
 
