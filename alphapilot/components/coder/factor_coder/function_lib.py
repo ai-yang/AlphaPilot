@@ -465,6 +465,24 @@ def rolling_beta(df1_group, df2_group, p):
     result = np.empty(len(df1_group))
     result[:] = np.nan  # 初始化结果为 NaN
 
+    # SEQUENCE(p) is a fixed predictor for every window. Its centered dot
+    # product gives the same OLS slope with an intercept, without fitting a
+    # separate least-squares problem for every row of the market dataset.
+    if isinstance(df1_group, pd.Series) and isinstance(df2_group, pd.Series) and p > 1:
+        y = df1_group.to_numpy(dtype=float)
+        x = df2_group.iloc[:p].to_numpy(dtype=float)
+        if (
+            len(df2_group) == p
+            and len(y) >= p
+            and np.array_equal(x, np.arange(1, p + 1))
+            and np.isfinite(y).all()
+        ):
+            centered_x = x - x.mean()
+            result[p - 1:] = np.convolve(
+                y, centered_x[::-1], mode="valid"
+            ) / np.dot(centered_x, centered_x)
+            return pd.Series(result, index=df1_group.index)
+
     # 滚动计算 beta
     for i in range(p - 1, len(df1_group)):
         window_y = df1_group.iloc[i - p + 1 : i + 1].values
@@ -733,9 +751,31 @@ def TS_MAD(df: pd.DataFrame, p: int = 5):
         # 返回这些偏差的中位数
         return np.median(abs_dev)
     
-    return df.groupby('instrument').transform(
-        lambda x: x.rolling(p, min_periods=1).apply(rolling_mad, raw=True)
-    )
+    def group_mad(group):
+        if isinstance(group, pd.DataFrame):
+            return group.apply(group_mad)
+        if not isinstance(p, int) or p < 1:
+            return group.rolling(p, min_periods=1).apply(rolling_mad, raw=True)
+        values = group.to_numpy(dtype=float, na_value=np.nan).copy()
+        # Pandas rolling converts infinities to missing values before apply.
+        values[~np.isfinite(values)] = np.nan
+        result = np.full(len(values), np.nan)
+        for i in range(min(p - 1, len(values))):
+            result[i] = rolling_mad(values[:i + 1])
+        if len(values) >= p:
+            windows = np.lib.stride_tricks.sliding_window_view(values, p)
+            # Bound temporary allocations while evaluating many windows in C.
+            chunk_size = max(1, 1_000_000 // p)
+            for start in range(0, len(windows), chunk_size):
+                block = windows[start:start + chunk_size]
+                medians = np.median(block, axis=1)
+                offset = start + p - 1
+                result[offset:offset + len(block)] = np.median(
+                    np.abs(block - medians[:, None]), axis=1
+                )
+        return pd.Series(result, index=group.index, name=group.name)
+
+    return df.groupby('instrument').transform(group_mad)
 
 
 @datatype_adapter

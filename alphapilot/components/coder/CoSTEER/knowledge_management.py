@@ -256,6 +256,14 @@ class CoSTEERRAGStrategyV2(RAGStrategy):
                             single_knowledge,
                         )  # save to working trace
                         if single_feedback.final_decision == True:
+                            # Expression repair changes get_task_information() after
+                            # component_query analyzed the original task. Analyze
+                            # the executed task before linking its successful trace.
+                            if target_task_information not in self.knowledgebase.task_to_component_nodes:
+                                component_nodes = self.analyze_component(
+                                    target_task_information,
+                                )
+                                self.knowledgebase.task_to_component_nodes[target_task_information] = component_nodes
                             self.knowledgebase.success_task_to_knowledge_dict.setdefault(
                                 target_task_information,
                                 single_knowledge,

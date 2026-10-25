@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import yaml
 
 from alphapilot.core.experiment import FBWorkspace
 from alphapilot.log import logger
@@ -49,11 +50,19 @@ class QlibFBWorkspace(FBWorkspace):
         )
 
         ret_path = self.workspace_path / "ret.pkl"
-        if not ret_path.exists():
+        config = yaml.safe_load((self.workspace_path / qlib_config_name).read_text())
+        records = config.get("task", {}).get("record")
+        portfolio_required = not isinstance(records, list) or any(
+            str(record.get("class", "") if isinstance(record, dict) else record)
+            .rsplit(".", 1)[-1] == "PortAnaRecord"
+            for record in records
+        )
+        if portfolio_required and not ret_path.exists():
             logger.error(f"File {ret_path} does not exist (qrun likely failed).")
             return None
-        ret_df = pd.read_pickle(ret_path)
-        logger.log_object(ret_df, tag="Quantitative Backtesting Chart")
+        if portfolio_required:
+            ret_df = pd.read_pickle(ret_path)
+            logger.log_object(ret_df, tag="Quantitative Backtesting Chart")
 
         csv_path = self.workspace_path / "qlib_res.csv"
         if not csv_path.exists():
